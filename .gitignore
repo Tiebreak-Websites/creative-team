@@ -1,0 +1,18 @@
+# Claude Code - personal settings (never share these)
+.claude/settings.local.json
+
+# Environment variables - secrets stay local
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Node (if used later)
+node_modules/

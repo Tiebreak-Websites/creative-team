@@ -1,0 +1,274 @@
+{
+  "_comment": "BrainTrade LP Template — edit this file to reproduce a new version of the landing page. All copy and image paths live here. The index.html reads from these keys via JS or a simple find-replace workflow.",
+
+  "brand": {
+    "logoSrc": "assets/logo.png",
+    "logoAlt": "BrainTrade",
+    "faviconSrc": "assets/favicon.ico"
+  },
+
+  "hero": {
+    "imageSrc": "assets/hero-image.jpg",
+    "imageAlt": "Trading platform screenshot",
+    "form": {
+      "title": "Start Your Trading Education With a Personal Trainer",
+      "fields": {
+        "fullName": "Full name",
+        "email": "E-Mail",
+        "phonePrefix": "+359",
+        "phone": "Phone number"
+      },
+      "legal": "I agree to the {privacyPolicy} and {termsConditions}",
+      "privacyPolicyLabel": "Privacy Policy",
+      "privacyPolicyUrl": "/privacy-policy",
+      "termsLabel": "Terms & Conditions",
+      "termsUrl": "/terms",
+      "ctaButton": "Start My Coaching Journey",
+      "trustSignals": [
+        "Free to join",
+        "No experience required",
+        "1-on-1 guidance included"
+      ]
+    }
+  },
+
+  "steps": {
+    "sectionTitle": "Join BrainTrade In 3 Simple Steps",
+    "items": [
+      {
+        "iconSrc": "assets/icons/step-1.svg",
+        "iconAlt": "Sign up icon",
+        "title": "Sign up and learn",
+        "description": "Register today and gain immediate access to our highly-rated online investment academy."
+      },
+      {
+        "iconSrc": "assets/icons/step-2.svg",
+        "iconAlt": "Phone coaching icon",
+        "title": "One-on-one phone coaching",
+        "description": "After you register, your dedicated coach will call you for a free session to explain why mastering online investing is essential."
+      },
+      {
+        "iconSrc": "assets/icons/step-3.svg",
+        "iconAlt": "Markets icon",
+        "title": "Learn all about the markets",
+        "description": "Start your online trading education journey and get insights on the financial markets and the tools you need to conquer them."
+      }
+    ]
+  },
+
+  "contentBlockImageText": {
+    "title": "Test Title",
+    "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut.",
+    "imageSrc": "assets/content-image-1.jpg",
+    "imageAlt": "Content image",
+    "imagePosition": "right"
+  },
+
+  "contentBlockFullWidth": {
+    "title": "Title",
+    "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar. Fermentum scelerisque sit consectetur hak mi."
+  },
+
+  "contentBlockTwoColumns": {
+    "title": "Title 2 columns",
+    "columnLeft": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar.",
+    "columnRight": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar."
+  },
+
+  "cards": {
+    "sectionTitle": "Lorem ipsum dolor sit amet, consectetur.",
+    "items": [
+      {
+        "imageSrc": "assets/cards/card-1.jpg",
+        "imageAlt": "Card image 1",
+        "title": "Card Title 1",
+        "description": "Short description for this card item goes here."
+      },
+      {
+        "imageSrc": "assets/cards/card-2.jpg",
+        "imageAlt": "Card image 2",
+        "title": "Card Title 2",
+        "description": "Short description for this card item goes here."
+      },
+      {
+        "imageSrc": "assets/cards/card-3.jpg",
+        "imageAlt": "Card image 3",
+        "title": "Card Title 3",
+        "description": "Short description for this card item goes here."
+      },
+      {
+        "imageSrc": "assets/cards/card-4.jpg",
+        "imageAlt": "Card image 4",
+        "title": "Card Title 4",
+        "description": "Short description for this card item goes here."
+      }
+    ],
+    "ctaButton": "Button Text",
+    "ctaUrl": "#form"
+  },
+
+  "journey": {
+    "sectionTitle": "Your Guided Learning Journey in 60 Days",
+    "backgroundImageSrc": "assets/journey-bg.png",
+    "backgroundImageAlt": "Journey background",
+    "phases": [
+      {
+        "label": "Month 1",
+        "iconSrc": "assets/icons/calendar.svg",
+        "title": "Learn & Practice",
+        "description": "Build your foundation with structured educational guidance and ongoing feedback, supporting the development of practical skills. Learn within a guided framework that supports independent thinking and self-directed development."
+      },
+      {
+        "label": "Month 2",
+        "iconSrc": "assets/icons/calendar.svg",
+        "title": "Grow with BrainTrade",
+        "description": "Develop your knowledge and trade independently with educational assistance available."
+      }
+    ]
+  },
+
+  "benefits": {
+    "sectionTitle": "Take your trading journey to the next level",
+    "items": [
+      {
+        "iconSrc": "assets/icons/benefit-1.svg",
+        "iconAlt": "Personal trainer icon",
+        "title": "Personal Trainer",
+        "description": "Receive 1-on-1 personalized guidance"
+      },
+      {
+        "iconSrc": "assets/icons/benefit-2.svg",
+        "iconAlt": "AI tools icon",
+        "title": "AI-Powered Trading Tools",
+        "description": "Enhance your decision-making while you learn"
+      },
+      {
+        "iconSrc": "assets/icons/benefit-3.svg",
+        "iconAlt": "Live campus icon",
+        "title": "Live Campus",
+        "description": "Webinars, market updates, and live events"
+      },
+      {
+        "iconSrc": "assets/icons/benefit-4.svg",
+        "iconAlt": "Market signals icon",
+        "title": "Real-Time Market Signals",
+        "description": "Apply your learning in realistic conditions"
+      },
+      {
+        "iconSrc": "assets/icons/benefit-5.svg",
+        "iconAlt": "Exclusive content icon",
+        "title": "Exclusive Content",
+        "description": "Access structured learning paths and advanced tutorials"
+      },
+      {
+        "iconSrc": "assets/icons/benefit-6.svg",
+        "iconAlt": "Seamless transition icon",
+        "title": "Seamless Transition",
+        "description": "Move confidently from learning mode to practice mode"
+      }
+    ]
+  },
+
+  "personalCoaching": {
+    "imageSrc": "assets/coaching-photo.jpg",
+    "imageAlt": "Personal trading coach",
+    "title": "Personal Coaching",
+    "subtitle": "Get professional 1-on-1 training",
+    "body": "Our Academy Trainer program pairs you with a dedicated personal trading coach who knows your goals and stays with you every step of the way. Get real-time answers by phone, practical training on live market setups, and steady support to build sharp trading skills with confidence.",
+    "ctaButton": "Meet Your Trainer",
+    "ctaUrl": "#form"
+  },
+
+  "learn": {
+    "title": "Learn and Practice",
+    "subtitle": "Join our Live Campus",
+    "body": "All your courses, trainer sessions, and trading tools - accessible in one platform. Whether it's trading basics, digital asset fundamentals or an introduction to Technical Analysis, we got you covered. You just sit back and watch!",
+    "bulletPoints": [
+      "Let us introduce you to the Financial Markets",
+      "Watch our exclusive videos on hot trading topics",
+      "Find out all about Digital Assets",
+      "Learn How to use Technical Analysis",
+      "Take advantage of our AI-Powered Trading Tools"
+    ],
+    "imageSrc": "assets/learn-screenshot.png",
+    "imageAlt": "BrainTrade platform screenshot"
+  },
+
+  "switchMode": {
+    "title": "Switch To Trader Mode",
+    "subtitle": "Get ready to enter the world of trading",
+    "body": "Access educational resources, practice in a simulated environment, and trade independently when you choose!",
+    "imageSrc": "assets/switch-screenshot.png",
+    "imageAlt": "Trading platform screenshot"
+  },
+
+  "faq": {
+    "sectionTitle": "Frequently Asked Questions",
+    "sectionSubtitle": "We are glad to help! Here are some of the most common questions and queries about BrainTrade, to save you some time.",
+    "decorativeImageSrc": "assets/faq-image.jpg",
+    "decorativeImageAlt": "Students learning",
+    "items": [
+      {
+        "question": "Do I need prior experience to start the courses?",
+        "answer": "No prior experience is required to start the courses. BrainTrade values transparency above all else, and our goal is to guide you through the educational process step by step, starting from the fundamentals.",
+        "openByDefault": true
+      },
+      {
+        "question": "Why should I upgrade my package with BrainTrade?",
+        "answer": "",
+        "openByDefault": false
+      },
+      {
+        "question": "Is BrainTrade safe?",
+        "answer": "",
+        "openByDefault": false
+      },
+      {
+        "question": "How can I ask other questions about BrainTrade?",
+        "answer": "",
+        "openByDefault": false
+      },
+      {
+        "question": "Is BrainTrade only about trading courses?",
+        "answer": "",
+        "openByDefault": false
+      },
+      {
+        "question": "How is BrainTrade different from buying a random trading course?",
+        "answer": "",
+        "openByDefault": false
+      }
+    ]
+  },
+
+  "testimonials": {
+    "sectionTitle": "A Word From Our Students",
+    "sectionSubtitle": "Enough talk from our side. Here are the opinions that matter the most - your own.",
+    "items": [
+      {
+        "photoSrc": "assets/testimonials/jenny-wilson.jpg",
+        "photoAlt": "Jenny Wilson",
+        "name": "Jenny Wilson",
+        "role": "Customer Support Agent",
+        "quote": "BrainTrade really opened my eyes to how many opportunities show up in the markets every day. I started as a complete beginner and picked things up quickly because the video courses are clear, practical, and easy to follow. If you're new to trading, I truly recommend it. It covers the fundamentals every beginner needs at the start of their journey."
+      },
+      {
+        "photoSrc": "assets/testimonials/trevor-hawkins.jpg",
+        "photoAlt": "Trevor Hawkins",
+        "name": "Trevor Hawkins",
+        "role": "Accountant",
+        "quote": "Friends of mine bought me access to BrainTrade as a gift for my birthday and this was one of the coolest presents I have ever received. I started with the most basic courses and it was really a no-brainer from there, as I upgraded my package in almost a week. BrainTrade provides all the necessary knowledge and tools to navigate the financial markets and get the upper hand."
+      }
+    ]
+  },
+
+  "footer": {
+    "links": [
+      { "label": "Privacy Policy", "url": "/privacy-policy" },
+      { "label": "Contact Us", "url": "/contact" },
+      { "label": "Terms and Conditions", "url": "/terms" }
+    ],
+    "legalText": "BrainTrade (www.thebraintrade.com) is operated by BT Nexus Limited. Please read the terms, privacy policy, and cookie policy before proceeding.",
+    "copyright": "© 2026 All rights reserved."
+  }
+}

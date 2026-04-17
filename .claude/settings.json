@@ -1,0 +1,17 @@
+{
+  "projectName": "creative-claude",
+  "permissions": {
+    "allow": [
+      "git status",
+      "git diff",
+      "git log",
+      "git branch",
+      "git pull"
+    ],
+    "deny": [
+      "git push --force",
+      "git push origin main",
+      "git reset --hard"
+    ]
+  }
+}
