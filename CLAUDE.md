@@ -32,6 +32,14 @@ so Claude Code behaves consistently for everyone.
 
 ---
 
+## Project Knowledge (Claude Memory)
+All shared knowledge lives in `.claude/memory/` — Claude loads these automatically:
+- `MEMORY.md` — index of all memory files
+- `project_figma_lp_template.md` — Figma file structure, section map, JS snippets, design tokens
+- `reference_figma_file.md` — Figma file key, page names, all key node IDs
+
+---
+
 ## Team Contacts
 - Project owner: @chr1srusev
 - Repo: https://github.com/chr1srusev/creative-claude
