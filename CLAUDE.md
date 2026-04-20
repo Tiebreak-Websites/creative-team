@@ -15,8 +15,8 @@ so Claude Code behaves consistently for everyone.
 ---
 
 ## Protected Files — DO NOT MODIFY without team approval
-- `index.html` — main LP template, changes need PR review
-- `content.json` — shared content data, coordinate with team before editing
+- `projects/braintrade-template/index.html` — main LP template, changes need PR review
+- `projects/braintrade-template/content.json` — shared content data, coordinate with team before editing
 
 ## Safe to Edit Freely
 - Your own feature branch files

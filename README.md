@@ -6,10 +6,17 @@ Shared home for the Figma tools, automations, and landing-page. Everything here 
 
 ## What's in here
 
+### Projects
+
 | Path | What it is |
 | --- | --- |
-| `index.html` | Main landing-page template — protected, PR review required before changes |
-| `content.json` | Shared content data used by the LP template — coordinate before editing |
+| [`projects/braintrade-template/`](projects/braintrade-template/) | BrainTrade landing-page template (`index.html` + `content.json`). Protected — changes need PR review. |
+| [`projects/creative-summary/`](projects/creative-summary/) | Automation that reads a Figma LP file and places a bilingual creative summary above the desktop frame. Scaffolded, build in progress. |
+
+### Shared infrastructure
+
+| Path | What it is |
+| --- | --- |
 | `.claude/commands/` | Team slash commands (`/pull`, `/push`) — loaded automatically by Claude Code |
 | `.claude/memory/` | Shared Claude memory — Figma file keys, node IDs, design tokens |
 | `CLAUDE.md` | Project rules Claude Code follows in this repo (read this first) |
@@ -74,8 +81,8 @@ Commit your current work and push it to the team repo as a pull request. Enforce
 
 ## Protected files — ask before editing
 
-- `index.html` — main LP template; structural changes need a PR discussion
-- `content.json` — shared content; coordinate with the team before editing
+- `projects/braintrade-template/index.html` — main LP template; structural changes need a PR discussion
+- `projects/braintrade-template/content.json` — shared content; coordinate with the team before editing
 - `CLAUDE.md` — project rules; changes require team sign-off
 
 Everything else in your feature branch is yours to iterate on freely.
