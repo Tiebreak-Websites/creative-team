@@ -1,6 +1,6 @@
 # Creative Team
 
-Shared home for the Figma tools, automations, and landing-page templates our team builds together. Everything here is designed to be used alongside [Claude Code](https://claude.com/claude-code) — a teammate runs Claude in this folder, pulls the latest tools, and ships new ones back via pull requests.
+Shared home for the Figma tools, automations, and landing-page. Everything here is designed to be used alongside [Claude Code](https://claude.com/claude-code) — Runs Claude in this folder, pulls the latest tools, and ships new ones back via pull requests.
 
 ---
 
