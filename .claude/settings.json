@@ -1,5 +1,5 @@
 {
-  "projectName": "creative-claude",
+  "projectName": "creative-team",
   "permissions": {
     "allow": [
       "git status",
@@ -10,7 +10,6 @@
     ],
     "deny": [
       "git push --force",
-      "git push origin main",
       "git reset --hard"
     ]
   }

@@ -41,5 +41,5 @@ All shared knowledge lives in `.claude/memory/` — Claude loads these automatic
 ---
 
 ## Team Contacts
-- Project owner: @chr1srusev
-- Repo: https://github.com/chr1srusev/creative-claude
+- Project owner: @chr1srusevv
+- Repo: https://github.com/chr1srusevv/creative-team
