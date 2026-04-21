@@ -12,12 +12,13 @@ Shared home for the Figma tools, automations, and landing-page. Everything here 
 | --- | --- |
 | [`projects/braintrade-template/`](projects/braintrade-template/) | BrainTrade landing-page template (`index.html` + `content.json`). Protected — changes need PR review. |
 | [`projects/creative-summary/`](projects/creative-summary/) | Automation that reads a Figma LP file and places a bilingual creative summary above the desktop frame. Scaffolded, build in progress. |
+| [`projects/qa/`](projects/qa/) | **v1.1** — Automated QA for localized Figma landing pages. Python scripts (REST API, no MCP) + LLM judgment. Runs in seconds. Checks parity, language, placeholders, images, overflow, CTAs, regulator phrases, conversion tone. |
 
 ### Shared infrastructure
 
 | Path | What it is |
 | --- | --- |
-| `.claude/commands/` | Team slash commands (`/pull`, `/push`) — loaded automatically by Claude Code |
+| `.claude/commands/` | Team slash commands (`/pull`, `/push`, `/qa`) — loaded automatically by Claude Code |
 | `.claude/memory/` | Shared Claude memory — Figma file keys, node IDs, design tokens |
 | `CLAUDE.md` | Project rules Claude Code follows in this repo (read this first) |
 
@@ -76,6 +77,11 @@ Sync the latest team tools from GitHub into your local folder. Safe to run anyti
 
 ### `/push`
 Commit your current work and push it to the team repo as a pull request. Enforces the feature-branch rule, asks before committing, and never force-pushes.
+
+### `/qa` (v1.1)
+QA a localized Figma landing page. Usage: `/qa <figma-url> <lang> [--brand <name>] [--tone] [--post]`. Runs a one-shot REST fetch + deterministic Python checks (parity, placeholders, images, overflow, CTAs, regulator phrases) and uses Claude only for language and optional tone judgment. Writes a Markdown report to `projects/<brand>/qa-reports/`, optionally pins comments to Figma nodes with `--post`.
+
+Requires `FIGMA_TOKEN` (Personal Access Token from figma.com/settings) in your shell env. See [`projects/qa/README.md`](projects/qa/README.md) for one-time setup.
 
 ---
 

@@ -1,133 +1,125 @@
 ---
-description: QA a localized Figma landing page — checks content parity, language, placeholders, images, overflow, CTAs, and conversion-focused tone
+description: QA a localized Figma landing page — fast script-driven checks (parity, placeholders, images, overflow, CTAs, regulator phrases) plus LLM judgment on language + conversion tone
 ---
 
 # /qa — Figma landing-page QA
 
-The teammate is asking Claude to QA a localized landing page inside Figma. Given a Figma URL and a target-language code, run seven checks on the local-language version and post one Figma comment per issue, pinned to the offending node.
+The teammate is asking Claude to QA a localized landing page inside Figma. Two phases:
+
+1. **Fast, deterministic checks** run as Python scripts against the Figma REST API. One HTTP fetch, local JSON analysis. No Figma MCP round-trips.
+2. **LLM judgment** (language correctness, conversion-focused tone) runs in this conversation on a compact text dump emitted by Phase 1.
+
+Output is a Markdown report at `projects/<brand>/qa-reports/<YYYY-MM-DD-HHmm>-<fileKey>.md`. Posting comments to Figma is intentionally *opt-in* (`--post`) — not done by default.
 
 ## Input parsing
 
 Arguments: `$ARGUMENTS`
 
-Expected format: `<figma-url> <language-code>`
+Expected format: `<figma-url> <language-code> [--brand <name>] [--tone] [--post]`
 
-- `<figma-url>` — any valid Figma file URL; parse out the file key yourself.
-- `<language-code>` — ISO-639-1 code of the target local language (`es`, `pt`, `fr`, `de`, etc.). English is always assumed to be the reference language.
+- `<figma-url>` — any valid Figma file URL; parse out the file key yourself. From `https://figma.com/design/:fileKey/:fileName?node-id=…`, the fileKey is the segment after `/design/`.
+- `<language-code>` — ISO-639-1 code (`es`, `pt`, `fr`, `de`). Phrases like "Spanish Latam" → map to `es`. If the teammate gives you a label you can't confidently map, ask.
+- `--brand <name>` — optional; folder name under `projects/`. If omitted, try to auto-match the Figma file name against folders in `projects/` and use the hit.
+- `--tone` — optional. Runs Phase 2 tone analysis. Off by default because tone analysis is the expensive part; skip it for routine localization QA.
+- `--post` — optional. Posts one Figma comment per finding (requires `FIGMA_TOKEN` with comment scope). Off by default — the Markdown report is the primary deliverable.
 
-If either argument is missing, stop and tell the teammate the expected usage — do not guess.
+If `<figma-url>` or `<language-code>` is missing, stop and tell the teammate the expected usage — do not guess.
 
-## Brand detection (optional)
+## Pre-flight
 
-Once the file is loaded, try to match the Figma file's name or top-level page name against folder names in `projects/`. If there's a hit:
-- Load `projects/<brand>/qa-config.json` if it exists.
-- Use its `brand_name_allowlist`, `loanword_allowlist`, `target_voice`, and `device_widths` overrides where present.
+1. `echo $FIGMA_TOKEN | head -c 4` — if empty, stop and tell the teammate to set `FIGMA_TOKEN` (see [projects/qa/README.md](../../projects/qa/README.md)).
+2. `python --version` — must be ≥3.8. If Python is missing, stop and link the teammate to python.org.
 
-If no match or no config: continue with built-in defaults (see "Defaults" at the bottom). Mention in the final chat summary which brand was detected (or that defaults were used).
+## Phase 1 — deterministic checks (scripts)
 
-## Procedure
+Run both scripts from the repo root:
 
-### 1. Load the file
-Use the Figma MCP (`get_metadata`, `get_design_context`, or equivalent read endpoints) to fetch:
-- All top-level frames on the page
-- Their bounding boxes, widths, and heights
-- All text nodes with their content, parent frame, and bounding box
-- All image fills and whether they resolve to a source
-- Button/CTA nodes (components named like "Button", "CTA", or resolved by text + clickable shape heuristics)
-
-### 2. Identify target-language frames
-For each top-level frame, sample its text nodes and classify the dominant language. Keep frames whose dominant language is the target code; treat the rest as EN reference frames and ignore them.
-
-If zero frames match the target language, **stop** and report: "No frames found in `<lang>`. Is the language code correct?"
-
-### 3. Classify each LA frame as Desktop / Tablet / Mobile
-Default widths (overridable via qa-config.json):
-- Desktop: frame width ≥ 1200
-- Tablet: 600 ≤ width < 1200
-- Mobile: width < 600
-
-If any device is missing, **stop** and report which. If two frames fall in the same bucket, **stop** and ask the teammate to override widths via qa-config.json — do not guess.
-
-### 4. Extract ordered content per device
-For each LA device frame, walk the node tree top-to-bottom (by Y coordinate), producing an ordered list of items:
-```
-{ type: "text" | "image" | "cta", content: <string or asset ref>, bbox, nodeId }
-```
-Skip decorative elements (pure shape fills with no content).
-
-### 5. Run the seven checks
-
-#### 5.1 Cross-device parity
-Diff the three content lists. Match items by normalized text content (trim + lowercase + collapse whitespace), not by Figma layer names. Flag:
-- Content items present on one or two devices but missing on the third.
-- Items with the same logical role but different text across devices.
-- Items in a different relative order across devices (a CTA that's above the hero on Mobile but below it on Desktop, for example).
-
-#### 5.2 Wrong language
-For each text node in the LA frames, judge whether the text is actually in the target language. Flag:
-- Full English sentences left over.
-- Mixed-language phrases (e.g. "Download our app" with one local loanword) — flag by default.
-- Skip items in the brand's `loanword_allowlist` and `brand_name_allowlist` from qa-config.json.
-
-#### 5.3 Placeholder text
-Flag any text matching: lorem ipsum, "placeholder", "TBD", "TODO", "XXX", or unusually repeated filler strings.
-
-#### 5.4 Broken images
-Flag image fills that are empty, unresolved, or missing a source. Include the node ID and device in the report.
-
-#### 5.5 Overflow
-Flag text nodes whose rendered bounding box exceeds their parent container, or any node clipped by its parent. Only flag real overflow — not decorative bleeds that are clearly intentional.
-
-#### 5.6 CTA issues
-For each CTA node:
-- Dummy/placeholder text labels ("Button", "CTA", "Click here", "Submit")
-- Labels still in English on the LA version (covered partly by 5.2, but flag specifically as a CTA issue for severity)
-- Labels that differ across Desktop/Tablet/Mobile
-- Buttons in a visibly different position (relative to the section they're in) across devices
-
-#### 5.7 Conversion-focused tone
-For each major copy block (headlines, subheads, body paragraphs, CTAs), evaluate against this default voice — or the brand's `target_voice` if set in qa-config.json:
-
-> **Default voice:** Confident, specific, benefit-led, action-driving. Retail-friendly but authoritative. Every headline earns its space.
-
-Flag any block that is:
-- Vague or generic (no specific benefit or number)
-- Hedged or weak ("might help", "could potentially", "try to")
-- Filler / padding (words that add no meaning)
-- Tonally off for financial trading (overly casual, meme-y, or hype)
-- Inconsistent in tone with the rest of the page
-
-For each flagged block, produce:
-- **What's weak** (one line)
-- **Why it hurts conversion** (one line)
-- **Suggested rewrite** (one tighter alternative)
-
-Also surface regulator-unfriendly language as **warnings** (not errors): "guaranteed returns", "risk-free", "can't lose", "100% accuracy", etc.
-
-### 6. Post findings to Figma
-
-For each issue, create a Figma comment **pinned to the offending node** using the Figma MCP's write-capable comment endpoint (try `use_figma` if no dedicated tool exists; most Figma MCP installs expose `POST /v1/files/:key/comments` with a `client_meta` node anchor).
-
-Comment body format:
-```
-[QA · <check-name> · <severity>]
-<one-line description of the issue>
-
-Suggested rewrite:  (only for tone issues)
-<rewrite>
+```bash
+CACHE=$(python projects/qa/scripts/fetch.py <fileKey>)
+python projects/qa/scripts/check.py "$CACHE" <lang> [--brand <name>]
 ```
 
-Severity: `error` (parity mismatch, missing device, broken image, placeholder, wrong language, weak conversion copy) or `warning` (regulator-unfriendly phrasing, minor tone inconsistency, overflow in a decorative context).
+`check.py` prints a JSON summary to stdout with `findingsPath`, `textsPath`, and counts. Read both files.
 
-**Fallback** — if the Figma MCP cannot create comments in this project, save the full report to `projects/<brand>/qa-reports/<YYYY-MM-DD-HHmm>-<file-key>.md` (create folders as needed) and tell the teammate where it landed. Do not silently skip.
+`findings.json` already covers checks **5.1 parity, 5.3 placeholder, 5.4 broken images, 5.5 overflow, 5.6 CTA issues (partial), and regulator-phrase warnings from 5.7**. No LLM calls needed for any of these.
 
-### 7. Summarize in chat
-After posting, print a single-line summary:
+If either script exits non-zero, read its stderr, surface the error to the teammate, and stop.
+
+## Phase 2 — LLM judgment (only if `--tone` is set, or always for language)
+
+### 2a. Wrong language (check 5.2) — always runs
+
+Read `texts.json`. For each text in the target-language devices, flag any that is obviously not in the target language (full English sentences, mixed-language phrases). Skip loanwords/brand names per the brand's `qa-config.json` allowlists.
+
+Append one finding per flagged text to the findings list, in the same shape as Phase 1:
+```json
+{"check": "wrong-language", "severity": "error", "device": "<device>", "nodeId": "<id>", "message": "<describe>"}
 ```
-/qa done — <N> issues (<errors> errors, <warnings> warnings) · <comments-posted> Figma comments posted · brand: <detected-or-default>
+
+### 2b. Conversion-focused tone (check 5.7) — only with `--tone`
+
+Read `texts.json`. For each major copy block (hero, h1, h2, body with fontSize≥16, CTAs), evaluate against the brand's `target_voice` (or default voice). Flag vague, hedged, filler, or tonally-off blocks. For each flagged block, produce a one-line "what's weak", one-line "why it hurts conversion", and one tighter "suggested rewrite". Append as findings with `check: "tone"`, `severity: "error"` (or `warning` for minor), and include `rewrite` field.
+
+Only run this if `--tone` was passed. Otherwise skip and note in the summary.
+
+## Phase 3 — write the report
+
+Create `projects/<brand>/qa-reports/<YYYY-MM-DD-HHmm>-<fileKey>.md` (create folders as needed — use `<brand>=default` if no brand). Structure:
+
+```markdown
+# QA report — <fileName>
+
+- File: https://figma.com/design/<fileKey>/
+- Language: <lang>
+- Brand: <brand-or-default>
+- Ran at: <timestamp>
+- Counts: <N> issues (<E> errors, <W> warnings)
+
+## Summary by check
+| Check | Errors | Warnings |
+| --- | --- | --- |
+…
+
+## Findings
+
+### Cross-device parity (5.1)
+- [error] desktop · nodeId `1:31` — <message>
+…
 ```
 
-Followed by a grouped breakdown: issues-per-device, issues-per-check-category.
+One section per check category. For tone findings, include the rewrite block.
+
+## Phase 4 — optional: post to Figma (only if `--post`)
+
+Run:
+```bash
+python projects/qa/scripts/post.py projects/qa/.cache/<fileKey>.findings.json
+```
+
+The script posts one pinned comment per finding (small delay between calls for rate-limit safety) and prints a JSON summary with posted/failed counts. Known limitation: instance-internal node IDs of the form `I<parent>;<child>` will 400 — those findings are skipped and reported as failures. The Markdown report still covers them.
+
+Requires `FIGMA_TOKEN` with Comments:Write scope.
+
+## Phase 5 — summarize in chat
+
+One-line summary followed by a short breakdown:
+
+```
+/qa done — <N> issues (<E> errors, <W> warnings) · report: projects/<brand>/qa-reports/<filename>.md · brand: <detected-or-default> · tone: <on|skipped> · comments: <posted-count|skipped>
+```
+
+Then: issues-per-device table + issues-per-check table (reuse what's in the report).
+
+## Caching
+
+`fetch.py` writes the full file JSON to `projects/qa/.cache/<fileKey>.json`. Re-running `check.py` against that cache is free. If the teammate wants fresh data, delete the cache file (or just re-run `fetch.py` — it overwrites).
+
+## Fail-fast rules
+
+- Missing `FIGMA_TOKEN`: stop, link the teammate to setup docs.
+- `fetch.py` errors: read stderr, surface verbatim. Common causes: bad file key, token lacks file access, file is in a team the token can't reach.
+- `check.py` errors: usually ambiguous device classification. Tell the teammate to rename a frame or add `device_widths` overrides to `projects/<brand>/qa-config.json`.
+- Never silently skip a check. If language/tone LLM judgment can't complete (e.g. texts.json empty), say so.
 
 ## Defaults (when no qa-config.json is present)
 
@@ -136,26 +128,14 @@ Followed by a grouped breakdown: issues-per-device, issues-per-check-category.
   "target_voice": "Confident, specific, benefit-led, action-driving. Retail-friendly but authoritative. Every headline earns its space.",
   "brand_name_allowlist": [],
   "loanword_allowlist": [],
-  "device_widths": {
-    "desktop_min": 1200,
-    "tablet_min": 600
-  }
+  "device_widths": { "desktop_min": 1200, "tablet_min": 600 }
 }
 ```
 
 ## Non-goals for this version
 
-- Does not compare LA content against the EN reference (EN is for humans).
-- Does not auto-fix anything in Figma — every change goes through a human.
-- Does not block `/push`; `/qa` is run on demand.
+- Does not compare LA content against an EN reference.
+- Does not auto-fix anything in Figma.
+- Does not block `/push`.
 - Does not generate more than one suggested rewrite per tone issue.
-- Does not evaluate visual hierarchy, color contrast, accessibility, or responsive breakpoints beyond the three device frames.
-
-## If something goes wrong
-
-- Figma file not reachable → stop, ask the teammate to check the link + their Figma auth.
-- Figma MCP not connected → stop, link them to the MCP setup docs.
-- Ambiguous device classification → stop, ask for qa-config.json override.
-- Language detection uncertain on a given node → err on the side of flagging (human reviewer decides).
-
-Never silently skip a check. If a check cannot run, say so in the chat summary.
+- Does not evaluate color contrast, accessibility, or breakpoints beyond the three device frames.
