@@ -43,14 +43,24 @@ Pull these out of the message (free-form, no rigid syntax):
 
 ---
 
-## Phase 0 — pick the MVP size
+## Phase 0 — fill the brief slots
 
-The MVP is **always 1:1**. Pick the MVP pixel size like this:
+The MVP is **always rendered at 1200×1200, 1:1**. The new brief is tightly tied to that canvas (90px x-height minimums, 60px edge safe area, 90px button height) — do not change the canvas size.
 
-- If the user requested a `WxW` size (square), use the **largest** such size as the MVP size. The frame at that size can be painted directly from the MVP image — no recomposition needed.
-- Otherwise default the MVP to **`1200x1200`**. (No Figma frame is created for the MVP if the user didn't ask for a square size — it only serves as the reference master for the recompositions.)
+Before calling `generate_image`, fill these slots from the user's input:
 
-Note the MVP size and the MVP aspect (`1:1`) for the next phase.
+- `HERO` ← the user's Title verbatim. This is the single dominant phrase on the banner.
+- `SUPPORT` ← leave blank by default. Only fill if the user explicitly provided a separate supporting line. Do not split the Title to invent one.
+- `ACCENTS` ← leave blank by default. Only fill if the user explicitly provided tickers, numbers, percentages, dollar figures, or brand names as a separate field. Do not extract them from the Title.
+- `CTA` ← the user's CTA verbatim.
+- `LANGUAGE` ← **auto-detect from the HERO + CTA text** and write it in the brief as a concrete label (e.g. `pt-BR`, `es-LATAM`, `English`, `Arabic`, `Hebrew`, `th-TH`). The brief uses LANGUAGE to drive localization reasoning and RTL handling — get this right or the banner ships generic Western imagery on a non-English campaign.
+
+Auto-detect LANGUAGE rules:
+- If the copy is in Portuguese with LATAM cues (BRL, Brazilian Portuguese spellings like "você," "Brasil"), use `pt-BR`.
+- If Spanish with LATAM cues, use `es-LATAM`. If European Spanish (Spain, EUR), use `es-ES`.
+- If the script is Arabic, default to `Arabic` (let the brief's RTL section pick dialect from copy cues).
+- If Hebrew, use `Hebrew`. If Thai, use `th-TH`. If Farsi/Persian, use `Farsi`.
+- If unclear, default to `English`.
 
 ---
 
@@ -66,98 +76,214 @@ mcp__7e69985f-4eb5-4034-a063-d465c056f301__generate_image
     quality: "high"
     resolution: "1k"
     count: 1
-    prompt: <MVP brief with {WIDTH}/{HEIGHT}/{TITLE}/{CTA} substituted>
+    prompt: <MVP brief with HERO/SUPPORT/ACCENTS/CTA/LANGUAGE slots filled>
 ```
 
 Block on this. The recomposition pass cannot start until the MVP completes — wait for `status: completed` and capture the MVP's `job_id` and `rawUrl`. Use a short background timer (60–90s) and re-check via `job_display` until status flips. Do not poll in tight loops.
 
-### MVP brief (substitute placeholders only)
+### MVP brief (fill the slots only — do not edit anything else)
 
 ```
-[BANNER BRIEF]
-Create a {MVP_WIDTH}×{MVP_HEIGHT} square banner ad designed for maximum click-through rate (CTR),
-engineered as if by a senior performance marketing specialist and a UX/UI
-designer working together. The output must be a flat finished banner —
-no mockup frame, no device bezel, no "ad preview" chrome.
+Create a 1200×1200 square banner ad designed for maximum click-through rate (CTR), with the combined expertise of a senior performance marketing specialist and a UX/UI designer.
 
-[VERBATIM COPY — RENDER EXACTLY, NO ADDITIONS]
-Headline: "{TITLE}"
-CTA button label: "{CTA}"
+═══════════════════════════════════════
+OUTPUT FORMAT (non-negotiable)
+═══════════════════════════════════════
+- Canvas: exactly 1200×1200 pixels, square 1:1.
+- Flat finished banner only. No mockup frame, no device bezel, no ad preview chrome, no "Ad" label, no browser UI.
+- Production-ready: sharp, balanced, high contrast, instantly scannable.
 
-CRITICAL TEXT RULES:
-- Render every character of the copy above with perfect spelling and spacing.
-- Do NOT add any words, badges, labels, fine print, asterisks, terms, URLs,
-  prices, dates, percentages, or disclaimers that are not in the copy above.
-- Do NOT translate, summarize, paraphrase, or extend the copy.
-- Respect line breaks if present.
+═══════════════════════════════════════
+CONTENT — render verbatim, nothing else
+═══════════════════════════════════════
+Use ONLY the text in the slots below. Do not add, invent, paraphrase, translate, summarize, or extend any copy, taglines, disclaimers, badges, labels, URLs, prices, dates, percentages, icons, logos, or extra words. Every character in the final image must come verbatim from these slots, with perfect spelling, spacing, punctuation, and accent marks.
 
-[DESIGN SYSTEM — apply all of the following]
+HERO: {HERO}
+SUPPORT: {SUPPORT}
+ACCENTS: {ACCENTS}
+CTA: {CTA}
+LANGUAGE: {LANGUAGE}
 
-VISUAL DENSITY & STOPPING POWER
-- This banner needs to STOP a thumb mid-scroll. Plain, minimal, "tasteful editorial"
-  layouts lose the auction. Aim for rich, layered, high-energy composition with
-  multiple visual elements working together — not empty space and one line of text.
-- Build the frame with LAYERS: a photorealistic hero subject in the foreground,
-  a textured or environmental background, supporting graphic elements (chart lines,
-  product shots, light flares, motion streaks, UI fragments, currency symbols,
-  icons — whatever fits the topic), and the copy layer on top.
-- Use depth: foreground / midground / background should be visually distinct.
-  Shallow depth of field, light bokeh, or motion blur on background elements is
-  encouraged when it helps the hierarchy.
+CTA RULE:
+If the CTA slot is empty, do NOT render a button anywhere on the canvas. No empty button, no placeholder text, no decorative button shape. The composition must be designed around hero + support + accents only, with the visual flow ending on the hero phrase or accent number instead.
 
-VISUAL HIERARCHY (still load-bearing — density is not chaos)
-- One dominant focal point grabbing attention within 0.3s (F or Z scan path).
-- Two-tier text hierarchy: headline (largest, highest contrast) → CTA button.
-  The CTA must remain the highest-contrast interactive element even inside a
-  busy composition.
-- Keep critical text and the CTA inside safe margins (~60px from edge).
-- Minimum WCAG AA contrast between text and whatever's directly behind it.
+═══════════════════════════════════════
+CONTENT ANALYSIS (perform before composing)
+═══════════════════════════════════════
+Before generating the layout, analyze the supplied content and identify the SINGLE most conversion-critical element within it — the phrase, number, or word that carries the strongest CTR-driving weight. This is the "money element."
 
-IMAGERY — DEFAULT TO PHOTOREALISM
-- Default style is photorealistic — sharp, high-detail, professionally lit photography.
-- If a human is present: candid, real-feeling, single subject, sharp eye contact
-  or eye-line leading toward the headline/CTA. Authentic styling, not stock-photo-smile.
-  Cinematic lighting (rim light, golden hour, hard side light, neon glow — match
-  the topic's mood).
-- If a product/object is the hero: studio-grade rendering, sharp focus, premium
-  finish, dramatic lighting, environmental context (not floating on white).
-- Supporting visual elements (charts, graphs, devices, UI screens, currency,
-  particles, money, sparks, smoke, light leaks) are encouraged — pile them in
-  IF they reinforce the message.
-- BANNED: generic AI-stock-photo aesthetic — fake plastic smiles, cliché glowing
-  blue tech orbs, oversaturated "AI gradient soup," symmetrical abstract blobs,
-  hexagon grids, generic "digital network" lines.
+Selection priority for the money element (in order):
+1. A specific number, percentage, dollar figure, or ticker (almost always wins for finance/trading creative)
+2. A high-intensity benefit verb or transformation phrase ("double," "unlock," "win," "free," "today")
+3. A named entity with strong recognition value (brand, ticker, product name)
+4. A loss-aversion or urgency phrase ("last chance," "ends today," "before it's gone")
+5. If none of the above exist, the hero phrase itself is the money element
 
-COMPOSITION
-- Rule of thirds — focal subject and CTA on intersection points.
-- One clear direction of visual flow guiding the eye toward the CTA.
-- Negative space exists around the HEADLINE specifically, so it stays legible.
+After identifying the money element, treat it as the SECOND-most visible element on the canvas — ranked directly after the CTA button in visual prominence. Visibility ranking from most to least visible:
 
-PERFORMANCE DRIVERS
-- Pattern interrupt: unexpected color contrast, an unusual hero element.
-- One strong emotional trigger (curiosity, aspiration, urgency, FOMO, relief).
-- Benefit-forward visual metaphor: SHOW the outcome.
-- Headline readable at 25% zoom (thumbnail test).
+  1. CTA button (if present) — highest contrast, clearest click target
+  2. Money element — high-CTR conversion styling (see below)
+  3. Hero phrase (if separate from money element)
+  4. Support copy
+  5. Remaining accents
 
+If there is no CTA, the money element becomes the most visible element on the canvas.
+
+HIGH-CTR CONVERSION STYLING for the money element:
+- Render in the accent color (the highest-saturation, most attention-grabbing color in the palette after the CTA color)
+- Weight 800–900, heavier than surrounding copy
+- Size: equal to or larger than the hero phrase
+- Optional subtle treatments allowed (and only here): a colored underline, a highlight bar behind the text, or a tight box outline — pick ONE, never combine
+- Must sit at or near a rule-of-thirds intersection
+- Must not touch or overlap other text blocks
+- If the money element is a number with a unit (%, $, x), keep the unit visually attached but slightly smaller than the figure itself
+
+The money element and the CTA together form the visual anchor pair. Everything else in the composition supports their relationship.
+
+═══════════════════════════════════════
+LOCALIZATION (perform before imagery — applies to ALL languages)
+═══════════════════════════════════════
+The LANGUAGE slot determines the cultural framing of the entire banner — not just the script. A banner shown to an audience in any market must feel native to them: the people, environment, lighting, props, wardrobe, and overall visual mood should read as belonging to that market's contemporary reality. Generic Western imagery defaulted onto a non-English banner is the single most common reason performance creative underperforms in localized markets.
+
+This is NOT a template-matching task. Do not apply a fixed visual style to a language. Instead, perform active localization reasoning for every banner.
+
+LOCALIZATION REASONING (perform before deciding any imagery):
+
+Step 1 — Identify the target market.
+Read the LANGUAGE slot and infer the primary geographic market it serves. If the language is regional or has multiple major markets, use context clues in the supplied copy (currency symbols, city names, tickers, brand names, register of speech, dialect markers, cultural references) to narrow it down. If still ambiguous, default to the most populous primary market for that language.
+
+Step 2 — Read the copy context.
+Analyze HERO, SUPPORT, and ACCENTS together to understand what this specific banner is selling, what emotional tone it carries, who the realistic target customer is for this exact offer, and what setting or moment would feel native to that customer's daily life. A banner about retirement planning needs a different subject and setting than one about quick day-trading wins, even within the same language.
+
+Step 3 — Compose locally.
+Make every imagery decision — subject ethnicity and features, age range, wardrobe, setting, architecture, lighting quality, props, color mood, gesture, expression — based on what would feel authentic to a real person in that market viewing this exact ad on their phone. Choose specifics that match this banner's copy and emotional intent, not generic stand-ins for "the market."
+
+Step 4 — Vary across banners.
+If multiple banners are being produced for the same market, do NOT repeat the same subject archetype, setting, or visual treatment across them. Localization is about authenticity to the market, not about reusing a stored look. Each banner should feel locally native AND visually distinct from any other banner in the same campaign.
+
+CULTURAL SAFETY CHECKS (universal, apply during imagery composition):
+
+- Match subject features, wardrobe, and setting to the actual market — never use placeholder Western defaults on non-English banners, and never apply imagery cues from one region to another (no Mexican visual tropes on Brazilian creative, no Gulf attire on Levantine creative, no East Asian features on Latin American creative, etc.).
+- Respect regional sensibilities around dress, modesty, religious symbolism, alcohol, gambling, gender representation, and physical contact. When uncertain, default to neutral professional or aspirational framing rather than lifestyle clichés.
+- Avoid hand gestures that read negatively in the target market: thumbs-up in parts of the Middle East and West Africa; OK sign (fingertip circle) in Brazil, Turkey, and parts of the Middle East; pointing with the index finger across much of Asia and the Middle East; prominent left-hand display in Middle Eastern and South Asian markets.
+- Apply color meaning to the market: red signals loss in Western finance but luck and prosperity in Chinese-market creative; green is positive in most Western markets but carries political and religious associations in parts of the Arab world; white reads premium in the West but mourning in parts of East Asia; gold reads premium in Gulf and East Asian markets, less so in Western ones. Use color choices that reinforce the intended emotional outcome for the specific market.
+- The emotional register that converts varies by market. Match the visual mood to what is credible and appealing for the target audience — not what would work for an English-speaking Western audience.
+
+═══════════════════════════════════════
+LANGUAGE & RTL HANDLING (evaluate before composing)
+═══════════════════════════════════════
+Before laying out the canvas, determine whether the LANGUAGE slot specifies a right-to-left (RTL) script. RTL languages include: Arabic (all dialects — Gulf, Levantine, Egyptian, MSA), Hebrew, Urdu, Farsi/Persian, Pashto, Sindhi, Kurdish (Sorani).
+
+If the language is RTL, the ENTIRE composition must be mirrored — this is non-negotiable for CTR in those markets. A left-aligned Latin-style layout in Arabic feels foreign, breaks scanning flow, and visibly tanks engagement. RTL audiences scan right-to-left, so the visual hierarchy must follow that path.
+
+RTL COMPOSITION RULES (apply only when language is RTL):
+- Mirror the entire layout: hero subject occupies the LEFT half of the canvas, headline copy stacked and right-aligned on the RIGHT half.
+- CTA placement: bottom-LEFT at a strong third intersection (the natural endpoint of an RTL scan).
+- Visual flow: HERO (top-right) → money element → CTA (bottom-left). The eye travels right-to-left and top-to-bottom.
+- Money element placement: top-right or upper-right third intersection — the first point an RTL viewer fixates on.
+- If a human subject is present, direct their gaze, body angle, or visual energy toward the LEFT (toward the headline and CTA), not the right.
+- All punctuation (commas, periods, question marks, parentheses, quotation marks) must render in their correct RTL form and position. No reversed or broken punctuation.
+- Numbers, percentages, tickers, and Latin-script brand names render in their original Western/Latin form (left-to-right) even inside an RTL line — do not mirror digits or English brand names.
+- Line breaks must respect Arabic word boundaries — never break a word mid-character or mid-ligature.
+
+RTL TYPOGRAPHY (apply only when language is RTL):
+- Use Arabic-native typefaces, NOT Latin fonts with Arabic fallbacks (which produce broken or stylistically mismatched letterforms).
+- Primary headline typeface: **Tajawal** (modern geometric, strong display weights, excellent for Gulf and broader Arabic markets) or **Cairo** (clean, contemporary, very legible at large sizes). Default to Tajawal for headline-heavy banners, Cairo for copy-heavy banners.
+- For Hebrew, default to Heebo or Rubik. For Urdu/Farsi, default to Vazirmatn or Noto Naskh Arabic.
+- Headline weight: 700–800 (Tajawal Bold or Cairo Bold/Black). Money element: 800–900 (Tajawal Black or Cairo Black).
+- Arabic typography requires slightly LOOSER leading than Latin — do not over-tighten or letterforms will collide on diacritics and ligatures.
+- Tracking: neutral. Never condense Arabic — it destroys ligature integrity and looks amateur.
+- No stretching, distortion, kashida-stretching for justification, or decorative effects on letterforms.
+
+If the language is LTR (English, Spanish, Portuguese, French, German, etc.), apply the standard LTR composition rules in the Composition section below.
+
+═══════════════════════════════════════
+HIERARCHY (3 tiers, 3 sizes max)
+═══════════════════════════════════════
+- Tier 1 — HERO + MONEY ELEMENT: largest text on canvas. Weight 800–900. Highest contrast. Headline x-height minimum 90px. The money element sits at or above hero size.
+- Tier 2 — SUPPORT: smaller than Hero. Weight 500–600. Softer color from the same family as Hero.
+- Tier 3 — CTA (only if CTA slot is filled): rendered inside a solid-fill button. Does not need to be the largest text — earns clicks through contrast, shape, and placement.
+
+Maximum 3 distinct font sizes across the entire banner.
+
+═══════════════════════════════════════
+COMPOSITION — LTR DEFAULT (use only when language is LTR)
+═══════════════════════════════════════
+- Hero subject occupies one half of the canvas (left or right).
+- Headline copy stacked, left-aligned, in the opposite half.
+- Money element placed at a strong third intersection, visually anchored to either the hero phrase or the CTA.
+- If a CTA is present: place it bottom-left or bottom-right at a strong third intersection. Visual flow: HERO → money element → CTA.
+- If no CTA: visual flow ends on the money element. Use breathing room at the bottom rather than filling the space.
+- The viewer's eye must land on the money element or HERO first, then travel to CTA. Nothing else competes for first fixation.
+- Strong negative space around the headline and money element.
+- If the background is busy, place headline over a subtle dark scrim or directional gradient for legibility.
+- At least 8% padding around every text block.
+- Critical text and CTA stay ~60px inside the canvas edges.
+
+For RTL languages, override this section entirely with the RTL Composition Rules above.
+
+═══════════════════════════════════════
 TYPOGRAPHY
-- Max 2 typefaces. Strong geometric or grotesque sans-serif for the headline
-  (Inter / Söhne / Helvetica Now feel).
-- Headline weight 700–900. Tight tracking. Tight leading.
-- Headline can sit on a subtle scrim, color block, or blurred area.
-- No outlined fonts. No warped letters. No 3D extrusions or chrome effects.
-- Highlight the most important words from the provided content using visual
-  emphasis only — larger size, bold weight, stronger contrast, or color emphasis.
-- Do NOT change the wording to create emphasis. Visual treatment only.
-- Fit the full text into no more than 5 lines while keeping it readable.
+═══════════════════════════════════════
+- Maximum 2 typefaces total across the entire banner.
+- LTR headline: Inter, Söhne, Helvetica Now, or a similar geometric/grotesque sans-serif. Default to Inter if uncertain.
+- RTL headline: Tajawal (default) or Cairo for Arabic; Heebo or Rubik for Hebrew; Vazirmatn or Noto Naskh Arabic for Urdu/Farsi.
+- Headline weight: 700–800. Money element weight: 800–900.
+- LTR: tight leading on the headline, neutral to slightly tight tracking — do not over-condense.
+- RTL: slightly looser leading than LTR equivalent, neutral tracking — never condense Arabic or Hebrew.
+- No stretching, distortion, warping, outlining, kashida-justification, or heavy effects on letterforms.
+- No drop shadows on text by default. If a subtle shadow is required for legibility over a busy background, keep it minimal: low opacity, tight offset, soft blur.
 
-COLOR
-- Rich, punchy, saturated, feed-ready palette. Multiple colors fine.
-- CTA must be the highest-contrast element in the composition.
-- Gradients welcome when they add depth or mood.
+═══════════════════════════════════════
+COLOR (3 roles)
+═══════════════════════════════════════
+- 1 dominant brand color (background or hero field)
+- 1 accent color — reserved primarily for the money element. Must be the second-highest-contrast color in the composition (after CTA color)
+- 1 CTA color — must be the highest-contrast color in the composition (omit if no CTA)
+- 1 neutral base (for body copy)
+- Apply market-aware color reasoning from the Localization section — color meanings shift by market and must support the intended emotional outcome for the target audience.
+- Avoid muddy gradients. If a gradient is used, make it clean, directional, and purposeful.
 
-OUTPUT
-- Flat finished banner: dense, layered, photorealistic, high-energy, instantly
-  scannable. Premium production quality — looks like a real brand campaign.
+═══════════════════════════════════════
+CTA BUTTON SPEC (only if CTA slot is filled)
+═══════════════════════════════════════
+- Solid fill only. No outline-only, no ghost buttons, no skeuomorphic 3D.
+- Shape: rectangular or pill. Sharp or softly rounded corners only.
+- Minimum button height: 90px on the 1200px canvas.
+- Horizontal padding inside button: ~1.5× the text x-height.
+- CTA color contrast against background must be the strongest in the layout.
+- For RTL languages, CTA button text renders in the RTL script using the same typeface as the headline (Tajawal/Cairo for Arabic).
+- If the CTA slot is empty, skip this section entirely. Do not render any button-shaped element.
+
+═══════════════════════════════════════
+IMAGERY
+═══════════════════════════════════════
+- Commit to ONE style: either photorealistic OR clean vector illustration. Never mix.
+- Localization reasoning (from the Localization section) is the primary source of truth for who appears on the canvas and where they appear. Subject features, wardrobe, setting, lighting, props, and visual mood must be reasoned from the LANGUAGE slot AND the supplied copy context for this specific banner — not pulled from generic defaults or repeated from previous banners.
+- If a human is present: one authentic candid subject, natural expression, sharply lit, clearly separated from background. Direct their gaze or body angle toward the money element or CTA.
+- Avoid gestures flagged in the Cultural Safety Checks for the target market.
+- Emotional trigger: pick ONE that fits the supplied copy AND the credible emotional register for the target market — curiosity, aspiration, urgency, confidence, or relief.
+- Use a benefit-forward visual metaphor. Show the outcome or transformation, not the product feature.
+
+═══════════════════════════════════════
+DO NOT RENDER (negative constraints)
+═══════════════════════════════════════
+- No invented words, logos, app icons, brand marks, or badges not present in the content slots.
+- No fake UI chrome: browser bars, phone frames, "Sponsored" or "Ad" labels, mock notifications.
+- No text inside the hero subject (no words on shirts, screens, signs, posters) unless that exact text is in the content slots.
+- No watermarks, signatures, "Generated by," or AI artifact marks.
+- No duplicated, mirrored, or repeated text anywhere on the canvas.
+- No mirrored or reversed Arabic/Hebrew letterforms — RTL text must render in its native direction, never flipped.
+- No Latin fonts forced onto Arabic or Hebrew copy — always use a native RTL typeface.
+- No generic Western stock-photo defaults on non-English banners — localization reasoning must drive imagery decisions.
+- No cross-region cultural mismatches: do not apply imagery cues from one region to another even within the same language family.
+- No repeated subject archetypes, settings, or visual treatments across banners in the same campaign — each banner must be visually distinct.
+- No gestures flagged as offensive in the target market.
+- No generic AI stock aesthetics: fake-smiling stock people, glowing tech orbs, oversaturated gradient soup, cliché upward arrows over cityscapes, stock handshakes, lightbulb metaphors.
+- No drop shadows, glows, or outlines on text by default.
+- No mixed visual styles (photo + vector together).
+- No button, button shape, or button placeholder if the CTA slot is empty.
+- No competing emphasis treatments — only the money element gets the highlight/underline/box treatment.
 ```
 
 ---
@@ -264,7 +390,7 @@ OUTPUT
 - Same message, same elements, new shape.
 ```
 
-Note: the literal `(1200×1200)` reference in the prompt is correct **only when the MVP was generated at 1200×1200** (the default case). If the MVP was generated at a different square size (e.g. the user requested `1500x1500`), substitute that size into the parenthetical too.
+Note: the literal `(1200×1200)` reference in the recomposition prompt is correct. The MVP is always rendered at 1200×1200 — the new slot-based brief is tightly coupled to that canvas size and is not parameterized.
 
 After firing the recomposition calls, wait for all to complete via `job_display` + a short background timer. Capture each result's `rawUrl`.
 
@@ -344,7 +470,7 @@ End with: `Open the file in Figma to review. Regenerate any size by re-running /
 
 - **GPT Image 2 only.** Never substitute `soul_2`, `nano_banana_2`, `marketing_studio_image`, etc.
 - **Resolution is always `1k`.** Both the MVP and every recomposition must be generated with `resolution: "1k"`. Never use `2k` or `4k` — the Figma frame is the source of truth for pixel dimensions; the generated image is fitted via `scaleMode: FILL`, so higher resolutions waste credit without improving the deliverable.
-- **MVP is always 1:1.** Recomposition is the only way to produce non-1:1 banners — never generate non-1:1 banners from scratch.
+- **MVP is always 1200×1200 (1:1).** Canvas size is locked — the brief's pixel measurements (90px x-height minimum, 60px edge safe area, 90px button height) only work at 1200×1200. Recomposition is the only way to produce non-1:1 banners — never generate non-1:1 banners from scratch.
 - **MVP is the single source of truth.** Every recomposition must pass the MVP's `job_id` as a `medias[]` entry with `role: "image"`. Never run a recomposition without the master reference.
 - **Verbatim copy.** Title and CTA pass through unchanged — no edits, no translations, no improvements. The recomposition prompt's "NO NEW CONTENT" rules forbid the model from adding or changing copy.
 - **Exact pixel sizes.** Frame is W×H to the pixel.
