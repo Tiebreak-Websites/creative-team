@@ -83,8 +83,8 @@ QA a localized Figma landing page. Usage: `/qa <figma-url> <lang> [--brand <name
 
 Requires `FIGMA_TOKEN` (Personal Access Token from figma.com/settings) in your shell env. See [`projects/qa/README.md`](projects/qa/README.md) for one-time setup.
 
-### `/banner` (v1.2)
-Generate CTR-optimized ad banners with **Higgsfield GPT Image 2** and drop them into a Figma file at the exact pixel sizes you ask for. End-to-end automation built around an **MVP-then-recompose** pipeline — one master design at 1:1, then recompositions for every other size. **v1.2 ships a senior-creative MVP brief with slot-based content, money-element prioritization, market-aware localization, and full RTL handling.**
+### `/banner` (v1.4)
+Generate CTR-optimized ad banners with **Higgsfield GPT Image 2** and drop them into a Figma file at the exact pixel sizes you ask for. **v1.4 introduces a designer architecture** — Claude reads the design framework, reasons through the creative decisions for each specific banner (subject, setting, lighting, palette, typography, money element, CTA), and writes a **concrete scene-level prompt** that the image model can render directly. The previous versions copy-pasted a generic rule manual to the model, which it can't act on. v1.4 fixes that.
 
 **Usage:**
 
@@ -103,20 +103,27 @@ cta: Receba Minha Consultoria Gratuita
 960x1200, 1200x1200, 1200x628
 ```
 
-**What happens (v1.2 flow):**
+**What happens (v1.4 flow):**
 
-1. **MVP pass.** Always generates ONE master banner at **1200×1200, 1:1** using the v1.2 senior-creative brief. The brief is **slot-based** — Claude fills `HERO` (your Title), `CTA`, and auto-detects `LANGUAGE` from the copy (`pt-BR`, `es-LATAM`, `Arabic`, `Hebrew`, `English`, etc.); `SUPPORT` and `ACCENTS` stay empty unless you explicitly provide them.
-2. **Content analysis.** The brief identifies the **money element** — the single most conversion-critical phrase, number, or word in the copy (specific number / percentage / ticker > benefit verb > named entity > loss-aversion phrase). Money element gets dedicated high-CTR conversion styling (accent color, weight 800–900, sits at a rule-of-thirds intersection, can carry an underline/highlight/box — pick one).
-3. **Localization reasoning.** LANGUAGE drives **active localization** of imagery — subject ethnicity & features, wardrobe, setting, lighting, props, color mood, gestures — all reasoned from the target market AND the copy context for this specific banner. Includes cultural safety checks (gesture taboos by market, color meaning by market, regional dress sensibilities) so non-English banners don't ship generic Western stock-photo aesthetics.
-4. **RTL handling.** When LANGUAGE is RTL (Arabic, Hebrew, Urdu, Farsi, etc.), the entire composition is mirrored: hero subject on the LEFT, headline right-aligned on the RIGHT, CTA bottom-LEFT. RTL-native typefaces (Tajawal/Cairo for Arabic, Heebo/Rubik for Hebrew, Vazirmatn for Urdu/Farsi) — never Latin fonts with Arabic fallbacks. Looser leading, no condensing, no kashida-justification, no mirrored letterforms.
-5. **Recomposition pass.** For every non-1:1 size you asked for, fires a separate GPT Image 2 call that takes the MVP image as a **reference** (`medias` with `role: "image"`) and rebuilds the layout for the new aspect ratio using a strict "no new content, no stretching, extend the background, rebuild the grid" prompt. Same words, same brand, new shape.
-6. **1:1 sizes reuse the MVP image** directly — no extra generation, no wasted credit.
-7. **Figma pass.** Creates one frame per requested size at the **exact requested pixel dimensions**, side-by-side. Downloads each finished render and paints it into its matching frame as `scaleMode=FILL` via `upload_assets`.
-8. Reports back with the file link, frame node IDs, and Higgsfield job IDs (MVP + recomposed).
+1. **Detect LANGUAGE.** Claude reads the copy and pins the market (`pt-BR`, `es-LATAM`, `Arabic`, `Hebrew`, `English`, etc.) — this drives every imagery decision.
+2. **MVP composition (silent).** Claude reads the **Design Framework** (slot rules, money-element priority, localization decision tree, RTL handling, hierarchy, typography, color, CTA spec, DO NOT RENDER list) and internally answers the **9-decision checklist** for this specific banner: realistic customer, hero subject (named demographics + wardrobe + pose), setting (named environment + props), lighting (direction + temperature + mood), composition direction (LTR / RTL), money element (the specific phrase), color palette (3 colors with hex), typography (concrete typefaces per LANGUAGE), CTA treatment.
+3. **MVP prompt.** Claude fills the **Visual Prompt Template** with those concrete decisions — a scene-level brief naming a specific person in a specific outfit in a specific setting, with every word of copy spelled out with exact typography and position. ~1,500–2,000 chars. Ships to GPT Image 2 at 1200×1200 / 1:1.
+4. **Recomposition (silent).** For every non-1:1 size, Claude composes a **spatial-translation prompt** — same scene, new aspect, naming exactly where the subject moves, where the text reflows, where the gradient extends, where the CTA repositions. The MVP image is passed as a reference (`medias[].role: "image"`). ~800–1,200 chars per recomposition.
+5. **1:1 sizes reuse the MVP image** directly — no extra generation.
+6. **Figma pass.** One frame per requested size at the exact pixel dimensions, side-by-side. Each render painted in as `scaleMode=FILL` via `upload_assets`.
+7. Reports back with the file link, frame node IDs, and Higgsfield job IDs (MVP + recomposed).
 
-**Why MVP-then-recompose:** generating each size from scratch in parallel gives you three different designs, which kills campaign coherence. The MVP-first flow guarantees one creative idea, expressed natively in every aspect ratio — the way a real designer would resize ad creatives by hand.
+**Why the designer architecture:** v1.0 → v1.3 all made the same mistake — pasting a generic rule manual to GPT Image 2 and hoping the model would interpret it. GPT Image 2 is a rendering engine, not a creative director — it can't reason "identify the money element by priority list" or "match the lighting to the emotional register." Those decisions have to be made *before* the prompt is written, by someone who can read the copy and think about who's going to click. v1.4 puts Claude in the designer seat and reduces the model's job to "render exactly this scene."
 
-**Why slot-based + localization:** the v1.1 brief was monolithic and Western-default. v1.2's slot structure lets the model reason about what each piece of copy is *for* (hero, money, support, CTA) and produce a hierarchy that actually converts. Localization reasoning + RTL rules close the gap on non-English markets where generic templates routinely tank CTR.
+**Three layers, three audiences:**
+
+| Layer | Audience | Length |
+|---|---|---|
+| **§ Design Framework** | Claude only | Long (full v1.2 rules) — never sent to the model |
+| **§ Composition Guide** | Claude only | ~3K chars — never sent to the model |
+| **§ Visual Prompt** | GPT Image 2 | ≤ 2,000 chars — the only thing the model sees |
+
+The framework and guide are Claude's textbook. The visual prompt is the brief Claude hands the renderer.
 
 **Constraints — built into the command, do not bypass:**
 
