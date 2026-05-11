@@ -6,7 +6,23 @@
       "git diff",
       "git log",
       "git branch",
-      "git pull"
+      "git pull",
+
+      "mcp__7e69985f-4eb5-4034-a063-d465c056f301__models_explore",
+      "mcp__7e69985f-4eb5-4034-a063-d465c056f301__generate_image",
+      "mcp__7e69985f-4eb5-4034-a063-d465c056f301__job_display",
+
+      "mcp__a17e5c91-c297-4476-b214-a49f4686570c__use_figma",
+      "mcp__a17e5c91-c297-4476-b214-a49f4686570c__upload_assets",
+
+      "Bash(curl -sL -o *)",
+      "Bash(curl -sS -X POST *)",
+      "Bash(curl -sS *)",
+      "Bash(mkdir -p /tmp/banner)",
+      "Bash(mkdir -p /tmp/*)",
+      "Bash(ls /tmp/banner*)",
+      "Bash(ls -la /tmp/banner*)",
+      "Bash(file /tmp/banner*)"
     ],
     "deny": [
       "git push --force",
