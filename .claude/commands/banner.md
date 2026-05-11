@@ -2,7 +2,7 @@
 description: Read the design framework, reason through the creative decisions for this specific banner, write a tight scene-level prompt, and ship it to Higgsfield GPT Image 2 — then recompose into every requested size and paste each into a Figma frame
 ---
 
-# /banner — Designer flow (Higgsfield GPT Image 2 → Figma) v1.4
+# /banner — Designer flow (Higgsfield GPT Image 2 → Figma) v1.6
 
 ## Architecture
 
@@ -73,6 +73,40 @@ Detect from the HERO + CTA text. Write the detected label as one of:
 
 This label drives every imagery decision in Phase 1 and the RTL/LTR composition flag.
 
+### Phase 0.1 — confirm detected language to the user (one line)
+
+After detection, surface a single line so the user can catch a misread in <2s before any credit is spent. Format:
+
+```
+🌐 Detected: <LANGUAGE> (cues: "<cue1>", "<cue2>"). Generating…
+```
+
+Examples:
+- `🌐 Detected: pt-BR (cues: "você", "R$"). Generating…`
+- `🌐 Detected: Arabic (cues: Arabic script, "تداول"). Generating…`
+- `🌐 Detected: English (no non-Latin cues). Generating…`
+
+Do not block waiting for confirmation — fire and continue. The user will interrupt if it's wrong.
+
+### Phase 0.2 — cost preview (one line)
+
+Immediately after the language line, surface the credit cost so the user can abort cheaply before any generation fires. Format:
+
+```
+🧾 Plan: <N> sizes → 1 MVP + <M> recomposition(s) = <1+M> generation(s). Press Esc to abort.
+```
+
+Where:
+- `N` = total requested sizes
+- `M` = count of requested sizes whose aspect is **not** 1:1 (every 1:1 size after the MVP reuses it for free in Phase 5)
+
+Example for sizes `[1200x1200, 1200x628, 960x1200, 1200x1200]`:
+```
+🧾 Plan: 4 sizes → 1 MVP + 2 recomposition(s) = 3 generation(s). Press Esc to abort.
+```
+
+Do not block — emit and continue immediately.
+
 ---
 
 ## Phase 1 — compose the MVP visual prompt (silent)
@@ -122,7 +156,15 @@ Capture the returned `id` (MVP job_id).
 
 ## Phase 2 — wait for the MVP
 
-Block. The recomposition pass cannot start until the MVP is `status: completed`. Use a background timer (~75s) and re-check via `job_display`. Capture `rawUrl` on completion. Don't poll tightly.
+Block until MVP is `status: completed`. Recomposition is gated on this — finish polling as fast as the job actually completes, not on a fixed timer.
+
+**Polling cadence:**
+1. **First check at t+25s.** Typical MVP completion is 25–60s; checking earlier wastes a tool call.
+2. **Then every 8s** until status flips to `completed` or `failed`.
+3. **At t+120s (12 checks),** if still pending, emit one warning line: `⚠️ MVP still rendering after 120s — continuing to wait.` Then drop cadence to every 15s.
+4. **Hard cap at t+5min.** Abort with `❌ MVP timed out after 5min — re-run /banner or check Higgsfield workspace.`
+
+Capture `rawUrl` and `id` on completion. On `status: failed`, abort with the failure reason — do not auto-retry (creative decisions may need a rethink).
 
 ---
 
@@ -136,17 +178,32 @@ For 1:1 sizes the user requested (other than the MVP itself), **skip the recompo
 
 ### Aspect mapping (GPT Image 2 supports `1:1, 4:3, 3:4, 16:9, 9:16, 3:2, 2:3`)
 
-| Requested size | Aspect to request | Recompose? |
-|---|---|---|
-| `1200×1200` (or any square) | `1:1` | No — reuse MVP |
-| `1200×628`  | `16:9` | Yes — WIDE |
-| `960×1200`  | `3:4`  | Yes — TALL |
-| `1200×960`  | `4:3`  | Yes — mild WIDE |
-| `1080×1350` | `4:5` → `3:4` | Yes — TALL |
-| `1080×1920` | `9:16` | Yes — TALL |
-| `1920×1080` | `16:9` | Yes — WIDE |
+| Requested size | Aspect to request | FILL crop | Recompose? |
+|---|---|---|---|
+| `1200×1200` (or any square) | `1:1` | none (exact) | No — reuse MVP |
+| `1200×628`  | `16:9` | ~7% top/bottom | Yes — WIDE |
+| `960×1200`  | `3:4`  | ~7% top/bottom | Yes — TALL |
+| `1200×960`  | `4:3`  | ~7% left/right | Yes — mild WIDE |
+| `1080×1350` | `3:4` (closest) | ~7% top/bottom | Yes — TALL |
+| `1080×1920` | `9:16` | none (exact) | Yes — TALL |
+| `1920×1080` | `16:9` | none (exact) | Yes — WIDE |
 
 For sizes not in the table, pick the closest aspect from the supported set by ratio distance.
+
+### Aspect-mismatch crop rule
+
+For each requested size, compute the crop:
+
+```
+frame_aspect  = WIDTH / HEIGHT
+render_aspect = chosen_aspect numerator / denominator   (e.g. 16/9 = 1.778)
+crop_pct      = abs(frame_aspect - render_aspect) / max(...) * 100
+```
+
+If `crop_pct > 5%`, the FILL scale-mode in Figma will silently crop the rendered image to fit the frame. To prevent the subject's head, hands, or money element from being lopped off:
+
+1. **Tell the model in the recomposition prompt** to leave extra safe area on the cropped axis (top/bottom for taller-than-render frames; left/right for wider-than-render frames). One line: `Leave 8% safe area on top and bottom — frame will crop ~7% off those edges.`
+2. **Flag it in the Phase 6 summary table** with a `⚠️ ~7% crop` note in the source column so the designer knows to spot-check.
 
 ### Send each recomposition
 
@@ -166,32 +223,53 @@ mcp__7e69985f-4eb5-4034-a063-d465c056f301__generate_image
     prompt: <the filled recomposition prompt for this size>
 ```
 
-Wait for all to complete via `job_display` + a short background timer.
+**Wait for the slowest, not a fixed timer.** Polling cadence (same as Phase 2 but applied to the batch):
+
+1. **First batch check at t+25s** — call `job_display` for every recomposition `id` in a single parallel turn. Already-completed jobs short-circuit; collect `rawUrl` for each.
+2. **Then every 8s,** re-check only the still-pending ids in parallel.
+3. **At t+120s,** warn `⚠️ {N} recomposition(s) still rendering after 120s — continuing.` Drop cadence to every 15s.
+4. **Hard cap at t+5min per recomposition.** If any are still pending, proceed with the completed set and report the timeouts in the summary table — do not block Phase 4 indefinitely.
+
+A single recomposition failure does not abort the run — paint the successful ones and report the failed sizes in Phase 6 with their job ids so the user can retry.
 
 ---
 
 ## Phase 4 — create Figma frames at exact pixel sizes (WRITE-ONLY)
 
-One `use_figma` call creates every requested frame. Side-by-side at `y=0`, 100px gap. Names: `Banner — {WIDTH}x{HEIGHT}`. `fills: []` initially.
+One `use_figma` call creates every requested frame. Side-by-side at the run's `y` baseline, 100px gap. Names: `Banner — {WIDTH}x{HEIGHT}`. `fills: []` initially.
+
+**Idempotent placement.** Re-running /banner on the same Figma file MUST NOT overlap prior runs. The script scans the page for any existing frame whose name starts with `Banner` and starts the new run **below** the lowest existing one with a 200px gap. First-ever run starts at `y=0`.
 
 ```js
 const sizes = [/* injected, e.g. [[1200,1200],[1200,628],[960,1200]] */];
+const runStamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+
+// Find the bottom edge of any existing banner frames on this page
+let runY = 0;
+for (const node of figma.currentPage.children) {
+  if (node.name && node.name.startsWith("Banner") && "y" in node && "height" in node) {
+    runY = Math.max(runY, node.y + node.height + 200);
+  }
+}
+
 let x = 0;
 const ids = [];
 for (const [w, h] of sizes) {
   const f = figma.createFrame();
   f.name = `Banner — ${w}x${h}`;
   f.resize(w, h);
-  f.x = x; f.y = 0;
+  f.x = x; f.y = runY;
   f.fills = [];
   f.clipsContent = true;
   f.cornerRadius = 0;
   figma.currentPage.appendChild(f);
-  ids.push({ size: `${w}x${h}`, id: f.id });
+  ids.push({ size: `${w}x${h}`, id: f.id, runStamp });
   x += w + 100;
 }
 return ids;
 ```
+
+Capture `runStamp` for the Phase 6 summary so the user can find this specific run later (`Cmd+F` in Figma for the timestamp).
 
 ---
 
@@ -219,25 +297,40 @@ For each `{size, frameNodeId, imageUrl}`:
    curl -sS -X POST -H "Content-Type: image/png" --data-binary @/tmp/banner/<size>.png "<submitUrl>"
    ```
 
-Run all uploads in parallel. For 1:1 sizes that reuse the MVP, save it once and POST the same file for every 1:1 frame.
+**Parallelism contract (do this — it's the biggest wall-clock win in the whole flow):**
+
+- **Step 1 (download):** issue every `curl -sL -o` for every size as parallel `Bash` tool calls in a SINGLE assistant turn. Do not download them sequentially.
+- **Step 2 (upload-url request):** issue every `upload_assets` call as parallel tool calls in a SINGLE assistant turn. One call per frame.
+- **Step 3 (POST bytes):** issue every `curl -sS -X POST` as parallel `Bash` tool calls in a SINGLE assistant turn.
+
+Three turns total for N banners, regardless of N. Sequential per-banner uploads multiply N×3 round-trips and is the most common cause of slow runs.
+
+For 1:1 sizes that reuse the MVP: save the MVP bytes once to `/tmp/banner/mvp.png` and reuse that same local file in the parallel POST batch — do not re-download per frame.
 
 ---
 
 ## Phase 6 — summarize
 
-One-line summary + a small table:
+One-line summary + a table that surfaces every signal the user needs to spot-check:
 
 ```
-/banner done — N banners (1 MVP, M recomposed) · file: https://figma.com/design/<fileKey> · model: gpt_image_2
+/banner done — N banners (1 MVP, M recomposed, F failed) · run: <runStamp> · file: https://figma.com/design/<fileKey> · model: gpt_image_2
 
-| Size      | Source     | Frame node | Job          |
-|---        |---         |---         |---           |
-| 1200x1200 | MVP        | 12:345     | <mvp_job_id> |
-| 1200x628  | recomposed | 12:346     | <job_id>     |
-| 960x1200  | recomposed | 12:347     | <job_id>     |
+| Size      | Source       | Frame node | Job           | Notes                |
+|---        |---           |---         |---            |---                   |
+| 1200x1200 | MVP          | 12:345     | <mvp_job_id>  | —                    |
+| 1200x628  | recomposed   | 12:346     | <job_id>      | ⚠️ ~7% top/bottom crop |
+| 960x1200  | recomposed   | 12:347     | <job_id>      | ⚠️ ~7% top/bottom crop |
+| 1080x1920 | recomposed   | —          | <job_id>      | ❌ timed out — retry  |
 ```
 
-End with: `Open the file in Figma to review. Regenerate any size by re-running /banner with just that size.`
+Notes column rules (one or none per row):
+- `⚠️ ~X% <axis> crop` — populated from the aspect-mismatch rule in Phase 3
+- `❌ timed out` — recomposition didn't complete within Phase 3's 5-min cap; frame exists but is unpainted
+- `❌ failed: <reason>` — generation returned `status: failed`
+- `—` — clean
+
+End with: `Open the file in Figma to review (search "<runStamp>" to jump to this run). Regenerate any size by re-running /banner with just that size.`
 
 ---
 
