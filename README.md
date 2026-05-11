@@ -1,6 +1,8 @@
 # Creative Team
 
-Shared home for the Figma tools, automations, and landing-page. Everything here is designed to be used alongside [Claude Code](https://claude.com/claude-code) — Runs Claude in this folder, pulls the latest tools, and ships new ones back via pull requests.
+A shared toolkit for the design + creative team — Figma automations, banner generators, QA tools, and team knowledge — all built to run inside [Claude Code](https://claude.com/claude-code).
+
+Open this folder with `claude`, type `/pull` to sync the latest tools, and start working. Every team command is one slash away. Every change goes through a pull request.
 
 ---
 
@@ -11,82 +13,74 @@ Shared home for the Figma tools, automations, and landing-page. Everything here 
 | Path | What it is |
 | --- | --- |
 | [`projects/braintrade-template/`](projects/braintrade-template/) | BrainTrade landing-page template (`index.html` + `content.json`). Protected — changes need PR review. |
-| [`projects/creative-summary/`](projects/creative-summary/) | Automation that reads a Figma LP file and places a bilingual creative summary above the desktop frame. Scaffolded, build in progress. |
-| [`projects/qa/`](projects/qa/) | **v1.1** — Automated QA for localized Figma landing pages. Python scripts (REST API, no MCP) + LLM judgment. Runs in seconds. Checks parity, language, placeholders, images, overflow, CTAs, regulator phrases, conversion tone. |
+| [`projects/creative-summary/`](projects/creative-summary/) | Bilingual creative summary automation for Figma LPs. Scaffolded, in progress. |
+| [`projects/qa/`](projects/qa/) | Automated QA for localized Figma landing pages. Parity, language, images, overflow, CTAs, regulator phrases. |
 
 ### Shared infrastructure
 
 | Path | What it is |
 | --- | --- |
-| `.claude/commands/` | Team slash commands (`/pull`, `/push`, `/qa`, `/banner`) — loaded automatically by Claude Code |
-| `.claude/memory/` | Shared Claude memory — Figma file keys, node IDs, design tokens |
-| `CLAUDE.md` | Project rules Claude Code follows in this repo (read this first) |
+| [`.claude/commands/`](.claude/commands/) | Team slash commands — auto-loaded by Claude Code in this repo |
+| [`.claude/memory/`](.claude/memory/) | Shared Claude memory — Figma file keys, node IDs, design tokens |
+| [`CLAUDE.md`](CLAUDE.md) | Team rules Claude follows here (read this first) |
 
 ---
 
 ## Getting started
 
-### 1. Clone the repo into your local Claude folder
-
 ```bash
 git clone https://github.com/chr1srusevv/creative-team.git
 cd creative-team
-```
-
-### 2. Open the folder with Claude Code
-
-```bash
 claude
 ```
 
-Claude will auto-load `CLAUDE.md`, the shared memory, and the team slash commands.
-
-### 3. Before you start new work — pull the latest
-
-Inside Claude Code, run:
+Claude auto-loads `CLAUDE.md`, the shared memory, and every team slash command. Then in the Claude prompt:
 
 ```
 /pull
 ```
 
-This fetches the latest `main`, checks your working tree is clean, and summarizes what teammates have shipped since you last synced.
+This fetches the latest `main`, refuses to clobber uncommitted work, and summarizes what teammates have shipped since you last synced.
 
 ---
 
 ## Daily workflow
 
-1. **Pull first.** `/pull` — always sync before starting.
-2. **Branch.** Create a feature branch: `feature/<your-name>-<what-you-are-building>`. Never commit to `main`.
-3. **Build.** Work on your feature — edit files, ask Claude for help, test locally.
-4. **Ship.** Run `/push` in Claude Code. It will:
-   - Show you the diff
-   - Propose a commit message
-   - Ask for confirmation (no auto-commits)
-   - Push your branch
-   - Open a pull request (or give you the compare URL)
+1. **Pull first.** `/pull` — always sync before starting new work.
+2. **Branch.** Create `feature/<your-name>-<what-you-are-building>`. Never commit to `main`.
+3. **Build.** Edit, test, ask Claude for help.
+4. **Ship.** `/push` — Claude shows the diff, proposes a commit message, asks for confirmation, pushes the branch, and opens a PR.
 5. **Review.** Get at least one approval before merging to `main`.
 
 ---
 
 ## Team slash commands
 
-These live in `.claude/commands/` and are available to anyone who clones the repo.
+All live in [`.claude/commands/`](.claude/commands/). Each command links to its spec for the full details.
 
-### `/pull`
-Sync the latest team tools from GitHub into your local folder. Safe to run anytime — it refuses to overwrite uncommitted work.
+### [`/pull`](.claude/commands/pull.md)
 
-### `/push`
-Commit your current work and push it to the team repo as a pull request. Enforces the feature-branch rule, asks before committing, and never force-pushes.
+Sync the latest team tools from GitHub into your local folder. Safe to run anytime — refuses to overwrite uncommitted work.
 
-### `/qa` (v1.1)
-QA a localized Figma landing page. Usage: `/qa <figma-url> <lang> [--brand <name>] [--tone] [--post]`. Runs a one-shot REST fetch + deterministic Python checks (parity, placeholders, images, overflow, CTAs, regulator phrases) and uses Claude only for language and optional tone judgment. Writes a Markdown report to `projects/<brand>/qa-reports/`, optionally pins comments to Figma nodes with `--post`.
+### [`/push`](.claude/commands/push.md)
 
-Requires `FIGMA_TOKEN` (Personal Access Token from figma.com/settings) in your shell env. See [`projects/qa/README.md`](projects/qa/README.md) for one-time setup.
+Commit your current work and push it to the team repo as a pull request. Enforces the feature-branch rule, asks before committing, never force-pushes.
 
-### `/banner` (v1.4)
-Generate CTR-optimized ad banners with **Higgsfield GPT Image 2** and drop them into a Figma file at the exact pixel sizes you ask for. **v1.4 introduces a designer architecture** — Claude reads the design framework, reasons through the creative decisions for each specific banner (subject, setting, lighting, palette, typography, money element, CTA), and writes a **concrete scene-level prompt** that the image model can render directly. The previous versions copy-pasted a generic rule manual to the model, which it can't act on. v1.4 fixes that.
+### [`/qa`](.claude/commands/qa.md) — v1.1
 
-**Usage:**
+QA a localized Figma landing page in seconds.
+
+```
+/qa <figma-url> <lang> [--brand <name>] [--tone] [--post]
+```
+
+One-shot REST fetch + deterministic Python checks (parity, placeholders, images, overflow, CTAs, regulator phrases) plus LLM judgment on language and conversion tone. Writes a Markdown report to `projects/<brand>/qa-reports/`. Optionally pins comments to Figma nodes with `--post`.
+
+Requires `FIGMA_TOKEN` (Personal Access Token from figma.com/settings) in your shell env. One-time setup: [`projects/qa/README.md`](projects/qa/README.md).
+
+### [`/banner`](.claude/commands/banner.md) — v1.6
+
+Generate CTR-optimized ad banners with **Higgsfield GPT Image 2** and drop them into a Figma file at the exact pixel sizes you ask for. Claude reads the design framework, reasons through the creative decisions for each banner (subject, setting, lighting, palette, typography, money element, CTA), writes a scene-level prompt, ships it to GPT Image 2 at 1200×1200, recomposes for every other requested aspect, and paints each finished image into a Figma frame.
 
 ```
 /banner <figma-url> <WxH> [<WxH> ...]
@@ -94,7 +88,7 @@ Title: <verbatim title copy>
 cta: <verbatim CTA copy>
 ```
 
-**Example:**
+Example:
 
 ```
 /banner https://figma.com/design/<fileKey>/...
@@ -103,48 +97,50 @@ cta: Receba Minha Consultoria Gratuita
 960x1200, 1200x1200, 1200x628
 ```
 
-**What happens (v1.4 flow):**
+**What you get:** one Figma frame per requested size at exact pixel dimensions, the rendered banner painted in as a fill, plus a summary table with frame node IDs, Higgsfield job IDs, and any crop or timeout warnings.
 
-1. **Detect LANGUAGE.** Claude reads the copy and pins the market (`pt-BR`, `es-LATAM`, `Arabic`, `Hebrew`, `English`, etc.) — this drives every imagery decision.
-2. **MVP composition (silent).** Claude reads the **Design Framework** (slot rules, money-element priority, localization decision tree, RTL handling, hierarchy, typography, color, CTA spec, DO NOT RENDER list) and internally answers the **9-decision checklist** for this specific banner: realistic customer, hero subject (named demographics + wardrobe + pose), setting (named environment + props), lighting (direction + temperature + mood), composition direction (LTR / RTL), money element (the specific phrase), color palette (3 colors with hex), typography (concrete typefaces per LANGUAGE), CTA treatment.
-3. **MVP prompt.** Claude fills the **Visual Prompt Template** with those concrete decisions — a scene-level brief naming a specific person in a specific outfit in a specific setting, with every word of copy spelled out with exact typography and position. ~1,500–2,000 chars. Ships to GPT Image 2 at 1200×1200 / 1:1.
-4. **Recomposition (silent).** For every non-1:1 size, Claude composes a **spatial-translation prompt** — same scene, new aspect, naming exactly where the subject moves, where the text reflows, where the gradient extends, where the CTA repositions. The MVP image is passed as a reference (`medias[].role: "image"`). ~800–1,200 chars per recomposition.
-5. **1:1 sizes reuse the MVP image** directly — no extra generation.
-6. **Figma pass.** One frame per requested size at the exact pixel dimensions, side-by-side. Each render painted in as `scaleMode=FILL` via `upload_assets`.
-7. Reports back with the file link, frame node IDs, and Higgsfield job IDs (MVP + recomposed).
+**v1.6 highlights** (full spec in [`banner.md`](.claude/commands/banner.md)):
 
-**Why the designer architecture:** v1.0 → v1.3 all made the same mistake — pasting a generic rule manual to GPT Image 2 and hoping the model would interpret it. GPT Image 2 is a rendering engine, not a creative director — it can't reason "identify the money element by priority list" or "match the lighting to the emotional register." Those decisions have to be made *before* the prompt is written, by someone who can read the copy and think about who's going to click. v1.4 puts Claude in the designer seat and reduces the model's job to "render exactly this scene."
+- **Auto-detects language** from the copy — drives subject, palette, typography, and LTR/RTL direction
+- **One-line cost preview** before any credit fires (`🧾 Plan: N sizes → 1 MVP + M recomps = 1+M generations`)
+- **Tight polling** — completion detected within 8s of actually finishing, not 75s later
+- **Aspect-mismatch crop warnings** — no more silent FILL crops lopping heads off subjects
+- **Idempotent placement** — re-runs land below prior frames, never overlapping at `x=0`
+- **Partial failures tolerated** — paint the successful banners, report the rest with their job IDs so you can retry
 
-**Three layers, three audiences:**
+Requires the Higgsfield and Figma MCP connectors to be configured.
 
-| Layer | Audience | Length |
-|---|---|---|
-| **§ Design Framework** | Claude only | Long (full v1.2 rules) — never sent to the model |
-| **§ Composition Guide** | Claude only | ~3K chars — never sent to the model |
-| **§ Visual Prompt** | GPT Image 2 | ≤ 2,000 chars — the only thing the model sees |
+### [`/banner-prompt`](.claude/commands/banner-prompt.md) — v1.0
 
-The framework and guide are Claude's textbook. The visual prompt is the brief Claude hands the renderer.
+Same creative reasoning as `/banner` — **without** firing Higgsfield or touching Figma. Pure prompt output you can copy-paste anywhere, plus 5 numbered alternative approaches you can switch between by replying with a single digit.
 
-**Constraints — built into the command, do not bypass:**
+```
+/banner-prompt
+Title: <verbatim title copy>
+cta: <verbatim CTA copy>   (optional in this mode)
+```
 
-- **GPT Image 2 only.** No substitution to other Higgsfield models (`soul_2`, `nano_banana_2`, `marketing_studio_image`).
-- **Resolution is always `1k`.** Both the MVP and every recomposition are generated at `resolution: "1k"`. The Figma frame is the source of truth for pixel dimensions; the generated image is fitted via `scaleMode: FILL`, so higher resolutions waste Higgsfield credit without improving the deliverable.
-- **MVP is always 1200×1200 (1:1).** The v1.2 brief is tightly coupled to the 1200×1200 canvas (90px x-height minimums, 60px edge safe area, 90px button height). Recomposition is the only way to produce non-1:1 banners — non-1:1 banners are never generated from scratch.
-- **LANGUAGE drives the whole banner.** It's not just a script setting — it determines subject, setting, wardrobe, palette mood, and composition direction (LTR vs RTL). Auto-detected from the copy.
-- **MVP is the single source of truth.** Every recomposition passes the MVP's `job_id` as a `medias[]` entry with `role: "image"` so the model treats it as the authoritative master.
-- **Exact pixel sizes.** The Figma frame is always W×H to the pixel — the ad-platform spec is non-negotiable. Aspect mismatch between the generated image and the frame is absorbed by `scaleMode=FILL` (center crop).
-- **Verbatim copy.** Title and CTA are passed through unchanged — no translation, no rewording, no "improvements." The recomposition prompt's "NO NEW CONTENT" rules forbid the model from inventing or editing copy.
-- **Figma is write-only.** The command never reads the file tree (no `get_metadata`, no `get_design_context`) — it only creates frames and paints fills. Avoids stalls on large campaign files.
+Useful when you want to:
 
-Requires the Higgsfield and Figma MCP connectors to be configured. The command spec lives at [`.claude/commands/banner.md`](.claude/commands/banner.md).
+- Review the prompt before spending any credit to render
+- Iterate cheaply (~$0) across multiple creative directions
+- Hand the prompt to a different image tool or vendor
+
+**What you get:**
+
+1. A `📋 Approach:` summary line
+2. A fenced code block with the ready-to-copy visual prompt (≤ 2,000 chars)
+3. A `🎨 5 alternative approaches` list — reply with `1`–`5` to regenerate in that direction, or describe your own in one line, or type `done` to finish.
+
+Every variant is held to the same framework rules as `/banner` — cultural safety, RTL handling, verbatim copy, hex-coded palettes, money-element priority.
 
 ---
 
 ## Protected files — ask before editing
 
-- `projects/braintrade-template/index.html` — main LP template; structural changes need a PR discussion
-- `projects/braintrade-template/content.json` — shared content; coordinate with the team before editing
-- `CLAUDE.md` — project rules; changes require team sign-off
+- `projects/braintrade-template/index.html` — main LP template; structural changes need PR discussion
+- `projects/braintrade-template/content.json` — shared content; coordinate with the team
+- `CLAUDE.md` — team rules; changes require team sign-off
 
 Everything else in your feature branch is yours to iterate on freely.
 
@@ -152,14 +148,14 @@ Everything else in your feature branch is yours to iterate on freely.
 
 ## Rules Claude Code follows here
 
-Summarized from `CLAUDE.md`:
+Summarized from [`CLAUDE.md`](CLAUDE.md):
 
-- Never commit directly to `main`.
-- Never auto-commit — always ask first.
-- Never force-push, never skip hooks, never reset --hard without asking.
-- Always work on a feature branch, always open a PR, always get review.
+- Never commit directly to `main`
+- Never auto-commit — always ask first
+- Never force-push, skip hooks, or `reset --hard` without asking
+- Always work on a feature branch, always open a PR, always get review
 
-If Claude ever suggests bypassing these, push back — they exist because they've saved us from lost work before.
+If Claude ever suggests bypassing these, push back — they exist because they've prevented lost work before.
 
 ---
 
