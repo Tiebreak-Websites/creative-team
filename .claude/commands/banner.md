@@ -1,18 +1,18 @@
 ---
-description: Generate CTR-optimized banners at user-specified pixel sizes using Higgsfield GPT Image 2, then place them as native frames in a Figma file
+description: Generate one MVP banner with Higgsfield GPT Image 2 (1:1), then recompose it into every other size the user asked for, and paste each output into a Figma frame at the exact pixel size
 ---
 
-# /banner — Higgsfield GPT Image 2 → Figma
+# /banner — MVP → Recompose → Figma (Higgsfield GPT Image 2)
 
-Three steps, nothing else:
+Two-pass workflow:
 
-1. **Generate** each banner with **Higgsfield GPT Image 2** (mandatory — no other model).
-2. **Create** a native **Figma frame at the exact pixel size** the user asked for.
-3. **Paste** the generated image inside that frame as a fill.
+1. **MVP pass.** Generate ONE master banner at **1:1 aspect** with **Higgsfield GPT Image 2** using the full CTR brief. This is the single source of truth for the campaign.
+2. **Recomposition pass.** For every non-1:1 size the user requested, fire a separate GPT Image 2 call that takes the MVP image as a reference (`medias` with role `image`) and uses the strict "Resize and recompose" prompt to rebuild the layout for the new aspect — without inventing copy, colors, or elements.
+3. **Figma pass (write-only).** Create one frame per requested size at the exact pixel dimensions, then paint each finished image into its frame.
 
-Banner structure is always **Title + CTA**. The full design direction (composition, typography, color, density, photorealism rules) is already baked into the master brief below — do NOT ask the user for visual direction and do NOT infer it. Just plug in `{TITLE}` + `{CTA}` + the size and generate.
+Banner structure is always **Title + CTA**. Design direction (composition, typography, color, density) is baked into the brief — caller doesn't supply it.
 
-Figma is **write-only** in this command. Never call `get_metadata`, never call `get_design_context`, never read the file tree. The only Figma calls are `use_figma` to create frames and either `use_figma` or `upload_assets` to paint the image fill.
+Figma is **write-only**: create frames + paint fills. Never call `get_metadata`, never call `get_design_context`, never read the file tree.
 
 ---
 
@@ -22,9 +22,9 @@ Arguments: `$ARGUMENTS`
 
 Pull these out of the message (free-form, no rigid syntax):
 
-- **Figma URL** — REQUIRED. Any `https://figma.com/design/<fileKey>/...` link. Extract `fileKey`. Ignore `node-id`, `p`, `t` and any other query params.
+- **Figma URL** — REQUIRED. Any `https://figma.com/design/<fileKey>/...` link. Extract `fileKey`. Ignore `node-id` / `p` / `t` query params.
 - **Sizes** — REQUIRED. One or more `WxH` pixel tokens (`1200x1200`, `1200x628`, `960x1200`, ...). Both `x` and `×` accepted. Always pixels.
-- **Title** — REQUIRED. The full banner copy verbatim. Accept `Title:`, `Tittle:` (common typo), `Headline:`, or an unlabeled line. Whatever the user wrote goes into `{TITLE}` as-is — do not split it, do not "improve" it, do not translate it.
+- **Title** — REQUIRED. The full banner copy verbatim. Accept `Title:`, `Tittle:` (common typo), `Headline:`, or an unlabeled line. Whatever the user wrote goes into `{TITLE}` as-is — never split, never "improve," never translate.
 - **CTA** — REQUIRED. Accept `cta:` / `CTA:` / `button:`. Goes into `{CTA}` verbatim.
 
 ### Hard fail-fast — STOP and error out
@@ -34,52 +34,48 @@ Pull these out of the message (free-form, no rigid syntax):
 - No title → `❌ /banner needs the title copy verbatim.`
 - No CTA → `❌ /banner needs the CTA copy verbatim.`
 
-Visual direction is NOT an input. The brief handles it.
-
 ---
 
 ## Pre-flight (minimal)
 
-1. **GPT Image 2 model id.** Call `models_explore` once with `action=search`, `query="gpt image 2"`, `type=image`, `limit=5`. Pick the model whose id contains `gpt_image_2` or whose display name is "GPT Image 2". If the search returns nothing useful, **fall back to the literal id `gpt_image_2`** and proceed — do not stall. Only stop if `generate_image` later rejects the model id, in which case surface the error and ask the user.
-2. **No Figma reads.** Skip `get_metadata` and `get_design_context` entirely. The first `use_figma` write will surface any auth/access error cleanly.
+1. **GPT Image 2 model id.** Call `models_explore` once with `action=search`, `query="gpt image 2"`, `type=image`, `limit=5`. Pick the model whose id contains `gpt_image_2`. Fall back to the literal id `gpt_image_2` if search returns nothing. Do not stall — only stop if `generate_image` later rejects the id.
+2. **No Figma reads.** Skip `get_metadata` / `get_design_context` entirely.
 
 ---
 
-## Phase 1 — map each size to the closest supported aspect ratio
+## Phase 0 — pick the MVP size
 
-GPT Image 2 emits at a fixed set of aspect ratios. The **Figma frame is always the exact requested pixel size** — any aspect mismatch is absorbed by `scaleMode=FILL` (center crop).
+The MVP is **always 1:1**. Pick the MVP pixel size like this:
 
-Default mapping:
+- If the user requested a `WxW` size (square), use the **largest** such size as the MVP size. The frame at that size can be painted directly from the MVP image — no recomposition needed.
+- Otherwise default the MVP to **`1200x1200`**. (No Figma frame is created for the MVP if the user didn't ask for a square size — it only serves as the reference master for the recompositions.)
 
-| Size | Orientation | Aspect ratio to request |
-|---|---|---|
-| 1200×1200 | square | `1:1` |
-| 1200×628  | landscape | `16:9` |
-| 1200×960  | mild landscape | `4:3` |
-| 960×1200  | mild portrait | `3:4` |
-| 1080×1350 | portrait (IG feed tall) | `4:5` |
-| 1080×1920 | story / reel | `9:16` |
-
-If the user asks for a size not in this table, pick the closest aspect from `{1:1, 16:9, 9:16, 4:3, 3:4, 4:5, 5:4}` by ratio distance — do not stop to ask.
+Note the MVP size and the MVP aspect (`1:1`) for the next phase.
 
 ---
 
-## Phase 2 — build the prompt per size
+## Phase 1 — generate the MVP banner (CTR brief, 1:1)
 
-For each size, expand the master brief by substituting only:
+One `generate_image` call:
 
-- `{WIDTH}` / `{HEIGHT}` — from the size token
-- `{ORIENTATION}` — `square` / `landscape` / `portrait` (computed from W:H)
-- `{TITLE}` — verbatim
-- `{CTA}` — verbatim
+```
+mcp__7e69985f-4eb5-4034-a063-d465c056f301__generate_image
+  params:
+    model: gpt_image_2
+    aspect_ratio: "1:1"
+    quality: "high"
+    resolution: "1k"
+    count: 1
+    prompt: <MVP brief with {WIDTH}/{HEIGHT}/{TITLE}/{CTA} substituted>
+```
 
-Everything else in the brief stays literal — the design direction is fixed by design.
+Block on this. The recomposition pass cannot start until the MVP completes — wait for `status: completed` and capture the MVP's `job_id` and `rawUrl`. Use a short background timer (60–90s) and re-check via `job_display` until status flips. Do not poll in tight loops.
 
-### Master brief (substitute placeholders only)
+### MVP brief (substitute placeholders only)
 
 ```
 [BANNER BRIEF]
-Create a {WIDTH}×{HEIGHT} {ORIENTATION} banner ad designed for maximum click-through rate (CTR),
+Create a {MVP_WIDTH}×{MVP_HEIGHT} square banner ad designed for maximum click-through rate (CTR),
 engineered as if by a senior performance marketing specialist and a UX/UI
 designer working together. The output must be a flat finished banner —
 no mockup frame, no device bezel, no "ad preview" chrome.
@@ -115,13 +111,10 @@ VISUAL HIERARCHY (still load-bearing — density is not chaos)
   The CTA must remain the highest-contrast interactive element even inside a
   busy composition.
 - Keep critical text and the CTA inside safe margins (~60px from edge).
-- Minimum WCAG AA contrast between text and whatever's directly behind it —
-  add a subtle dark scrim, blur, or solid color block behind text if the
-  background is busy. Never sacrifice legibility for density.
+- Minimum WCAG AA contrast between text and whatever's directly behind it.
 
 IMAGERY — DEFAULT TO PHOTOREALISM
 - Default style is photorealistic — sharp, high-detail, professionally lit photography.
-  Vector / illustration only if the user explicitly asks for it.
 - If a human is present: candid, real-feeling, single subject, sharp eye contact
   or eye-line leading toward the headline/CTA. Authentic styling, not stock-photo-smile.
   Cinematic lighting (rim light, golden hour, hard side light, neon glow — match
@@ -130,102 +123,159 @@ IMAGERY — DEFAULT TO PHOTOREALISM
   finish, dramatic lighting, environmental context (not floating on white).
 - Supporting visual elements (charts, graphs, devices, UI screens, currency,
   particles, money, sparks, smoke, light leaks) are encouraged — pile them in
-  IF they reinforce the message. A trading ad can have candlestick charts +
-  a phone screen + a city skyline + glowing numbers. Don't be afraid of "more."
+  IF they reinforce the message.
 - BANNED: generic AI-stock-photo aesthetic — fake plastic smiles, cliché glowing
   blue tech orbs, oversaturated "AI gradient soup," symmetrical abstract blobs,
-  hexagon grids, generic "digital network" lines. If it looks like a 2019
-  Shutterstock thumbnail, regenerate.
+  hexagon grids, generic "digital network" lines.
 
 COMPOSITION
 - Rule of thirds — focal subject and CTA on intersection points.
-- One clear direction of visual flow guiding the eye toward the CTA, even
-  through a dense layout (use subject gaze, light direction, leading lines,
-  motion blur, or a graphic arrow-equivalent).
+- One clear direction of visual flow guiding the eye toward the CTA.
 - Negative space exists around the HEADLINE specifically, so it stays legible.
-  The rest of the canvas can be rich.
 
 PERFORMANCE DRIVERS
-- Pattern interrupt: unexpected color contrast, an unusual hero element, or
-  a striking visual juxtaposition that doesn't look like every other ad in the feed.
-- One strong emotional trigger (curiosity, aspiration, urgency, FOMO, relief,
-  shock, intrigue — pick what fits the copy).
-- Benefit-forward visual metaphor: SHOW the outcome / the world the user gets
-  to live in, not the product feature.
-- Headline must remain readable at 25% zoom (thumbnail test) even with the
-  denser layout.
+- Pattern interrupt: unexpected color contrast, an unusual hero element.
+- One strong emotional trigger (curiosity, aspiration, urgency, FOMO, relief).
+- Benefit-forward visual metaphor: SHOW the outcome.
+- Headline readable at 25% zoom (thumbnail test).
 
 TYPOGRAPHY
 - Max 2 typefaces. Strong geometric or grotesque sans-serif for the headline
-  (Inter / Söhne / Helvetica Now feel). Optional contrasting display or serif
-  for one accent word if it adds energy.
+  (Inter / Söhne / Helvetica Now feel).
 - Headline weight 700–900. Tight tracking. Tight leading.
-- Headline can sit on a subtle scrim, color block, or blurred area to stay
-  legible against a rich background — this is encouraged, not avoided.
-- No outlined fonts. No stretched or warped letters. No cheesy 3D extrusions
-  or chrome effects.
+- Headline can sit on a subtle scrim, color block, or blurred area.
+- No outlined fonts. No warped letters. No 3D extrusions or chrome effects.
 - Highlight the most important words from the provided content using visual
   emphasis only — larger size, bold weight, stronger contrast, or color emphasis.
-- Do NOT change the wording in order to create emphasis. Visual treatment only,
-  never rewording.
-- Fit the full text into no more than 5 lines while keeping it readable,
-  balanced, and visually clean.
-- Prioritize readability over forcing the text too tightly.
+- Do NOT change the wording to create emphasis. Visual treatment only.
+- Fit the full text into no more than 5 lines while keeping it readable.
 
 COLOR
-- Use whatever palette serves the concept — rich, punchy, saturated, feed-ready.
-  Multiple colors are fine and often better; don't artificially limit the palette.
-  Bright, vivid, high-energy by default. Pastels and muted tones only if the
-  brand or topic truly demands them.
-- The CTA must still be the highest-contrast element in the composition — make
-  it pop against whatever's behind it, even in a colorful layout.
-- Gradients are welcome when they add depth or mood (cinematic sky, neon haze,
-  studio backdrop, sunset bokeh) — avoid flat muddy AI-soup gradients.
+- Rich, punchy, saturated, feed-ready palette. Multiple colors fine.
+- CTA must be the highest-contrast element in the composition.
+- Gradients welcome when they add depth or mood.
 
 OUTPUT
 - Flat finished banner: dense, layered, photorealistic, high-energy, instantly
-  scannable, built to win the auction in a crowded feed. Premium production
-  quality — looks like a real brand campaign, not an AI test render.
+  scannable. Premium production quality — looks like a real brand campaign.
 ```
 
 ---
 
-## Phase 3 — generate the banners (Higgsfield GPT Image 2 only)
+## Phase 2 — recompose the MVP into every non-1:1 size
 
-Fire one `generate_image` call per size, **all in parallel** in a single assistant turn:
+For each requested size whose aspect is NOT `1:1`, fire **one recomposition call** that uses the MVP as the master source. Fire them all **in parallel** in a single assistant turn.
 
 ```
 mcp__7e69985f-4eb5-4034-a063-d465c056f301__generate_image
   params:
-    model: <gpt_image_2 id resolved in pre-flight>
-    prompt: <the fully-expanded brief for this size>
-    aspect_ratio: <closest supported aspect ratio from Phase 1>
+    model: gpt_image_2
+    aspect_ratio: <closest supported aspect for this WxH>
+    quality: "high"
+    resolution: "1k"
     count: 1
+    medias:
+      - value: <MVP job_id from Phase 1>
+        role: "image"
+    prompt: <recomposition prompt with target size substituted>
 ```
 
-Capture each result's image URL and `job_id` from the widget response. Do not poll — the widget streams completion.
+For 1:1 sizes the user requested (other than the MVP itself), **skip the recomposition** — they reuse the MVP image directly.
 
-If a single generation fails, surface the error, skip that size's Figma step, and continue with the others.
+### Aspect mapping (GPT Image 2 supports `1:1, 4:3, 3:4, 16:9, 9:16, 3:2, 2:3`)
+
+| Requested size | Aspect to request |
+|---|---|
+| `1200×1200` (or any square) | `1:1` (no recomposition — reuse MVP) |
+| `1200×628`  | `16:9` |
+| `960×1200`  | `3:4` |
+| `1200×960`  | `4:3` |
+| `1080×1350` | `4:5` → closest `3:4` |
+| `1080×1920` | `9:16` |
+| `1920×1080` | `16:9` |
+
+For sizes not in the table, pick the closest aspect from the supported set by ratio distance.
+
+### Recomposition prompt (substitute `{TARGET_WIDTH}×{TARGET_HEIGHT}` only)
+
+```
+Resize and recompose the attached master banner (1200×1200) into a new size: {TARGET_WIDTH}×{TARGET_HEIGHT}.
+
+This is a RECOMPOSITION task, not a stretch, crop, or generation task. Treat the master as the single source of truth and rebuild the layout to fit the new aspect ratio without losing any meaning, branding, or message.
+
+ABSOLUTE RULES — DO NOT BREAK ANY OF THESE:
+
+1. NO NEW CONTENT
+   - Do NOT add any text, words, characters, numbers, dates, prices, percentages, badges, labels, asterisks, fine print, disclaimers, URLs, logos, icons, or graphic elements that are not already present in the master.
+   - Do NOT invent taglines, sub-headlines, or CTA variations.
+   - Do NOT translate, paraphrase, summarize, or "improve" any copy.
+   - Every word and every visual element in the output must already exist in the master image.
+
+2. PRESERVE EVERY ELEMENT FROM THE MASTER
+   - Keep the same headline, supporting line, CTA text, logo, hero subject, and brand colors — exactly as they appear.
+   - Keep the same typography (typeface, weight, casing, tracking).
+   - Keep the same color palette — no new colors, no shifted hues, no new gradients.
+   - Keep the same illustration/photography style.
+
+3. NO STRETCHING, NO DISTORTION
+   - Do NOT scale the image non-proportionally.
+   - Do NOT warp, squash, or stretch the hero subject, logo, or any text.
+   - Do NOT upscale text and re-render it with different letter shapes.
+
+WHAT YOU SHOULD DO — RECOMPOSE INTELLIGENTLY:
+
+A. REBUILD THE LAYOUT FOR THE NEW ASPECT RATIO
+   - Treat the canvas as a fresh grid. Reposition existing elements so the composition feels native to the new shape, not a cropped square.
+   - For TALL formats (e.g., 960×1200, 300×600, 160×600): stack elements vertically. Headline top, hero/visual middle, CTA bottom. Generous vertical rhythm.
+   - For WIDE formats (e.g., 1200×628, 728×90, 970×250): place elements horizontally. Hero subject on one side (usually left or right third), text block on the opposite side, CTA aligned with text. Strong horizontal flow toward the CTA.
+   - For SQUARE-ISH formats: rebalance with rule of thirds; do not just center everything.
+
+B. EXTEND THE BACKGROUND, DON'T STRETCH IT
+   - If the new format is wider or taller than the master, EXTEND the existing background (color, gradient, texture, or environment) to fill the new space — match tone, lighting, and direction exactly.
+   - The extended background must look like it was always part of the original — seamless, no visible seam, no color shift, no repeating pattern artifacts.
+   - Do NOT fill empty space with new objects, decorative shapes, or invented graphics.
+
+C. RESCALE ELEMENTS PROPORTIONALLY
+   - Hero subject, logo, and text blocks should be resized proportionally to feel balanced in the new canvas — not shrunk into a corner, not blown up past readable proportions.
+   - Maintain the original visual hierarchy: headline dominant, supporting line secondary, CTA prominent and high-contrast.
+   - Maintain safe margins (~5% of the shortest side) on all four edges. No element touches the canvas edge.
+
+D. KEEP THE CTA STRONG
+   - The CTA button must remain the highest-contrast interactive element.
+   - Same button color, same button text, same shape and corner radius as the master.
+   - Reposition it to the natural endpoint of the new visual flow (bottom for tall, right side for wide, lower-right for landscape).
+
+E. WIDE-FORMAT SPECIFIC GUIDANCE (critical — this is where most resizes fail)
+   - Do NOT center everything in a wide banner. That kills hierarchy.
+   - Split the canvas into clear left/right zones: visual on one side, text + CTA on the other.
+   - Headline can break to fewer lines than the master (e.g., 2 lines in the square may become 1 line in 1200×628) — but only if the exact same words still fit. Never cut or shorten copy.
+   - Reduce vertical stacking; embrace horizontal reading order.
+   - Hero subject may need to be reframed tighter (e.g., portrait crop instead of full body) — but do not invent new parts of the subject; work only with what's visible in the master.
+
+F. TALL-FORMAT SPECIFIC GUIDANCE
+   - Stack vertically with clear breathing room between blocks.
+   - Headline at top third, hero in middle, CTA in bottom third.
+   - Do not let the hero subject dominate the entire canvas — leave room for copy and CTA to breathe.
+
+OUTPUT
+- Final canvas: exactly {TARGET_WIDTH} × {TARGET_HEIGHT} pixels.
+- Flat, finished banner — no mockup frame, no device bezel, no "ad preview" chrome, no watermarks.
+- Sharp, production-ready, identical brand feel to the master.
+- Same message, same elements, new shape.
+```
+
+Note: the literal `(1200×1200)` reference in the prompt is correct **only when the MVP was generated at 1200×1200** (the default case). If the MVP was generated at a different square size (e.g. the user requested `1500x1500`), substitute that size into the parenthetical too.
+
+After firing the recomposition calls, wait for all to complete via `job_display` + a short background timer. Capture each result's `rawUrl`.
 
 ---
 
-## Phase 4 — create Figma frames at exact pixel sizes (WRITE-ONLY)
+## Phase 3 — create Figma frames at exact pixel sizes (WRITE-ONLY)
 
-One `use_figma` call. Create all frames in a single JS snippet. No reads.
-
-Frame setup:
-- Name: `Banner — {WIDTH}x{HEIGHT}`
-- Size: **exactly** `{WIDTH} × {HEIGHT}` pixels
-- Placed on `figma.currentPage`, arranged left-to-right with a 100px gap, starting at `x=0, y=0` (the user can move them after — we do not read existing content to find empty space)
-- `fills: []` initially
-- `clipsContent: true`, `cornerRadius: 0`
-
-Return each new frame's `id` from the JS so Phase 5 can target them.
-
-Example skeleton (one round-trip for all sizes):
+One `use_figma` call creates every requested frame. Side-by-side at `y=0`, 100px gap. Names: `Banner — {WIDTH}x{HEIGHT}`. `fills: []` initially.
 
 ```js
-const sizes = [[1200,1200],[1200,628],[960,1200]]; // injected per call
+const sizes = [/* injected, e.g. [[1200,1200],[1200,628],[960,1200]] */];
 let x = 0;
 const ids = [];
 for (const [w, h] of sizes) {
@@ -245,46 +295,46 @@ return ids;
 
 ---
 
-## Phase 5 — paste the generated image into the frame
+## Phase 4 — paste each generated image into its frame (Path B)
 
-For each `{frameNodeId, imageUrl}` pair, set the image as the frame's fill at `scaleMode=FILL`.
+Use `upload_assets` + `curl` POST — not `figma.createImage`. The Figma plugin sandbox has no `fetch`, so Path A is not viable.
 
-**Path A — `use_figma` (default):**
+For each `{size, frameNodeId, imageUrl}`:
 
-```js
-const bytes = await (await fetch(imageUrl)).arrayBuffer();
-const image = figma.createImage(new Uint8Array(bytes));
-const frame = figma.getNodeById(frameNodeId);
-frame.fills = [{ type: "IMAGE", scaleMode: "FILL", imageHash: image.hash }];
-```
+1. **Download bytes locally:**
+   ```
+   curl -sL -o /tmp/banner/<size>.png "<imageUrl>"
+   ```
+2. **Request an upload URL:**
+   ```
+   upload_assets:
+     fileKey: <fileKey>
+     count: 1
+     nodeId: <frameNodeId>
+     scaleMode: FILL
+   ```
+3. **POST the bytes** to the returned `submitUrl` with `Content-Type: image/png`:
+   ```
+   curl -sS -X POST -H "Content-Type: image/png" --data-binary @/tmp/banner/<size>.png "<submitUrl>"
+   ```
 
-Batch all frames into one `use_figma` call when possible.
+Run all three uploads in parallel (one assistant turn, three tool calls).
 
-**Path B — `upload_assets` (fallback if `figma.createImage`/`fetch` fails):**
-
-1. Download bytes locally: `curl -L -o <tmp>.png "<imageUrl>"`
-2. Call `upload_assets` with `fileKey`, `count=1`, `nodeId=<frameNodeId>`, `scaleMode=FILL`.
-3. POST the bytes to the returned upload URL with the correct `Content-Type` (`image/png` or `image/jpeg`).
-
-Use Path A first. Only fall back to Path B on failure.
+For 1:1 sizes that reuse the MVP image, save it once at `/tmp/banner/mvp.png` and POST that same file for every 1:1 frame.
 
 ---
 
-## Phase 6 — summarize
-
-One line + a small table:
+## Phase 5 — summarize
 
 ```
-/banner done — N banners generated · file: https://figma.com/design/<fileKey> · model: gpt_image_2
+/banner done — N banners (1 MVP, M recomposed) · file: https://figma.com/design/<fileKey> · model: gpt_image_2
 
-| Size | Frame node | Job |
-|---|---|---|
-| 1200x1200 | 12:345 | <job_id> |
-| 1200x628  | 12:346 | <job_id> |
-| 960x1200  | 12:347 | <job_id> |
+| Size | Source | Frame node | Job |
+|---|---|---|---|
+| 1200x1200 | MVP            | 12:345 | <mvp_job_id> |
+| 1200x628  | recomposed     | 12:346 | <job_id>     |
+| 960x1200  | recomposed     | 12:347 | <job_id>     |
 ```
-
-Mark any failed size `— failed: <reason>`.
 
 End with: `Open the file in Figma to review. Regenerate any size by re-running /banner with just that size.`
 
@@ -292,8 +342,11 @@ End with: `Open the file in Figma to review. Regenerate any size by re-running /
 
 ## Constraints — do not violate
 
-- **GPT Image 2 only.** Never substitute `soul_2`, `nano_banana_2`, `marketing_studio_image`, or any other model.
-- **Exact pixel sizes.** The Figma frame is the W×H the user asked for, to the pixel.
-- **Verbatim copy.** Pass `{TITLE}` and `{CTA}` exactly as written — no edits, no translations, no "improvements."
-- **Figma is write-only.** No `get_metadata`, no `get_design_context`, no tree-walking via `use_figma` JS. The only allowed Figma operations are: create frames + paint image fills.
-- **No autonomous commits.** Per CLAUDE.md: never auto-commit.
+- **GPT Image 2 only.** Never substitute `soul_2`, `nano_banana_2`, `marketing_studio_image`, etc.
+- **Resolution is always `1k`.** Both the MVP and every recomposition must be generated with `resolution: "1k"`. Never use `2k` or `4k` — the Figma frame is the source of truth for pixel dimensions; the generated image is fitted via `scaleMode: FILL`, so higher resolutions waste credit without improving the deliverable.
+- **MVP is always 1:1.** Recomposition is the only way to produce non-1:1 banners — never generate non-1:1 banners from scratch.
+- **MVP is the single source of truth.** Every recomposition must pass the MVP's `job_id` as a `medias[]` entry with `role: "image"`. Never run a recomposition without the master reference.
+- **Verbatim copy.** Title and CTA pass through unchanged — no edits, no translations, no improvements. The recomposition prompt's "NO NEW CONTENT" rules forbid the model from adding or changing copy.
+- **Exact pixel sizes.** Frame is W×H to the pixel.
+- **Figma is write-only.** No `get_metadata`, no `get_design_context`. Only allowed Figma operations: create frames + paint image fills via `upload_assets`.
+- **No autonomous commits.** Per CLAUDE.md.

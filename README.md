@@ -83,8 +83,8 @@ QA a localized Figma landing page. Usage: `/qa <figma-url> <lang> [--brand <name
 
 Requires `FIGMA_TOKEN` (Personal Access Token from figma.com/settings) in your shell env. See [`projects/qa/README.md`](projects/qa/README.md) for one-time setup.
 
-### `/banner` (v1.0)
-Generate CTR-optimized ad banners with **Higgsfield GPT Image 2** and drop them into a Figma file at the exact pixel sizes you ask for. End-to-end automation — one prompt, finished frames.
+### `/banner` (v1.1)
+Generate CTR-optimized ad banners with **Higgsfield GPT Image 2** and drop them into a Figma file at the exact pixel sizes you ask for. End-to-end automation built around an **MVP-then-recompose** pipeline — one master design at 1:1, then recompositions for every other size.
 
 **Usage:**
 
@@ -103,20 +103,24 @@ cta: Receba Minha Consultoria Gratuita
 960x1200, 1200x1200, 1200x628
 ```
 
-**What happens:**
+**What happens (v1.1 flow):**
 
-1. Resolves the GPT Image 2 model via the Higgsfield MCP connector.
-2. Builds a senior-performance-marketing brief (dense, photorealistic, layered composition, two-tier hierarchy, strict typography + color rules) and substitutes your size + title + CTA. The design direction is **baked into the command** — you don't supply it.
-3. Fires one `generate_image` call per size **in parallel** at `gpt_image_2`, `quality: high`, `resolution: 2k`, with the closest supported aspect ratio (`1:1`, `4:3`, `3:4`, `16:9`, `9:16`, `3:2`, `2:3`).
-4. Creates one Figma frame per size at the **exact requested pixel dimensions**, side-by-side on the current page.
-5. Downloads each finished render and pastes it into its matching frame as `scaleMode=FILL` via `upload_assets`.
-6. Reports back with the file link, frame node IDs, and Higgsfield job IDs.
+1. **MVP pass.** Always generates ONE master banner at **1:1 aspect** (default `1200×1200`) using the senior-performance-marketing brief (dense, photorealistic, layered composition, two-tier hierarchy, strict typography + color rules). The MVP is the campaign's single source of truth.
+2. **Recomposition pass.** For every non-1:1 size you asked for, fires a separate GPT Image 2 call that takes the MVP image as a **reference** (`medias` with `role: "image"`) and rebuilds the layout for the new aspect ratio using a strict "no new content, no stretching, extend the background, rebuild the grid" prompt. Same words, same brand, new shape.
+3. **1:1 sizes reuse the MVP image** directly — no extra generation, no wasted credit.
+4. **Figma pass.** Creates one frame per requested size at the **exact requested pixel dimensions**, side-by-side. Downloads each finished render and paints it into its matching frame as `scaleMode=FILL` via `upload_assets`.
+5. Reports back with the file link, frame node IDs, and Higgsfield job IDs (MVP + recomposed).
+
+**Why MVP-then-recompose:** generating each size from scratch in parallel gives you three different designs, which kills campaign coherence. The MVP-first flow guarantees one creative idea, expressed natively in every aspect ratio — the way a real designer would resize ad creatives by hand.
 
 **Constraints — built into the command, do not bypass:**
 
 - **GPT Image 2 only.** No substitution to other Higgsfield models (`soul_2`, `nano_banana_2`, `marketing_studio_image`).
+- **Resolution is always `1k`.** Both the MVP and every recomposition are generated at `resolution: "1k"`. The Figma frame is the source of truth for pixel dimensions; the generated image is fitted via `scaleMode: FILL`, so higher resolutions waste Higgsfield credit without improving the deliverable.
+- **MVP is always 1:1.** Recomposition is the only way to produce non-1:1 banners — non-1:1 banners are never generated from scratch.
+- **MVP is the single source of truth.** Every recomposition passes the MVP's `job_id` as a `medias[]` entry with `role: "image"` so the model treats it as the authoritative master.
 - **Exact pixel sizes.** The Figma frame is always W×H to the pixel — the ad-platform spec is non-negotiable. Aspect mismatch between the generated image and the frame is absorbed by `scaleMode=FILL` (center crop).
-- **Verbatim copy.** Title and CTA are passed through to the model unchanged — no translation, no rewording, no "improvements."
+- **Verbatim copy.** Title and CTA are passed through unchanged — no translation, no rewording, no "improvements." The recomposition prompt's "NO NEW CONTENT" rules forbid the model from inventing or editing copy.
 - **Figma is write-only.** The command never reads the file tree (no `get_metadata`, no `get_design_context`) — it only creates frames and paints fills. Avoids stalls on large campaign files.
 
 Requires the Higgsfield and Figma MCP connectors to be configured. The command spec lives at [`.claude/commands/banner.md`](.claude/commands/banner.md).
