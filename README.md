@@ -83,7 +83,7 @@ QA a localized Figma landing page. Usage: `/qa <figma-url> <lang> [--brand <name
 
 Requires `FIGMA_TOKEN` (Personal Access Token from figma.com/settings) in your shell env. See [`projects/qa/README.md`](projects/qa/README.md) for one-time setup.
 
-### `/banner` (v1.4)
+### `/banner` (v1.6)
 Generate CTR-optimized ad banners with **Higgsfield GPT Image 2** and drop them into a Figma file at the exact pixel sizes you ask for. **v1.4 introduces a designer architecture** — Claude reads the design framework, reasons through the creative decisions for each specific banner (subject, setting, lighting, palette, typography, money element, CTA), and writes a **concrete scene-level prompt** that the image model can render directly. The previous versions copy-pasted a generic rule manual to the model, which it can't act on. v1.4 fixes that.
 
 **Usage:**
