@@ -1,57 +1,160 @@
 ---
-description: Render banner concepts with Higgsfield GPT Image 2 and paint them into a Figma file. User-controlled setup (sizes first, then customize vs auto). Premium localized performance-ad style — never flat split layouts, always integrated full-canvas scenes. Multi-concept ready. Reasoning-first art direction. The user provides one-or-more Title lines + a Figma URL with the hero node pre-selected.
+description: Render banner concepts with Higgsfield GPT Image 2 and paint them into a Figma file. Claude controls the brief (campaign understanding, layout lock, copy hierarchy, market, what to avoid). Higgsfield controls the picture (visual energy, atmosphere, subject interpretation, lighting, decorative style). Prompts are short creative briefs, not photoshoot directions. Never dark editorial office scenes. User-controlled setup (sizes first, then customize vs auto). Multi-concept ready. The user provides one-or-more Title lines + a Figma URL with the hero node pre-selected.
 ---
 
-# /banner — Designer flow (Higgsfield GPT Image 2 → Figma) v2.5
+# /banner — Designer flow (Higgsfield GPT Image 2 → Figma) v2.7
 
-## What changed in v2.5 (from v2.4)
+## What changed in v2.7 (from v2.6)
 
-v2.5 puts the designer back in control of the early decisions and locks the creative ceiling to **premium localized performance ads** — not generic AI/finance images, not flat split-panel templates.
+v2.6 fixed the visual direction (campaign poster, not editorial photo) but **the prompt-writing logic was still wrong**: Claude was acting like a photoshoot director — over-describing scenes, naming exact props, micro-managing the picture. That over-specification was steering Higgsfield back toward "realistic photo + text overlay" output.
 
-**Flow changes (user-controlled setup):**
+**v2.7 splits responsibility cleanly:**
 
-- **Phase 0.4 — Size selection poll (NEW, BLOCKING).** Multi-select clickable poll with the most common ad formats (1:1, wide, story, portrait, landscape, display, leaderboard, half-page, all standard, custom). 1200×1200 always included as MVP/master unless explicitly excluded. Skipped if sizes were passed in input.
-- **Phase 0.45 — Creative control mode poll (NEW, BLOCKING).** Customize direction vs Claude decides automatically. In auto mode, Phase 0.5 polls are skipped entirely and Claude infers silently.
-- **Phase 0.5 polls run only in Customize mode.** Original v2.4 highlight + CTA + visual direction + local cues. Skipped in auto mode.
+- **Claude controls the BRIEF.** Campaign understanding · size/layout rules · copy hierarchy · text + CTA placement · market / localization · LP consistency · what to avoid.
+- **Higgsfield controls the PICTURE.** Visual creativity · atmosphere · subject interpretation · lighting · decorative energy · poster feel · final image style.
 
-**Visual style direction (premium localized performance ads):**
+Claude stops writing prompts like a photoshoot director. Higgsfield is allowed to be creative.
 
-- **5 preferred creative archetypes.** Local hero campaign / Premium offer poster / Editorial lifestyle ad / Cultural prestige layout / Minimal premium typographic ad. Claude picks fresh per task, no archetype default.
-- **No hard split-panel layouts.** The biggest visual-pattern fix in v2.5: banners must be ONE continuous cinematic scene with the copy zone integrated into the background through lighting, depth, blur, and decorative bridges — not a dark rectangle pasted next to a photo.
-- **Integrated copy zone rule.** Soft gradient + blur + vignette + atmospheric haze creates the readability zone. No hard panels, no flat dark boxes behind text.
-- **5-layer background depth formula.** Foreground / Midground / Background atmosphere / Readability zone / Visual bridge — every prompt declares all five.
-- **Target creative standard.** Bold localized advertising, large confident typography, one clear hero subject, polished CTA, cinematic lighting, local-market atmosphere, art-directed (not just realistic).
+### The behavioral change
 
-**Higgsfield prompt restructure:**
+**Old (v2.6 and earlier):**
 
-- **Prompt length 900–1,200 chars preferred, 1,400 max.** Compact, visual, production-oriented — describe the AD COMPOSITION, not a long system explanation.
-- **7-section prompt structure:** Format + market + mood → Concept → Hero → Integrated background → Text + CTA layout → Style + palette → Constraints.
-- **Hard ban on readable invented text** inside screens / charts / UI / documents. Only the provided Title and CTA may be readable text on the banner.
-- **Hard ban on hard split-panel layout.** Restated in every prompt's constraints block.
+```
+Analyze LP → invent detailed scene → describe too many props → Higgsfield generates a realistic photo → text placed on top
+```
 
-**Carried over from v2.4 (still in effect):**
+**New (v2.7):**
 
-- Phase 1.0 visual reasoning (8-step) — fresh metaphor per task, no theme reuse
-- Campaign-meaning → visual logic catalog (10 archetypes)
-- Three-Zone composition (Text/Visual/CTA, planned before render)
-- Per-aspect layout rules with diagrams
-- Banner quality standard + 14 anti-patterns
-- On-screen data localization (market-native bank labels — but always blurred/abstract per the new readable-text rule)
-- Stacked vs Inline highlight mode
+```
+Analyze LP → extract campaign intent → lock the layout by aspect ratio → send a short creative direction → let Higgsfield create the visual energy
+```
+
+### Prompt-writing rules — REWRITTEN
+
+- **Length:** 450–750 chars preferred, **900 max** (was 700–1,000 / 1,300 in v2.6).
+- **Tone:** sounds like a creative brief, not a technical document.
+- **Do NOT over-describe:** exact person details · exact office props · desk objects · furniture · lamps · notebooks · coffee cups · hair length · clothing details · overly specific room interiors. Only include those if the user or LP explicitly requires them.
+- **Structure:** 6 sections (Format + market + mood → Campaign-poster direction → Layout lock for aspect ratio → Visual atmosphere → Copy / CTA placement → Constraints).
+- **No long prop lists.** No full office scene. No detailed photo composition unless the user asks for it.
+
+### New Phase 1.0 — Creative Card extraction (REPLACES the 8-step scene reasoning)
+
+Before prompting Higgsfield, Claude extracts a short Creative Card per concept:
+
+```
+Campaign purpose:        <one line>
+Market / language:       <e.g. Swedish / Sweden>
+Emotional register:      <aspiration / urgency / trust / curiosity / empowerment / provocation / identity>
+Primary hook:            <the number / phrase / claim that should dominate>
+Main visual hierarchy:   <what is hero, what is support>
+LP visual style:         <one-line distilled from Phase 0.3>
+Required aspect ratios:  <list from Phase 0.4>
+Layout lock:             <one-line position rules>
+Avoid:                   <specific cliché this concept could regress into>
+```
+
+The Creative Card is the ONLY pre-prompt artifact. No more 8-step scene reasoning, no more 5-layer depth formula on paper, no more master prop manifest with desk/lamp/notebook fields. The card stays tight and campaign-first.
+
+### Higgsfield prompt template — REWRITTEN (6 sections, short)
+
+```
+{W}x{H} premium localized campaign poster for {MARKET}, {REGISTER} mood. Finished paid-social creative, not an editorial office photo.
+
+Main hook: "{highlight phrase}" is the visual hero. Use bold graphic ad layout, oversized typography, premium {palette} color system, clean copy zone, and visible design layer.
+
+Layout: {aspect-ratio layout lock}. Title reads exactly: "{Title}". CTA "{CTA}" {CTA placement if present}.
+
+Visual atmosphere: {local market cue}, subtle {campaign theme} energy, soft gradients, curved panels, polished campaign lighting. Optional photo-real subject only as support, integrated into the design.
+
+Readable text only: Title and CTA. No logos, no fake UI, no invented text. Avoid {forbidden defaults}.
+```
+
+That's enough. Do NOT add 20 extra micro-details.
+
+### Aspect-ratio layout locks — REWRITTEN (one-line per format)
+
+These are the ONLY layout rules that go into the Higgsfield prompt. Claude enforces them; Higgsfield is free everywhere else.
+
+- **1:1 (Square — master):** Large title block on left / top-left or center-left. Visual / atmosphere on right or background. CTA below title if present. Key hook can become oversized and dominant.
+- **1200×628 (Wide):** Copy + CTA on left 40–45%. Visual / atmosphere on right 55–60%. No tall stacked text. Strong horizontal campaign composition.
+- **9:16 (Story / Reel):** Title top 20–30%. Visual center 40–50%. CTA bottom-center if present. All content inside mobile safe zones.
+- **3:4 (Portrait):** Title upper. Visual center. CTA lower. Premium editorial/poster feel, but still campaign-designed.
+- **16:9 (Landscape / Hero):** Title + CTA in left third or left 40%. Large visual atmosphere on right. Wide cinematic campaign layout, not a photo with text.
+
+### Campaign element manifest — KEPT, scope clarified
+
+Recomps preserve **design assets**, NOT physical props:
+
+- title hierarchy
+- highlight treatment
+- CTA treatment
+- main visual metaphor
+- market atmosphere
+- color system
+- graphic panel style
+- hero subject type (only if a subject was the actual concept)
+
+Recomps do NOT force preservation of desk · lamp · notebook · coffee cup · chip · laptop · monitor — unless those were the actual selected concept.
+
+### Auto mode — KEPT, restated
+
+In **"Claude decides automatically"** (Phase 0.45), Claude internally generates **3** candidate campaign directions per concept:
+
+1. Typography-led poster
+2. Local hero campaign
+3. Cultural / environment campaign
+
+Then picks the strongest for title + LP. **Only** falls back to office / analyst / finance-desk if it is explicitly the strongest answer, never as the default.
+
+### Phase 2.5 — MVP cliché QA + auto-redo — KEPT, simplified questions
+
+After MVP generation, before designer review, Claude internally answers:
+
+1. Does this look like a campaign poster or a photoshoot?
+2. Is the title / offer the hero?
+3. Is the graphic design layer visible?
+4. Is the palette too dark / corporate?
+5. Did it create office / desk / lamp / analyst cliché?
+6. Does it feel close to the user's regional-campaign reference style?
+
+If any answer is "wrong," auto-redo **once** with this correction:
+
+> *Previous result looked too much like a dark editorial / finance photo. Regenerate as a bold localized campaign poster with oversized typography, visible graphic panels, brighter premium palette, local atmosphere, and no office / desk / lamp / analyst props.*
+
+### Carried over from v2.6 (still in effect)
+
+- Campaign-poster-first creative ceiling (no dark editorial office scenes)
+- Forbidden default style drivers (editorial portrait, walnut desk, brass lamp, notebook, coffee cup, AI chip on desk, dark prestige finance)
+- 5 Creative Archetypes campaign-first (Local Hero / Premium Offer Poster / Editorial Lifestyle Campaign / Cultural Prestige / Minimal Typographic)
+- Typography Hero Rule (numbers / % / strong claims → typography is hero)
+- "Continuous full-canvas promotional campaign composition" background rule (no split panel, no office scene)
+- Nordic / Swedish campaign cues (Stockholm waterfront, blue + ivory + gold + neon, NEVER desk + lamp)
+- Phase 0.4 size selection poll (BLOCKING unless sizes in input)
+- Phase 0.45 creative control mode (BLOCKING — Customize vs Auto)
+- Phase 0.5 polls run ONLY in Customize mode
+- Stacked vs Inline highlight mode (formula-based)
 - CTA color tier rule (Tier 1 highlight ≠ Tier 2 CTA hex)
-- Title block height = clamp(canvas_h × 0.22, 180, 480) px
+- Title block height = `clamp(canvas_h × 0.22, 180, 480) px`
+- CTA height = `clamp(canvas_h × 0.08, 80, 160) px`
+- Subject vertical fill 45–55% for TALL / PORTRAIT *when* a subject is used
 - Phase 6.5 silent visual QA before paint
-- Master prop manifest enforced in recomps
-- Subject vertical fill 45–55% for TALL/PORTRAIT
-- Multi-concept support, market exclusion lists, safe-area-from-fill-math, landmark do-not-invent
+- Multi-concept support, market exclusion lists, safe-area-from-fill-math
+- Hard ban on readable invented text in screens / charts / UI
+- Hard ban on hard split-panel layout
+- Verbatim Title + CTA
+- Queue-aware polling (extends past t+5min, hard cap t+30min)
+- Cross-check `show_generations` if `job_display` returns empty (new tip from v2.6 problem-list)
+
+---
 
 ## Architecture
 
 | Layer | Audience | What it is | Length |
 |---|---|---|---|
-| **§ Design Framework** | Claude only | Principle-driven design system — adaptive decisions, hard guardrails, references | No cap |
-| **§ Visual Prompt** | GPT Image 2 | 7-section advertising-composition brief — Format → Concept → Hero → Background → Layout → Style → Constraints | **900–1,200 chars preferred, ≤1,400 hard** |
-| **§ Recomposition Prompt** | GPT Image 2 | Layout redesign per format — same concept, new spatial structure. | **≤1,800 chars** |
+| **§ Design Framework** | Claude only | Principle-driven brief system — campaign understanding, layout locks, hard guardrails | No cap |
+| **Creative Card** | Claude only | 9-line per-concept brief extracted in Phase 1.0 | ~ 9 lines |
+| **§ Visual Prompt** | GPT Image 2 | Short creative brief — Format + market + mood → Campaign-poster direction → Layout lock → Visual atmosphere → Copy / CTA → Constraints | **450–750 chars preferred, ≤900 hard** |
+| **§ Recomposition Prompt** | GPT Image 2 | Layout redesign per format — same campaign, new spatial structure | **≤1,200 chars** |
 
 Workflow:
 
@@ -59,12 +162,15 @@ Workflow:
 2. **LP hero read.** Direct `get_screenshot` call on the user-provided node-id. Retry-on-session-expired.
 3. **Phase 0.4 — Size selection poll** (BLOCKING). Skip if sizes were passed in input.
 4. **Phase 0.45 — Creative control mode poll** (BLOCKING). Customize vs Auto.
-5. **Phase 0.5 — Creative polls** (per concept). RUN ONLY in Customize mode. In Auto mode, skip and infer silently.
-6. **Phase 1.0 + 1 + 2 — Visual reasoning → compose prompt → render MVP at 1200×1200** per concept (parallel).
-7. **Phase 3 + 4 — Figma frames + MVP paint.**
-8. **Phase 5 — 🛑 Designer review pause.** Per-concept Redo / Continue / Stop.
-9. **Phase 6 + 6.5 + 7 — Recomp + silent QA + paint.**
-10. **Phase 8 — Summary + problem list.**
+5. **Phase 0.5 — Creative polls** (per concept). RUN ONLY in Customize mode. In Auto mode, internally generate 3 campaign directions and pick silently.
+6. **Phase 1.0 — Creative Card.** Extract a tight 9-line card per concept. No more 8-step scene reasoning.
+7. **Phase 1 — Compose short Higgsfield prompt.** 6 sections, ≤900 chars hard.
+8. **Phase 2 — Render MVP at 1200×1200** per concept (parallel).
+9. **Phase 2.5 — MVP cliché QA + auto-redo.** 6-question check; 1 corrective retry max.
+10. **Phase 3 + 4 — Figma frames + MVP paint.**
+11. **Phase 5 — 🛑 Designer review pause.** Per-concept Redo / Continue / Stop.
+12. **Phase 6 + 6.5 + 7 — Recomp + silent QA + paint.**
+13. **Phase 8 — Summary + problem list.**
 
 ---
 
@@ -83,8 +189,8 @@ CTA: <button text verbatim>                 ← optional; applies to all concept
 ### Required
 
 - **Figma URL with `node-id`.** Must be `https://figma.com/design/<fileKey>/...?node-id=<X-Y>...`. The user has to pre-select the hero frame in Figma so the URL carries the node-id. Extract both `fileKey` and `nodeId` (convert `X-Y` → `X:Y`).
-- **`Title:` line(s).** The full headline copy verbatim. Accept the typo `Tittle:` and the alias `Headline:`. Use the WHOLE title text on the banner — never split into "headline + sub-line". **Multiple `Title:` lines = multiple concepts** rendered in parallel. Cap at 4 concepts per run.
-- **`CTA:` line(s)** — OPTIONAL. If a single `CTA:` is given, it applies to every concept. If a per-concept CTA is needed, the caller can repeat `CTA:` lines in the same order as the titles. If absent, Phase 0.5 asks via poll per concept (Claude suggests 3 short candidates + "no button"). In Auto mode, Claude picks silently.
+- **`Title:` line(s).** The full headline copy verbatim. Accept the typo `Tittle:` and the alias `Headline:`. Use the WHOLE title text on the banner — never split into "headline + sub-line". **Multiple `Title:` lines = multiple concepts** rendered in parallel. **Cap at 10 concepts per run.** Customize mode beyond 5 concepts gets click-heavy (each concept = 3 polls, batched into AskUserQuestion calls of max 4 questions each) — recommend Auto mode for N > 5 unless the designer wants per-concept control.
+- **`CTA:` line(s)** — OPTIONAL. If a single `CTA:` is given, it applies to every concept. If a per-concept CTA is needed, the caller can repeat `CTA:` lines in the same order as the titles. If absent, Phase 0.5 asks via poll per concept. In Auto mode, Claude picks silently or omits the CTA if the title is self-contained.
 
 ### Optional
 
@@ -105,282 +211,126 @@ Run in parallel, fail-fast on hard requirements:
 
 1. **Resolve `gpt_image_2` model id** via `models_explore`. Fallback to literal `gpt_image_2`.
 2. **Figma MCP connected?** Need `get_screenshot`, `use_figma`, `upload_assets`. Missing → `❌ /banner needs Figma MCP read+write access.`
-3. **Egress allowlist check.** Test both hosts in parallel with `curl -sS -o /dev/null -w "%{http_code}" --max-time 5`:
+3. **Egress allowlist check.** Test both hosts in parallel:
    - `https://d8j0ntlcm91z4.cloudfront.net/`
    - `https://mcp.figma.com/`
-   If either returns `403 host_not_allowed`, surface:
-   ```
-   ❌ Your Claude Code workspace blocks egress to <host(s)>. Add to allowlist:
-     d8j0ntlcm91z4.cloudfront.net
-     mcp.figma.com
-   Or run /banner from local Claude Code.
-   ```
-   Then `AskUserQuestion`: **Continue (no paint)** / **Stop**.
+   Look for `host_not_allowed` in the body (not just any 403 — CDN roots return 403 normally). On allow-list failure, surface and ask Continue (no paint) / Stop.
 
-All three checks finish in under 2 seconds. Output is silent on success — only failures surface.
+All checks finish in under 2 seconds. Silent on success.
 
 ---
 
 ## Phase 0 — silent setup
 
-Language, register, and LP context are derived silently. Nothing surfaces unless something breaks.
+Language, register, and LP context are derived silently.
 
 ### Phase 0.1 — language (silent)
 
-Detect from Title + CTA. Labels: `pt-BR`, `pt-PT`, `es-LATAM`, `es-ES`, `English`, `Arabic`, `Hebrew`, `Urdu`, `Farsi`, `Pashto`, `th-TH`, `tr-TR`, `sv-SE`, `de-DE`, otherwise closest from the localization tree; default `English`.
+Detect from Title + CTA. Labels: `pt-BR`, `pt-PT`, `es-LATAM`, `es-ES`, `English`, `Arabic`, `Hebrew`, `Urdu`, `Farsi`, `Pashto`, `th-TH`, `tr-TR`, `sv-SE`, `de-DE`, otherwise closest. Default `English`.
 
 ### Phase 0.2 — register (silent)
 
-Classify from Title + CTA per **§ Register cues**. One of: `aspiration / urgency / provocation / trust / curiosity / empowerment / identity`. Default `curiosity` if no cues match.
+Classify from Title + CTA per **§ Register cues**: `aspiration / urgency / provocation / trust / curiosity / empowerment / identity`. Default `curiosity`.
 
-### Phase 0.3 — LP hero (direct screenshot, with retry)
-
-The user already pre-selected the hero — `nodeId` came in via the URL.
+### Phase 0.3 — LP hero (silent, with retry)
 
 1. Call `get_screenshot(fileKey, nodeId, maxDimension=1200)`.
-2. **On `session expired`:** retry with 2s wait, then 4s wait. After 2 retries → fall back to no-LP-context (silent).
-3. **On success:** analyze silently for `subject archetype`, `top 3 hex`, `tone`, `setting`, `LP CTA button color (if visible)`, and a one-line `LP purpose`. Cache by `fileKey + nodeId`.
-4. **On any other error:** fall back to no-LP-context. Record in the problem-list for Phase 8.
+2. **On `session expired`:** retry with 2s then 4s. After 2 retries → fall back to no-LP-context (silent).
+3. **On success:** extract a one-line `LP visual style` (palette + tone + setting + LP CTA color if visible + LP purpose). That single line is what the Creative Card consumes. **Do NOT enumerate exact props.**
+4. **On any other error:** fall back, record in Phase 8 problem-list.
 
 ---
 
-## Phase 0.4 — size selection (NEW in v2.5, BLOCKING)
+## Phase 0.4 — size selection (BLOCKING)
 
-**Skip this phase if sizes were passed in input.** Otherwise ask:
-
-```
-AskUserQuestion {
-  question: "Which banner sizes do you want?",
-  header: "Sizes",
-  multiSelect: true,
-  options: [
-    { label: "1:1 — 1200×1200",          description: "Square feed ad. Also used as MVP/master." },
-    { label: "Wide social — 1200×628",   description: "Facebook, LinkedIn, Google Display format." },
-    { label: "Story/Reel — 1080×1920",   description: "Vertical mobile story format." },
-    { label: "Portrait feed — 960×1200", description: "Premium vertical feed format." },
-    { label: "Landscape/Hero — 1920×1080", description: "Website hero / cinematic landscape." },
-    { label: "Display — 300×250",        description: "Medium rectangle display ad." },
-    { label: "Leaderboard — 728×90",     description: "Horizontal display banner." },
-    { label: "Half page — 300×600",      description: "Tall display ad." },
-    { label: "All standard sizes",       description: "Generate the full standard set (top 5 feed + display)." },
-    { label: "Custom sizes",             description: "I will provide exact WxH sizes." }
-  ]
-}
-```
-
-**Rules:**
-
-- Multi-select MUST be enabled.
-- **"All standard sizes"** → expand to `[1200×1200, 1200×628, 1080×1920, 960×1200, 1920×1080]` (display formats omitted by default — pick them explicitly if needed).
-- **"Custom sizes"** → follow up with a free-text `AskUserQuestion` asking for `WxH` tokens. Validate every token matches `^\d+x\d+$`.
-- **Always include `1200×1200`** as the MVP/master unless the user explicitly deselects it AND picks at least one other size. If user picks zero sizes, default to `[1200×1200]`.
-- Do not continue to visual generation until size selection is resolved.
+Skip if sizes were passed in input. Otherwise multi-select poll with the 10 standard options (1200×1200 / 1200×628 / 1080×1920 / 960×1200 / 1920×1080 / 300×250 / 728×90 / 300×600 / All-standard / Custom). 1200×1200 always included as MVP/master unless explicitly excluded.
 
 ---
 
-## Phase 0.45 — creative control mode (NEW in v2.5, BLOCKING)
+## Phase 0.45 — creative control mode (BLOCKING)
 
-After sizes are resolved, ask:
+Single-select: Customize direction vs Claude decides automatically.
 
-```
-AskUserQuestion {
-  question: "Do you want to customize the banner direction or let Claude decide automatically?",
-  header: "Creative mode",
-  multiSelect: false,
-  options: [
-    { label: "Customize direction",         description: "Ask me short creative questions before rendering." },
-    { label: "Claude decides automatically", description: "Infer the best direction from the brief and proceed silently." }
-  ]
-}
-```
-
-### If "Claude decides automatically"
-
-**Skip Phase 0.5 entirely.** Claude infers silently per concept:
-
-- highlight phrase (from § Register cues + money-element ranking)
-- CTA logic if CTA is missing (best register-appropriate verb)
-- visual direction (pick one § Creative Archetype, then specify it for the brief — do not default to AI/finance unless the title clearly calls for it)
-- local cultural cue level (Subtle default for non-English; None for English)
-- subject type, style, layout, color mood, CTA placement (from § Design Framework)
-
-Proceed directly to Phase 1.0 visual reasoning.
-
-### If "Customize direction"
-
-Run Phase 0.5 polls per concept (next section).
+- **Auto:** skip Phase 0.5. Claude internally generates 3 candidate campaign directions per concept (Typography-led / Local hero / Cultural-environment) and picks the strongest. Office / analyst is NEVER the default.
+- **Customize:** run Phase 0.5 polls.
 
 ---
 
 ## Phase 0.5 — creative polls (CUSTOMIZE MODE ONLY)
 
-Up to 4 polls **per concept**. Each one is short. Skip any poll whose answer is already in input.
+Up to 4 polls per concept. Each is short. Multi-concept handling: shared polls (local cues) run once; title-specific polls run per concept.
 
-**Multi-concept handling.** With multiple `Title:` lines:
+### Poll 1 — Title highlight
 
-- **Shared polls run once** across concepts: local cultural cues (Poll 4).
-- **Title-specific polls run per concept:** highlight pick (Poll 1), CTA suggestion (Poll 2 if missing), visual direction (Poll 3).
-- Batch into sequential `AskUserQuestion` calls, max 4 questions per call. Typical pattern for 2 concepts: Batch 1 = T1 highlight + T1 CTA + T1 visual + shared local cues. Batch 2 = T2 highlight + T2 CTA + T2 visual.
-- Each option label prefixes the concept ("T1 — …", "T2 — …") so the designer can scan quickly.
+3–4 candidates from the title, ranked by money-element strength (numbers/% > national/identity > intensity verb > else first 1–3 words). Last option always "No highlight".
 
-### Poll 1 — Title highlight (ALWAYS shown in Customize)
+### Poll 2 — CTA suggestion (only if CTA missing)
 
-Compose 3–4 candidate phrases from the title. Rank by money-element strength (numbers/% > national/identity hook > intensity verb > else first 1–3 words). Last option is always "No highlight".
+3 short CTA candidates ≤ 30 chars, register-appropriate. Last option "No button".
 
-```
-AskUserQuestion {
-  question: "Which part of the title pops?",
-  header: "Highlight",
-  multiSelect: false,
-  options: [
-    { label: "<phrase 1>",        description: "<60-char preview of the phrase>" },
-    { label: "<phrase 2>",        description: "<60-char preview>" },
-    { label: "<phrase 3>",        description: "<60-char preview>" },
-    { label: "No highlight",      description: "Render the title uniformly. No accent treatment." }
-  ]
-}
-```
+### Poll 3 — Campaign direction (campaign-first)
 
-### Poll 2 — CTA suggestion (only if `CTA:` missing)
+3 candidate directions from the 3 lanes:
 
-Compose 3 short CTA candidates derived from title's promise + register + market. ≤ 30 chars each. Last option is "No button".
+1. **Typography-led poster** — oversized number/phrase dominates, minimal photoreal support.
+2. **Local hero campaign** — native subject or local environment, bold title overlay.
+3. **Cultural / environment campaign** — local architecture/skyline/cultural identity frames the message.
 
-```
-AskUserQuestion {
-  question: "What goes on the button?",
-  header: "Button",
-  multiSelect: false,
-  options: [
-    { label: "<CTA suggestion 1>", description: "<one-line meaning>" },
-    { label: "<CTA suggestion 2>", description: "<one-line meaning>" },
-    { label: "<CTA suggestion 3>", description: "<one-line meaning>" },
-    { label: "No button",          description: "Banner has no CTA button." }
-  ]
-}
-```
+Plus "Creative AI decides". Each option is specific, distinct, culturally native, connected to LP purpose, and **never a person-in-office cliché**.
 
-### Poll 3 — Visual direction (ALWAYS shown in Customize, content-driven)
+### Poll 4 — Local cultural cues (non-English only)
 
-Claude composes 3–4 specific directions for this banner — grounded in LP purpose + title + register + market + the 5 preferred creative archetypes. The campaign-meaning catalog (§ Design Framework) seeds ideation but does not dictate.
-
-Each option must be:
-
-- specific (concrete subject + setting + lighting, not category labels)
-- distinct from the others (different visual world per option)
-- culturally native to the LANGUAGE market
-- connected to the LP's promise, not just its aesthetic
-- a fresh choice for THIS task — do NOT reuse AI-chip / fintech-chart / trading-floor / person-with-phone as default
-
-```
-AskUserQuestion {
-  question: "What should the banner show?",
-  header: "Visual",
-  multiSelect: false,
-  options: [
-    { label: "<specific direction 1>", description: "<concrete subject + setting + lighting>" },
-    { label: "<specific direction 2>", description: "<concrete subject + setting + lighting>" },
-    { label: "<specific direction 3>", description: "<concrete subject + setting + lighting>" },
-    { label: "Creative AI decides",    description: "Claude picks freely from § Creative Archetypes, biased to the brief." }
-  ]
-}
-```
-
-### Poll 4 — Local cultural cues (non-English markets only)
-
-```
-AskUserQuestion {
-  question: "Want local cultural cues?",
-  header: "Local cues",
-  multiSelect: false,
-  options: [
-    { label: "Subtle",  description: "Native subject + one ambient cue. Recommended." },
-    { label: "Strong",  description: "Architecture, regional skyline, decorative motifs. Bold." },
-    { label: "None",    description: "Just match the language. No props." }
-  ]
-}
-```
-
-Skip entirely for `English` UNLESS the title contains an identity hook (e.g. "America," "Britain," "Australia"). Default = Subtle.
+Subtle / Strong / None. Default Subtle.
 
 ---
 
-## Phase 1.0 — Visual reasoning (silent)
+## Phase 1.0 — Creative Card (REPLACES v2.6 8-step reasoning)
 
-**Before composing the visual prompt, reason internally for each concept.** Fresh per task — no template reuse.
+Build one Creative Card per concept. Keep each line short. This is the ONLY pre-prompt artifact.
 
-### Step 1 — Understand the ad
+```
+Campaign purpose:        <what is being sold + why now>
+Market / language:       <e.g. Swedish / Sweden (sv-SE)>
+Emotional register:      <register from Phase 0.2>
+Primary hook:            <number / phrase / claim that dominates>
+Main visual hierarchy:   <hero element + role of any support>
+LP visual style:         <one-line from Phase 0.3 — palette + tone, NO prop enumeration>
+Required aspect ratios:  <list from Phase 0.4>
+Layout lock:             <one-line position rules from § Aspect-Ratio Layout Locks>
+Avoid:                   <specific cliché this concept could regress into>
+```
 
-- What is this banner selling?
-- What emotion should it create?
-- What visual metaphor best supports the copy?
-- What would a real performance-ad designer choose for this brief?
+**Example:**
 
-### Step 2 — Pick the creative archetype
+```
+Campaign purpose:        Swedish investing opportunity around NVIDIA / AI infrastructure.
+Market / language:       Swedish / Sweden (sv-SE).
+Emotional register:      aspirational, confident.
+Primary hook:            "43".
+Main visual hierarchy:   "43" is the hero; the title supports it.
+LP visual style:         premium, modern, clean, dark-navy + neon-green + ivory.
+Required aspect ratios:  1:1, 1200×628, 9:16.
+Layout lock:             title prominent, CTA below title if present, hero visual supporting.
+Avoid:                   office, analyst portrait, desk, lamp, coffee cup, AI chip still life, fake UI text.
+```
 
-Pick ONE of the 5 archetypes (§ Creative Archetypes) that best fits the brief. Do NOT default to the same archetype across runs. Decision is driven by:
+**Derived computed values** (kept silent, computed but not enumerated in the prompt):
 
-- title content
-- LP purpose
-- market identity strength
-- whether the title is a number/% (Premium offer poster), a country/identity hook (Local hero / Cultural prestige), a relatable scenario (Editorial lifestyle), a strong claim (Minimal typographic).
+- Highlight structure mode (Inline / Stacked) — `(highlight_chars × base_size × 1.12) / column_width` → > 0.40 Inline, ≤ 0.40 Stacked.
+- CTA color tier — Tier 1 (highlight) = LP accent or register default · Tier 2 (CTA) ≠ Tier 1 · Tier 3 (body) = white on dark, near-black on light.
+- Title block height — `clamp(canvas_h × 0.22, 180, 480) px`.
 
-### Step 3 — Plan the three zones
-
-- **Text Zone:** position + shape of the title-and-button area. Clean, low-contrast, integrated into the scene (NOT a hard panel).
-- **Main Visual Zone:** position of the hero subject / scene / metaphor.
-- **CTA Zone:** position of the button — separated from the title but visually connected to the scene.
-
-### Step 4 — Plan the background (5-layer depth formula)
-
-Declare BEFORE writing the prompt:
-
-1. **Foreground element** — subject, object, hand, device, product, person, or decorative shape.
-2. **Midground environment** — desk, street, skyline, interior, local architecture, lifestyle setting.
-3. **Background atmosphere** — soft blur, skyline, gradient light, cultural pattern, glow, depth, haze, cinematic falloff.
-4. **Readability zone** — calm area where title + CTA sit, created by blur / shadow / vignette / low-detail background (NOT a hard rectangle).
-5. **Visual bridge** — element connecting subject and copy area: light streak, curved gradient, ornament, shadow, architectural line, color flow.
-
-### Step 5 — Apply per-aspect layout
-
-Pick from § Per-Aspect Layout Rules. 1:1 master uses SQUARE; recomps use their per-aspect layouts.
-
-### Step 6 — Decide highlight structure mode
-
-Compute `(highlight_chars × base_size × 1.12) / text_column_width`.
-- **> 0.40 → Inline mode.** Highlight stays in-line. Drop size escalation, use weight + underline + color.
-- **≤ 0.40 → Stacked mode.** Highlight gets its own visual row at 1.12× size; rest of logical line below at base.
-
-### Step 7 — Decide CTA color tier
-
-- **Tier 1 (Highlight)** = LP accent OR register default.
-- **Tier 2 (CTA)** = if Tier 1 collides with LP palette, use a darker shade at ~70% L of Tier 1, OR sampled from LP's actual CTA button. **Tier 1 ≠ Tier 2 in hex.**
-- **Tier 3 (Body text)** = white on dark, near-black on light.
-
-### Step 8 — Title block height target
-
-`title_block_h = clamp(canvas_h × 0.22, 180, 480) px`.
-
-### Step 9 — Master prop manifest
-
-Choose 2–4 named props from the scene. Write them down — this becomes the prop manifest carried verbatim into recomps.
+These computed values influence Claude's QA pass but are NOT spelled out in the Higgsfield prompt unless they're load-bearing for layout.
 
 ---
 
 ## Phase 1 — compose the visual prompt (silent)
 
-Compose ONE prompt per concept using **§ Visual Prompt Template** (v2.5 — 7-section structure). Soft 900–1,200 chars, hard ≤1,400.
+Use **§ Visual Prompt Template v2.7** below. **450–750 chars preferred, ≤900 hard.**
 
-The prompt describes an **advertising composition** with an integrated full-canvas scene — never a flat split panel. Encode:
+Sounds like a creative brief, not a technical document. No prop enumeration. No detailed photo composition. The 6-section structure is enough.
 
-1. **Format + market + mood.** Size, language, market, register.
-2. **Concept.** One-sentence campaign idea tied to the Title and LP purpose.
-3. **Hero.** Specific subject/object/environment with native/local details + pose/expression/materials.
-4. **Integrated background.** Continuous full-canvas scene (NOT split layout); 5-layer depth (foreground / midground / background atmosphere / readability zone / visual bridge); copy zone is naturally created by lighting and depth.
-5. **Text + CTA layout.** Large bold title in clean zone with pinned visual rows; highlight phrase treatment; CTA position + style.
-6. **Style + palette.** Premium editorial lighting, warm highlights, rich shadows, tasteful overlays, two-hex palette.
-7. **Constraints.** Only Title + CTA are readable text; no logos / no invented text / no fake UI labels / no watermarks / **NO HARD SPLIT PANEL LAYOUT**; any screen/chart/UI must be blurred or abstract.
-
-**Render verbatim** every character of Title and CTA. Spell every accent, diacritic, digit exactly. Title visual rows chosen here are pinned for recomps.
+**Render verbatim** every character of Title and CTA. Spell every accent, diacritic, digit exactly. Title visual rows chosen here are pinned for recomps — but Higgsfield is allowed to interpret line breaks naturally; we only enforce the verbatim text.
 
 ---
 
@@ -394,23 +344,41 @@ generate_image
     quality: "high"
     resolution: "1k"
     count: 1
-    prompt: <filled prompt>
+    prompt: <Visual Prompt Template v2.7, filled>
 ```
 
-Capture `mvp_job_id` per concept.
-
-**Polling cadence (silent unless slow):**
+**Polling cadence:**
 
 1. First check at **t+60s**.
-2. Then every **30s**.
+2. Then every **30s** to t+5min.
 3. At **t+180s**, emit `⚠️ MVP still rendering after 180s — continuing.`
-4. Hard cap **t+5min** — mark failed, proceed if possible.
+4. **Queue-aware extension:** beyond t+5min, keep polling with a `⚠️ Queue is slow — still rendering, continuing.` surface every 2 min. Hard cap **t+30min**.
+5. **If `job_display` returns empty `{results: []}` for a known-good job ID, cross-check `show_generations` and look for the ID in the items list** — `job_display` is occasionally flaky. Treat empty responses as transient, not failed.
+
+---
+
+## Phase 2.5 — MVP cliché QA + auto-redo
+
+After every MVP completes (and before Phase 3 / 4 paint), Claude reads the rendered PNG and silently answers:
+
+1. Does this look like a **campaign poster** or a photoshoot?
+2. Is the **title / offer the hero**?
+3. Is the **graphic design layer visible**?
+4. Is the **palette too dark or corporate**?
+5. Did it create **office / desk / lamp / analyst cliché**?
+6. Does it feel close to a **strong regional-campaign reference**?
+
+If any answer is wrong → auto-redo **once** with this corrective prefix:
+
+> *Previous result looked too much like a dark editorial / finance photo. Regenerate as a bold localized campaign poster with oversized typography, visible graphic panels, brighter premium palette, local atmosphere, and no office / desk / lamp / analyst props.*
+
+Cap: 1 auto-redo per concept. After 1 retry, surface to Phase 5 designer pause regardless.
 
 ---
 
 ## Phase 3 — create Figma frames
 
-Grid: **one row per concept, one column per size**. Idempotent placement.
+Grid: one row per concept, one column per size. Idempotent placement.
 
 ```js
 const sizes = [/* injected from Phase 0.4 or input */];
@@ -467,52 +435,25 @@ Three parallel turns:
 
 ## Phase 5 — 🛑 designer review pause
 
-**Single concept:**
-
 ```
-AskUserQuestion {
-  question: "Banner ready in Figma. What next?",
-  header: "Next",
-  multiSelect: false,
-  options: [
-    { label: "Looks good",    description: "Make the other sizes." },
-    { label: "Redo it",       description: "Re-render with fresh subject specifics." },
-    { label: "Stop here",     description: "Keep 1200×1200 only. Skip other sizes." }
-  ]
-}
+Single concept:
+  Looks good / Redo it (different campaign archetype) / Stop here (skip other sizes).
+
+Multiple concepts:
+  All look good / Redo C1 / Redo C2 / Stop here.
 ```
 
-**Multiple concepts** — dynamically build options. Example with 2 concepts:
-
-```
-AskUserQuestion {
-  question: "Both MVPs painted at 1200×1200 in Figma. What next?",
-  header: "Next",
-  multiSelect: false,
-  options: [
-    { label: "All look good",         description: "Make recomps for every concept." },
-    { label: "Redo C1 (<label>)",     description: "Re-render only concept 1." },
-    { label: "Redo C2 (<label>)",     description: "Re-render only concept 2." },
-    { label: "Stop here",             description: "Keep 1200×1200 only. Delete empty non-1:1 frames." }
-  ]
-}
-```
-
-For 3+ concepts, cap options at 4 (collapse extras into "Redo any" → followup poll). Keep one CTA action and at least one "Stop here" option.
-
-**On "Redo it" / "Redo Cn":** re-compose with varied specifics — different archetype / different prop / different bridge / different palette mood — regenerate at 1200×1200, overwrite the frame fill, return to Phase 5.
-
-**On "Stop here":** delete the empty non-1:1 frames, skip to Phase 8.
+For 3+ concepts, cap top-level options at 4: `All look good` / `Redo any` / `Stop here` / one most-likely-to-redo Cn. On `Redo any`, a follow-up `AskUserQuestion` lists the specific concepts to choose from (paginated to max 4 per call for ≥ 8 concepts). On "Redo Cn": re-compose with a **different campaign archetype** (not just different props), re-run Phase 2.5 cliché QA, return to Phase 5.
 
 ---
 
 ## Phase 6 — recompose to non-1:1 sizes
 
-For each non-1:1 size (and for every approved concept), compose a recomp prompt using **§ Recomposition Prompt Template** (≤ 1,800 chars). Pass that concept's `mvp_job_id` as `medias[].role: "image"`.
+For each non-1:1 size, compose a recomp prompt using **§ Recomposition Prompt Template** (≤ 1,200 chars). Pass the MVP `mvp_job_id` as `medias[].role: "image"`.
 
-**Recomp is layout REDESIGN per format, not resize.** Apply per-aspect layout rules from § Design Framework.
+**Recomp is layout REDESIGN per format, not resize.** Apply the aspect-ratio layout lock from § Aspect-Ratio Layout Locks.
 
-**Aspect map:**
+**Aspect map** (unchanged from v2.6):
 
 | Size | Frame aspect | Render aspect | Per-aspect layout | Notes |
 |---|---|---|---|---|
@@ -524,25 +465,12 @@ For each non-1:1 size (and for every approved concept), compose a recomp prompt 
 | 1080×1920 | 0.5625 | 0.5625 (9:16) | TALL | exact aspect, no crop |
 | 1920×1080 | 1.778 | 1.778 (16:9) | LANDSCAPE | exact aspect, no crop |
 | 300×250 | 1.200 | 1.333 (4:3) | MILD WIDE | vertical-axis crop ~10% — heavy |
-| 728×90 | 8.089 | 1.778 (16:9) | EXTREME WIDE | horizontal-axis crop ~78% — VERY heavy. Suggest manual design instead. |
+| 728×90 | 8.089 | 1.778 (16:9) | EXTREME WIDE | ~78% crop — suggest manual design instead |
 | 300×600 | 0.500 | 0.5625 (9:16) | TALL | horizontal-axis crop ~11% — heavy |
 
-**Safe-area axis derivation — REQUIRED fill-math computation.**
+**Safe-area axis derivation** is unchanged: when `frame_aspect > render_aspect`, crops vertical axis; when `frame_aspect < render_aspect`, crops horizontal axis. If `crop_pct > 5%`, instruct the recomp to leave 8% safe area on the cropping axis. If `crop_pct > 25%`, flag in Phase 8 problem-list.
 
-When the render is placed into the frame with `scaleMode=FILL`, the image scales to fully cover the frame on the constraining axis and crops the other axis:
-
-- If `frame_aspect > render_aspect` (frame is wider/squatter than render): image scales to match WIDTH → crops **TOP + BOTTOM (vertical axis)**.
-- If `frame_aspect < render_aspect` (frame is narrower/taller than render): image scales to match HEIGHT → crops **LEFT + RIGHT (horizontal axis)**.
-
-Compute `crop_pct = |frame_aspect − render_aspect| / max(frame_aspect, render_aspect)`. If `crop_pct > 5%`, emit:
-
-```
-Leave 8% safe area on <vertical | horizontal> axis — frame will crop ~{crop_pct}% off those edges. Keep all critical subject features, manifest props, title, and button at least 8% inset from the cropping edges.
-```
-
-For `crop_pct > 25%` (e.g. 728×90 leaderboard), surface in Phase 8 problem-list: `⚠️ <size> has ~<crop>% crop — image-based recomp is unreliable at this aspect. Consider manual HTML5 banner design instead.`
-
-**Master prop manifest** from Phase 1.0 Step 9 is passed verbatim into the recomp prompt: every prop named in master MUST remain visible.
+**Campaign element manifest** from Phase 1.0 is passed verbatim into the recomp prompt. Recomps must preserve design assets (title hierarchy, highlight treatment, CTA treatment, main visual metaphor, market atmosphere, color system, graphic panel style, hero subject type if used) — NOT physical props.
 
 Fire all recomps in parallel. Polling cadence same as Phase 2.
 
@@ -550,22 +478,23 @@ Fire all recomps in parallel. Polling cadence same as Phase 2.
 
 ## Phase 6.5 — silent visual QA
 
-After all recomps render but **before** painting, Claude reads each recomp PNG and scores composition fidelity:
+After all recomps render but before painting:
 
-| Check | What to verify | If FAIL |
-|---|---|---|
-| **No hard split-panel layout** | Background is one continuous scene, not flat-panel-next-to-image | auto-retry (critical) |
-| **Line structure** | Visual rows match master's pinned visual rows | flag in problem-list |
-| **Prop manifest** | Every named prop from Phase 1.0 Step 9 visible | flag in problem-list |
-| **Edge clipping** | No subject / button / title clipped at any edge | auto-retry (critical) |
-| **Alignment per-aspect** | TALL/PORTRAIT = center, WIDE/LANDSCAPE = match master, SQUARE = match master | flag in problem-list |
-| **Highlight treatment** | Highlight phrase has correct color + weight + underline + size | flag in problem-list |
-| **Integrated copy zone** | Title sits in a naturally calm zone (blur/vignette/gradient), NOT on a hard rectangle | flag in problem-list |
-| **Title block height** | Title block fills ~22% of canvas height (within ±5pp) | flag in problem-list |
-| **CTA tier** | Button hex ≠ highlight hex (Tier 1 ≠ Tier 2) | flag in problem-list |
-| **Readable text guard** | Only Title + CTA are readable text — no invented labels, no readable chart data, no fake UI strings | flag in problem-list |
+| Check | If FAIL |
+|---|---|
+| No hard split-panel layout | auto-retry (critical) |
+| Design layer present | auto-retry (critical) |
+| Campaign element manifest preserved | flag |
+| Title dominance (~22% block height ±5pp) | flag |
+| Edge clipping | auto-retry (critical) |
+| Alignment per-aspect | flag |
+| Highlight treatment | flag |
+| Integrated copy zone | flag |
+| CTA hex ≠ highlight hex | flag |
+| Readable text only = Title + CTA | flag |
+| No dark-office regression | auto-retry (critical) |
 
-**Critical failures (edge clipping, hard split panel, missing manifest props, wrong alignment) trigger ONE auto-retry** with a corrective prompt that names the specific failure. Cap auto-retries at 1 per concept × size.
+Critical failures trigger ONE auto-retry with a corrective prompt that names the specific failure. Cap auto-retries at 1 per concept × size.
 
 ---
 
@@ -577,379 +506,177 @@ Same three-turn parallel pattern as Phase 4.
 
 ## Phase 8 — summary + problem list
 
-**Success case (short):**
-
-```
-✅ /banner done — N sizes painted into Figma. Run: <runStamp>
-   <figma file URL>
-```
-
-**With encountered problems (short, separate block):**
-
-```
-⚠️ Problems during this run (for the team to upgrade /banner):
-  - <problem 1>
-  - <problem 2>
-```
+Short success message + Figma file URL. With encountered problems: a separate `⚠️ Problems during this run` block listing concrete issues for the team to upgrade /banner.
 
 ---
 
-# § Visual Prompt Template (v2.5 — 7-section advertising composition)
+# § Visual Prompt Template (v2.7 — short creative brief)
 
-900–1,200 chars preferred, hard ≤1,400. Compact, visual, production-oriented. Describes an AD COMPOSITION, not a long system explanation. The image model is GPT Image 2 — it needs visual specifics, not project rules.
+**450–750 chars preferred, hard ≤900.** Sounds like a brief, not a photoshoot direction.
 
 ```
-{W}×{H} premium localized performance-ad banner for {LANGUAGE}/{MARKET}. Mood: {register}. Concept: {one-sentence campaign idea tied to the Title and LP purpose}.
+{W}x{H} premium localized campaign poster for {MARKET}, {REGISTER} mood. Finished paid-social creative, not an editorial office photo.
 
-Hero: {specific subject/object/environment from chosen archetype}, {native/local details}, {pose/expression/materials}, cinematic editorial realism.
+Main hook: "{highlight phrase}" is the visual hero. Use bold graphic ad layout, oversized typography, premium {palette} color system, clean copy zone, and visible design layer.
 
-Background: ONE continuous full-canvas scene — NOT a hard split layout. Layered foreground/midground/background depth, soft atmospheric blur, premium {palette} color wash, subtle {regional/campaign} accents, and a calm low-contrast copy zone on the {side/top/bottom} created naturally with light falloff / vignette / blur — NOT a flat rectangle. Visual bridge between hero and copy zone: {light streak / curved gradient / ornament / shadow / architecture line / color flow}.
+Layout: {aspect-ratio layout lock — one sentence}. Title reads exactly: "{Title}". CTA "{CTA}" {CTA placement if present}.
 
-Layout: large bold campaign title in the clean zone, strong line breaks. Title visual rows (EXACT — pinned for recomps):
-"<row 1>"
-"<row 2>"
-["<row 3>" if needed]
-Highlight "<phrase>": {treatment from register table + collision-fallback if active — color #{Tier 1 hex} weight 900 + 3px underline + 1.10–1.15× size in {Stacked / Inline} mode}.
-CTA "<CTA verbatim>" as polished {pill / rectangular} button, height = clamp(canvas_h × 0.08, 80, 160) px, fill #{Tier 2 hex DIFFERENT from Tier 1}, text in #{Tier 3 hex}, position {below title / bottom-right / bottom-center per aspect}.
+Visual atmosphere: {local market cue, one phrase}, subtle {campaign theme} energy, soft gradients, curved panels, polished campaign lighting. Optional photo-real subject only as support, integrated into the design.
 
-Style: premium editorial lighting, warm highlights, rich shadows, tasteful gradient overlays, subtle decorative accents, art-directed paid-ad finish.
-
-Palette: dominant {hex1}, accent {hex2}. Real scene with depth, not flat gradient.
-
-Readable text only: "<full Title>" and "<full CTA>". No logos, no invented text, no fake UI labels, no chart numbers, no watermarks, no "Ad"/"Sponsored" tags, NO HARD SPLIT-PANEL LAYOUT.
-[If subject includes screens/charts/UI: "Any screen/chart/UI must be abstract or blurred with no readable invented text/numbers/tickers/recommendations."]
-[If non-English: "Native to {market}, no Western defaults. Premium campaign style, not tourist-poster cliché."]
-[If RTL: "Subject LEFT, title RIGHT-aligned, button bottom-LEFT, mirrored composition."]
-[Market exclusions: <from § Localization — e.g. "no Wall Street bull, no NYSE/NASDAQ ticker, no US flag motifs">.]
+Readable text only: Title and CTA. No logos, no fake UI, no invented text. Avoid {forbidden defaults — short list}.
 ```
+
+**Filled example — Swedish "43" banner, 1:1:**
+
+```
+1200x1200 premium Swedish campaign poster for Sweden, aspirational confident mood. Finished paid-social creative, not an editorial office photo.
+
+Main hook: "43" is the visual hero. Use oversized gold typography, bold blue/gold Scandinavian graphic panels, clean campaign hierarchy, polished premium layout, and subtle AI/market energy.
+
+Layout: title dominates upper-left/center-left, supporting line below, no CTA. Visual support on right/background with Stockholm/Nordic atmosphere, soft skyline depth, gradients, curved panels, and warm campaign lighting.
+
+Readable text only: "43 analytiker säger Stark Köp. AI-handeln är inte över." No logos, no fake UI, no invented text. Avoid office, desk, lamp, notebook, coffee, analyst portrait, trading floor, AI chip still life.
+```
+
+(That's ~720 chars — right in the sweet spot.)
+
+**What to NOT include in the Higgsfield prompt:**
+
+- exact person details (age, hair, wardrobe, expression)
+- specific room interiors
+- detailed prop lists (desk, lamp, notebook, cup)
+- 5-layer depth breakdown
+- 8-step reasoning narrative
+- multiple sub-clauses describing materials, textures, light angles
+- enumerated design-layer-rule items (≥3 of 12) — let Higgsfield interpret "visible design layer"
+- highlight treatment in 4 dimensions (color + weight + underline + size) — say "oversized [color] typography" and let Higgsfield handle the rest
 
 ---
 
 # § Recomposition Prompt Template
 
-≤ 1,800 chars. The MVP image is provided as `medias[].role: "image"`. Title visual rows from the master are passed verbatim — recomps MUST NOT re-flow them.
-
-Recomp is **layout REDESIGN per format**, not resize. Same concept, new spatial structure. Background stays a continuous scene — no hard split panel.
+≤ 1,200 chars. MVP image provided as `medias[].role: "image"`.
 
 ```
-RECOMPOSE the attached master (1200×1200) into {W}×{H}. Master = source of truth. Same subject, same text, same colors, same typography, same button. Not a stretch, not a crop, not a fresh generation. LAYOUT IS REDESIGNED for this aspect — never split-panel.
+RECOMPOSE the attached master (1200×1200) into {W}×{H}. Same campaign, same text, same colors, same typography. NOT a stretch, NOT a crop, NOT a fresh generation. Layout is REDESIGNED for this aspect — never split-panel.
 
-NEW LAYOUT (<WIDE | TALL | LANDSCAPE | PORTRAIT | MILD-WIDE | EXTREME-WIDE>) — apply § Per-Aspect Layout Rules:
-- <Insert per-aspect placement recipe — e.g. for WIDE: "Title + CTA on left 40–45%, main visual right 55–60%, no tall stacked text">.
+NEW LAYOUT ({WIDE | TALL | LANDSCAPE | PORTRAIT}): {one-sentence per-aspect placement rule from § Aspect-Ratio Layout Locks}.
 
-CONTINUOUS BACKGROUND: One full-canvas cinematic scene with the SAME palette + mood as master. Layered foreground/midground/background depth, soft atmospheric blur, light falloff, vignette. Copy zone is naturally created by lighting/depth, NOT a hard rectangle. Visual bridge connects hero and copy zone.
+CAMPAIGN ELEMENT MANIFEST (preserve, reposition, do not remove):
+- title hierarchy: <from master>
+- highlight treatment: <from master>
+- CTA treatment: <from master if any>
+- main visual metaphor: <from master>
+- market atmosphere: <from master>
+- color system: <hex1 + hex2>
+- graphic panel style: <from master>
+- hero subject type (if used): <from master>
 
-ZONES:
-- Text Zone: <new position for this aspect>. Integrated into scene, not a panel.
-- Main Visual Zone: <new position>. Subject fully inside frame, NOT clipped.
-- CTA Zone: <new position>. Below title or bottom-center per aspect rule.
+TITLE (verbatim): "{full Title}". CTA "{CTA}" if present. {If TALL or PORTRAIT and a subject is used: subject occupies 45–55% of canvas height.}
 
-SUBJECT: <repositioning + framing rule>. Same wardrobe, expression, lighting as master.
-[If TALL or PORTRAIT: subject occupies 45–55% of canvas height — do NOT shrink below this floor.]
-Product proof if MVP had one (phone/laptop/watch/monitor/chip): MUST remain visible and legible, fully inside the new canvas.
+SAFE AREA: {only if crop_pct > 5% — "Leave 8% safe area on <vertical | horizontal> axis."}
 
-MASTER PROP MANIFEST: every prop from the master MUST be visible in this recomp, repositioned, not removed. Manifest: <inject the prop list, e.g. "walnut desk, brass lamp, ceramic cup, notebook stack">.
-
-TITLE alignment: <derived rule — WIDE/LANDSCAPE keeps master horizontal; TALL/PORTRAIT center-aligns; SQUARE matches master>.
-TITLE (verbatim, EXACT visual rows from master — do NOT re-flow):
-  R1: "<master row 1>"
-  R2: "<master row 2>"
-  [R3: "<master row 3>" if present]
-Highlight phrase "<phrase>" keeps full treatment (color + weight + underline + size — same multiplier as master).
-
-TITLE block height: ~{title_block_h}px ({title_block_h / new_canvas_h * 100:.0f}% of new canvas).
-
-BUTTON if present: <new position>. height = clamp(new_canvas_h × 0.08, 80, 160) px. Same Tier 2 color (NOT same as Tier 1 highlight hex), same shape.
-
-SAFE AREA: [if crop_pct > 5%: "Leave 8% safe area on <vertical | horizontal — DERIVED FROM FILL MATH> axis — frame will crop ~{crop_pct}%. Keep subject, manifest props, title, and button at least 8% inset from the cropping edges."].
-
-CONSTRAINTS: exactly {W}×{H} px. No new content. No watermarks, AI marks, mockup chrome. NO HARD SPLIT-PANEL LAYOUT. Any screen/chart/UI must be blurred/abstract with no readable invented text. [If RTL: keep mirrored direction.]
+Constraints: exactly {W}×{H} px. No new content. No watermarks. NO HARD SPLIT-PANEL. NO regression into office / desk / lamp / notebook / coffee / analyst portrait / AI chip still life. Any screen/chart/UI blurred or abstract. {If RTL: keep mirrored direction.}
 ```
 
 ---
 
 # § Design Framework (Claude only)
 
-Never sent to the model. The principles Claude reasons from when composing Phase 1.
+Never sent to the model. The principles Claude reasons from when composing the brief.
 
-### Six decision principles
+### Six decision principles (campaign-first, v2.7-clarified)
 
-For each banner, decide on the spot:
+For each banner:
 
-**1. Subject** = chosen archetype + LANGUAGE + LP demographic. Specific. Authentic. Fresh per task.
+**1. Hook visual** — which element of the Title (number / phrase / claim) is the campaign hero. Drives everything else. Numbers ≥ 2 digits or % or strong single-word claims auto-trigger typography-hero mode.
 
-**2. Scene** = real place + 2–4 named props (prop manifest) that fit the title's narrative. Bias toward LP setting.
+**2. Layout lock** — the per-aspect-ratio placement rule. Claude enforces; Higgsfield obeys. No improvisation here.
 
-**3. Lighting** = register mood. Aspirational → warm/golden. Urgent → harder side / neon edge. Provocation → dramatic low-key. Trust → soft studio. Curiosity → soft directional + slight haze. Empowerment → cinematic mid-key. Identity → warm regional.
+**3. Subject role** — optional support, not hero (unless the brief is explicitly a portrait campaign). Native to market, campaign-style pose. **Claude does not enumerate exact features.** Higgsfield decides the look.
 
-**4. Background depth** = scene-driven with atmospheric layering. **Readability rule:** every prompt declares an integrated copy zone (NOT a hard rectangle), created by blur / shadow / vignette / low-detail backdrop. Flat 2-stop gradient is banned. Hard split-panel layouts are banned.
+**4. Background atmosphere** — described in 1–2 short phrases ("Stockholm waterfront atmosphere," "São Paulo daylight"). Not a multi-paragraph scene.
 
-**5. Palette** = 2 hex (dominant + accent). LP-continuity bias if Phase 0.3 succeeded. ≥ 4.5:1 contrast for the button pair. Tier 1 ≠ Tier 2.
+**5. Palette** — 2 hex (dominant + accent) + body color. LP-continuity bias. ≥ 4.5:1 button contrast. Tier 1 ≠ Tier 2. Bright enough for paid-social — avoid black + gold by default.
 
-**6. Button (CTA).** If picked: Tier 2 hex, pill (warm) or rect (institutional), **height = clamp(canvas_h × 0.08, 80, 160) px**, text 60–80% width, no wrap/clip.
+**6. Button (CTA)** — if used: Tier 2 hex, polished campaign button, height = `clamp(canvas_h × 0.08, 80, 160) px`, text 60–80% width, no wrap/clip.
 
-### § Creative Archetypes (v2.5 — pick ONE per concept)
+### § Aspect-Ratio Layout Locks (v2.7 — ONE LINE EACH)
 
-Pick fresh per task. Do not default to the same archetype across runs. Driven by title content + LP purpose + market.
+These are what go into the Higgsfield prompt under "Layout:".
 
-#### A. Local Hero Campaign
-Native subject + local background + large campaign title. Best for country/language-specific identity hooks (e.g. "O Brasil…", "للعرب…", "Sverige…").
+- **1:1 — SQUARE (master):** *Large title block on left / top-left or center-left. Visual / atmosphere on right or background. CTA below title if present. Key hook can become oversized and dominant.*
+- **1200×628 — WIDE:** *Copy + CTA on left 40–45%. Visual / atmosphere on right 55–60%. No tall stacked text. Strong horizontal campaign composition.*
+- **9:16 — TALL (Story / Reel):** *Title top 20–30%. Visual center 40–50%. CTA bottom-center if present. Mobile safe zones (top 8%, bottom 12%).*
+- **3:4 — PORTRAIT:** *Title upper. Visual center. CTA lower. Premium editorial poster feel, still campaign-designed.*
+- **16:9 — LANDSCAPE (Hero):** *Title + CTA in left third or left 40%. Large visual atmosphere on right. Wide cinematic campaign layout, not a photo with text.*
 
-#### B. Premium Offer Poster
-Huge offer or key phrase dominates the design, supported by ornament + CTA. Best for bonuses, percentages, promos, strong claims (e.g. "+171%", "100% bonus", "FREE").
+DISPLAY (300×250 / 728×90 / 300×600): heavy crop, Phase 6.5 may flag as unusable. For 728×90 leaderboard, surface in problem-list — manual HTML5 banner is usually better.
 
-#### C. Editorial Lifestyle Ad
-Believable person in a premium everyday setting, clean copy area. Best for education, investing, personal finance, lifestyle apps. NOT corporate-stock smile — natural campaign realism.
+### § Creative Archetypes (5 — pick ONE per concept)
 
-#### D. Cultural Prestige Layout
-Local architecture or regional visual identity frames the message. Best for Thailand, Brazil, Arabic, LATAM, Japan, Nordic and similar localized campaigns.
+All campaign-first. Pick fresh per task. Driven by title content + LP purpose + market.
 
-#### E. Minimal Premium Typographic Ad
-The text carries the ad with subtle scene depth and premium color. Best when the title is already very strong on its own.
+- **A. Local Hero Campaign** — native subject OR local environment + large campaign title. Local paid-social campaign, not a portrait photo.
+- **B. Premium Offer Poster** — huge number / %, bonus, key phrase dominates. Typography is the hero. Best for `+171%`, `100% bonus`, `FREE`, `95%`, `43`.
+- **C. Editorial Lifestyle Campaign** — believable person in local lifestyle context, **designed as a poster with visible graphic layer**. Not office portrait.
+- **D. Cultural Prestige Campaign** — local architecture / skyline / regional identity frames the message. Modern campaign-grade.
+- **E. Minimal Premium Typographic Campaign** — title carries the ad. Strong type, color, subtle local atmosphere, clean graphic structure.
 
-### § Background Design Rules (v2.5 — INTEGRATED SCENE, NEVER SPLIT-PANEL)
+### § What Claude controls vs what Higgsfield controls (v2.7 — the core rule)
 
-**The biggest visual fix in v2.5.** The background must be one integrated advertising scene, not "dark rectangle with text + separate photo."
+**Claude controls (in the prompt):**
 
-**Use:**
+- Format + market + mood line
+- Which phrase is the hook ("Main hook: '{phrase}' is the visual hero")
+- Layout lock (one sentence per aspect ratio)
+- Verbatim Title + CTA text
+- CTA placement
+- Palette names (or hex if LP-derived)
+- Local market cue (1–2 words)
+- Forbidden defaults (short list, e.g. "Avoid office, desk, lamp, notebook, coffee, analyst portrait, AI chip still life")
 
-- ✅ Full-scene background across the whole canvas
-- ✅ Layered depth: foreground / midground / background
-- ✅ Cinematic lighting connecting visual + copy area
-- ✅ Subtle gradients, vignettes, shadows, atmospheric blur
-- ✅ Premium color wash across the entire banner
-- ✅ Soft overlays behind text (not hard rectangles)
-- ✅ Visual elements that slightly overlap between subject zone and copy zone
-- ✅ Decorative accents guiding eye toward headline + CTA
-- ✅ Clean low-contrast readability area created naturally through lighting / depth / blur
+**Higgsfield controls (Claude does NOT prescribe):**
 
-**Avoid:**
+- Exact subject features (age, hair, wardrobe, expression)
+- Specific room interior, props
+- Lighting angle / color temperature
+- Decorative ornament style
+- How the design layer renders
+- Atmospheric depth treatment
+- Font choice (Higgsfield will pick something poster-appropriate)
 
-- ❌ Hard vertical split (unless explicitly requested)
-- ❌ Flat dark copy box
-- ❌ Empty gradient background
-- ❌ Obvious template panel
-- ❌ Isolated stock image pasted beside text
-- ❌ Subject floating separately from the text
-- ❌ Copy area disconnected from the visual
-- ❌ Boring two-column layout with no depth
+When Claude tries to control Higgsfield's domain, output regresses toward "photoshoot with text overlay." **Stay in your lane.**
 
-**Good background logic:**
-> One continuous cinematic scene with a calmer low-detail area for text, connected by lighting, color, shadows, and subtle decorative elements.
+### § Background Logic (kept, simplified)
 
-**Bad background logic:**
-> Dark rectangle on left, unrelated image on right.
+**Use (1–2 short phrases is enough):**
+continuous campaign background · graphic panels · soft gradients · local atmosphere · decorative energy · clean copy zone · visual flow between text and hero.
 
-### § Integrated Copy Zone Rule (v2.5)
+**Avoid:** continuous office scene · realistic desk environment · corporate room · dark luxury interior · flat split panel.
 
-The title area must be readable, but it should not look like a pasted block.
+Background should feel **designed**, not just photographed. Do NOT enumerate 5 depth layers in the prompt.
 
-**Prefer:**
+### § Highlight phrase treatment (Claude's internal computation, NOT prompt copy)
 
-- soft dark-to-transparent gradient behind text
-- blurred environmental depth behind text
-- subtle glass / premium overlay
-- controlled vignette
-- shadow falloff
-- atmospheric haze
-- low-detail architecture / sky / interior wall
-- decorative motif at low opacity
-- diagonal light separation
-- color wash that connects both sides
+Compute and use silently. Output in the prompt as `"oversized [color] typography"` — Higgsfield handles the rest.
 
-The user should feel that the copy is **part of the scene**, not added after the image.
+Default treatment by register:
+- Aspiration / Identity / Empowerment → gold-gradient on letterforms (#D4A017 → #F5C842) + 3px gold underline, weight 900.
+- Urgency → solid saturated red (#E54B2C), weight 900.
+- Provocation → accent color + 2px outline box at 60% opacity, slightly off-axis.
+- Trust → brand color, weight 900, no ornament.
+- Curiosity → bold accent + 2px underline at 80% opacity.
 
-### § Background Depth Formula (v2.5)
+**Color-collision fallback:** if highlight color collides with LP palette, force secondary vectors (weight bump, 3px underline, 1.10–1.15× size escalation in Stacked mode). Keep LP-native color; differentiate via type treatment.
 
-Every prompt must declare all 5 layers:
-
-1. **Foreground element** — subject, object, hand, device, product, person, decorative shape
-2. **Midground environment** — desk, street, skyline, interior, local architecture, lifestyle setting, abstract campaign scene
-3. **Background atmosphere** — soft blur, skyline, gradient light, cultural pattern, glow, depth, haze, cinematic falloff
-4. **Readability zone** — calm area where title + CTA sit, created by blur / shadow / vignette / low-detail background
-5. **Visual bridge** — element connecting subject and copy area (light streak, curved gradient, ornament, shadow, architectural line, color flow)
-
-If a prompt cannot answer all 5, it's incomplete — revise before sending to GPT Image 2.
-
-### § Campaign-meaning → visual logic catalog
-
-Seed for ideation when picking the visual world. Don't reuse one row across runs.
-
-| Campaign Meaning | Better Visual Logic |
-|---|---|
-| **AI / technology** | Digital systems, data depth, futuristic product metaphor, chip macros, neural-net wireframes — ONLY when copy is about AI itself. |
-| **Investing / trading** | Market movement, financial confidence, charts only if directly relevant, analyst desks, terminal closeups, money-element typography. |
-| **Education** | Learning path metaphor, mentor/student framing, structured progress, calm trust, books, notebooks, classroom light, certificate close-ups. |
-| **Luxury** | Minimal objects, premium materials (marble, brass, leather), elegant lighting, single hero product, generous negative space. |
-| **Local market identity** | Native people, subtle cultural context, regional setting, regional architecture in soft focus. |
-| **Urgency** | High contrast, compressed energy, sharper composition, motion blur, countdown elements. |
-| **Trust** | Clean studio, institutional clarity, grounded realism, soft daylight, professional but not corporate-stock. |
-| **Lifestyle** | Real people, aspirational but believable environment, candid posture. |
-| **SaaS / app** | Interface-inspired layout, clean UI geometry, product-space, device-in-hand, app screen as hero (BLURRED — no readable invented UI text). |
-| **Problem / solution** | Visual contrast, before/after metaphor, simplified story, two-state composition. |
-
-### § Three-Zone Composition
-
-Every banner is composed of three intentional zones, planned in Phase 1.0:
-
-**1. Text Zone** — clean, high-contrast, integrated into scene (NOT a hard panel). ≥ 8% inset.
-
-**2. Main Visual Zone** — hero subject from chosen archetype. Atmospheric depth. Leaves room for title and CTA.
-
-**3. CTA Zone** — clear, clickable, separated from title (12–24px gap) but visually connected. Tier 2 hex. No icon inside button unless requested. No wrap/clip. ≥ 8% padding from edges.
-
-### § Per-Aspect Layout Rules
-
-Adapt the same CONCEPT across formats. Each format gets its own redesigned layout. **Background remains one continuous scene in every format.**
-
-#### SQUARE — 1:1 (1200×1200)
-MVP master. Strongest overall balance.
-
-```
-┌────────────────────────────────┐
-│ [Title area]   [Main visual]   │
-│                                │
-│ [CTA area]     [Supporting     │
-│                 depth]         │
-└────────────────────────────────┘
-```
-
-- Title: upper-left or center-left
-- Main visual: right side or background-right
-- CTA: bottom-left, below title
-- ≥ 8–10% inset from edges
-
-#### WIDE — 1.91:1 (1200×628)
-Facebook, LinkedIn, Google Display. Limited height → short title, horizontally efficient.
-
-```
-┌──────────────────────────────────────┐
-│ [Title + CTA]      [Main visual]     │
-└──────────────────────────────────────┘
-```
-
-- Title left 40–45%, CTA directly below
-- Main visual right 55–60%
-- No tall stacked text
-- Key content NOT at extreme edges
-
-#### LANDSCAPE — 16:9 (1920×1080)
-Website hero, YouTube, large display. Cinematic, not poster.
-
-```
-┌──────────────────────────────────────────────┐
-│ [Title + CTA]         [Large cinematic visual]│
-└──────────────────────────────────────────────┘
-```
-
-- Title left third or left 40%
-- CTA below title
-- Main visual right side
-- Background extends full canvas
-
-#### PORTRAIT — 3:4 (960×1200 / 1080×1350)
-Mobile feed, premium vertical. Editorial ad feel.
-
-```
-┌──────────────────┐
-│ [Title]          │
-│ [Main visual]    │
-│ [CTA]            │
-└──────────────────┘
-```
-
-- Title upper-left or top-center
-- Main visual center / middle 50%+
-- CTA bottom-left or bottom-center
-- Text inside middle 80–85% width
-
-#### TALL — 9:16 (1080×1920)
-Stories, reels, TikTok. Mobile-first. **Subject occupies 45–55% of canvas height — never less.**
-
-```
-┌────────────┐
-│ [Title]    │
-│ [Main      │
-│  visual]   │
-│ [CTA]      │
-└────────────┘
-```
-
-- Title top 20–30%
-- Main visual center 45–55%
-- CTA bottom-center, ≥ 8–12% padding from bottom
-- Title and CTA away from platform UI zones (top 8%, bottom 12%)
-- Fewer words, stronger line breaks
-
-#### DISPLAY (300×250 / 728×90 / 300×600)
-Heavy crop when recomposing from 1:1 master. Phase 6.5 will flag if the result is unusable. For 728×90 leaderboard the result is rarely good — surface in problem-list and suggest manual HTML5 banner.
-
-### § Banner Quality Standard
-
-Each banner should feel:
-- ✅ professionally designed
-- ✅ readable at small sizes
-- ✅ visually intentional (every element earns its place)
-- ✅ conversion-focused
-- ✅ adapted to the market
-- ✅ adapted to the message
-- ✅ clean enough for copy + CTA to breathe
-- ✅ premium, not cheap or overloaded
-- ✅ **art-directed, not merely realistic**
-- ✅ feels like a finished paid ad from a serious regional campaign
-
-### § Anti-patterns (NEVER)
-
-- ❌ generic stock-photo business people
-- ❌ random people on laptops
-- ❌ forced AI visuals when copy isn't about AI
-- ❌ finance-desk default when copy isn't finance
-- ❌ trading-floor default
-- ❌ person-with-phone default
-- ❌ fake logos
-- ❌ fake platform screenshots / fake UI labels
-- ❌ readable invented chart data, ticker rows, recommendations, dates
-- ❌ too many charts (>1 chart usually wrong)
-- ❌ too many icons
-- ❌ excessive glow / lens flare
-- ❌ cluttered backgrounds
-- ❌ decorative text effects (chrome, embossed, drop shadows, outlines, distortion)
-- ❌ low-quality template aesthetics
-- ❌ **HARD SPLIT-PANEL LAYOUT** (dark rectangle pasted next to photo)
-- ❌ **flat dark copy box** behind text
-- ❌ **isolated subject** disconnected from copy zone
-- ❌ background that fights the title for attention
-- ❌ Western defaults on non-English banners
-- ❌ tourist-poster cliché on localized campaigns
-
-**The visual must support the title. It should never fight against the title.**
-
-### Highlight phrase treatment
-
-The user picks which part of the title pops (Poll 1 in Customize mode, or Claude infers in Auto). Default treatment by register:
-
-- **Aspiration / Identity / Empowerment** → gold-gradient (#D4A017 → #F5C842) on letterforms + 3px gold underline. Weight 900.
-- **Urgency** → solid saturated red (#E54B2C). Weight 900. Size escalation carries it.
-- **Provocation** → accent color + 2px outline box at 60% opacity around the words. Slightly off-axis (1–2°).
-- **Trust** → brand color. Weight 900. No ornament.
-- **Curiosity** → bold accent + 2px underline at 80% opacity.
-
-**Color-collision fallback (REQUIRED).** If chosen highlight color collides with LP palette (gold-on-gold, neon-green-on-neon-green), force secondary vectors:
-
-- Weight bump: 900 vs 700 base
-- 3px underline
-- Size escalation: 1.10–1.15× base (only in Stacked mode)
-- Keep LP-native color — differentiate via type treatment
-
-**Inline vs Stacked mode (v2.4 — formula-based).** `(highlight_chars × base_size × 1.12) / column_width`:
-- **> 0.40 → Inline.** Drop size escalation. Color + weight + underline carry it.
-- **≤ 0.40 → Stacked.** Highlight on its own visual row at 1.12× size, surrounding words on next row at base size.
+**Inline vs Stacked mode (formula):** `(highlight_chars × base_size × 1.12) / column_width` → > 0.40 Inline · ≤ 0.40 Stacked.
 
 ### CTA Color Tier rule
 
-- **Tier 1 (Highlight)** = LP accent OR register default.
-- **Tier 2 (CTA)** = if Tier 1 = LP accent (collision-fallback active), Tier 2 = darker shade at ~70% L of Tier 1 OR sampled from LP's CTA button color. **Tier 1 ≠ Tier 2 in hex.**
-- **Tier 3 (Body text)** = white on dark, near-black on light.
+- Tier 1 (Highlight) = LP accent OR register default.
+- Tier 2 (CTA) = ≠ Tier 1 in hex. If Tier 1 = LP accent (collision), Tier 2 = ~70% lightness of Tier 1 OR sampled from LP's actual CTA button.
+- Tier 3 (Body text) = white on dark, near-black on light.
 
 ### Register cues (classification only)
 
@@ -965,98 +692,86 @@ The user picks which part of the title pops (Poll 1 in Customize mode, or Claude
 
 Pick the first register whose cues appear left-to-right. Identity layers on top. Default `curiosity`.
 
-### Localization
+### Localization (v2.7 — atmosphere-first allowlists)
 
-- Match subject features, wardrobe, setting to the actual market — never Western defaults on non-English banners.
-- Apply color meaning to market: red = loss in Western finance / luck in CN; green positive Western / political MENA; white premium West / mourning EA; gold premium Gulf + EA + LATAM.
-- Avoid offensive gestures (thumbs-up in MENA/W.Africa, OK sign in Brazil/Turkey/MENA, index-finger pointing in Asia/MENA, prominent left-hand display in MENA/S.Asia).
+These are **one-line** atmosphere cues for the prompt, not prop lists.
 
-**Market exclusion lists (do-not-invent props/symbols outside their home market):**
+- **Nordic / Swedish:** "Stockholm waterfront / Nordic skyline atmosphere, deep navy + ivory + gold / neon-green palette, golden-hour or cool daylight, soft curved panels, minimal-but-bold typographic hierarchy." Swedish market ≠ dark office.
+- **DACH:** "Berlin / Zurich / Vienna skyline silhouette, engineering-precision graphic structure, neutral grey + accent palette."
+- **LATAM:** "São Paulo / Mexico City warm daylight, terracotta + sun-saturated colors, natural textures."
+- **MENA Gulf:** "Gulf skyline silhouette, marble-texture gradient + restrained gold-line ornament framing."
+- **East Asia (urban):** "Dense city neon abstracted into color flow, glass-tower silhouette, sleek tech-surface gradient."
+- **Thailand:** "Bangkok temple gold-tone + soft warm light, saturated jewel-tone palette, subtle ornamental framing."
+- **JP:** "Tokyo / Kyoto refined minimalism, ink-and-gold or refined neon palette, soft architectural silhouette."
 
-- **Outside the US:** no Wall Street charging-bull statue, no NYSE / NASDAQ bell or logo, no S&P 500 ticker, no Statue of Liberty, no US flag patterns, no American-trader-floor decor.
-- **Outside the UK:** no Big Ben, Tower Bridge, Union Jack motifs.
-- **Outside Japan:** no Mt. Fuji, Tokyo Tower, sakura — unless they're the focal subject.
-- **Non-target EU markets:** no country-flag colors unless the title explicitly names the country.
+**Market exclusion lists** (do-not-invent props/symbols outside their home market):
 
-**Market prop allowlists (bias toward when local cues = Subtle/Strong):**
-
-- **Nordic:** walnut/oak desk, brass desk lamp, ceramic cup, papered notebook, minimalist interior, soft Scandinavian daylight.
-- **DACH:** dark wood + leather, brushed steel, neutral palette, engineering precision.
-- **LATAM:** warm terracotta, plants, daylight, natural textures.
-- **MENA Gulf:** marble + gold accents, soft indoor light, premium retail aesthetic.
-- **East Asia (urban):** dense city neon, glass towers, sleek tech surfaces.
-
-**On-screen data labels (when subject is a terminal / dashboard / app UI — ALWAYS blurred or abstract, never readable invented data):**
-
-| Market | Native bank/data labels (for subtle reference only — blurred) |
-|---|---|
-| Nordic | SEB, Nordea, Handelsbanken, DNB Markets, Carnegie, Swedbank, Danske Bank |
-| DACH | Deutsche Bank, Commerzbank, UBS, Credit Suisse, Raiffeisen, KfW |
-| LATAM | Banco Itaú, Bradesco, BBVA, Santander Mex, Banco do Brasil |
-| MENA Gulf | Emirates NBD, QNB, NCB, Riyad Bank, Al Rajhi |
-| JP | Mitsubishi UFJ, Mizuho, Sumitomo Mitsui, Nomura, Daiwa |
-| US | JPMorgan, Goldman Sachs, Morgan Stanley, BofA, Citi |
-
-**Important v2.5 rule:** screens, charts, and UI must be **blurred or abstract** — no readable invented numbers, tickers, recommendations, dates, UI menu labels, or fake proof. Only the provided Title and CTA may be readable text on the banner.
+- Outside the US: no Wall Street bull, no NYSE / NASDAQ, no S&P 500 ticker, no Statue of Liberty, no US flag.
+- Outside the UK: no Big Ben, Tower Bridge, Union Jack.
+- Outside Japan: no Mt. Fuji, Tokyo Tower, sakura (unless explicit subject).
+- Non-target EU markets: no country-flag colors unless the title names the country.
 
 ### RTL composition
 
 RTL languages: Arabic (all dialects), Hebrew, Urdu, Farsi, Pashto, Sindhi, Kurdish (Sorani).
 
-- Mirror layout. Subject LEFT, title stacked right-aligned on RIGHT. Button bottom-LEFT.
-- Native typeface (NEVER Latin + RTL fallback). Arabic: Tajawal or Cairo. Hebrew: Heebo or Rubik. Urdu/Farsi: Vazirmatn or Noto Naskh Arabic.
-- Slightly looser leading than Latin. Never condense. No kashida-stretching.
+- Mirror layout. Hero element / subject LEFT, title stacked right-aligned on RIGHT. Button bottom-LEFT.
+- Native typeface (NEVER Latin + RTL fallback). Arabic: Tajawal / Cairo. Hebrew: Heebo / Rubik. Urdu / Farsi: Vazirmatn / Noto Naskh Arabic.
+- Slightly looser leading. No kashida-stretching.
 
 ### Typography
 
-- LTR headline: Inter (default), Söhne, or Helvetica Now.
-- Max 2 typefaces per banner. Weights 700–900. No drop shadows on text. No outlining / distortion.
+- LTR headline: Inter (default), Söhne, Helvetica Now.
+- Max 2 typefaces. Weights 700–900. No drop shadows, no outlining, no distortion.
 
 ### Hard guardrails (non-negotiable)
 
 - **Copy verbatim.** Title and CTA pass unchanged.
 - No invented brands, logos, badges.
-- No fake mockup chrome (browser bars, mockup phone frames AROUND the banner, "Sponsored"/"Ad" labels). Phone HELD BY subject in scene is allowed.
+- No fake mockup chrome (browser bars, mockup phone frames AROUND the banner, "Sponsored" / "Ad" labels).
 - No text inside subject (no words on shirts/signs).
 - No watermarks, AI marks.
-- No duplicated/mirrored text.
-- No mirrored Arabic/Hebrew letterforms.
+- No mirrored text / mirrored Arabic / Hebrew.
 - No Latin fonts forced onto RTL copy.
-- No cross-region cultural mismatches.
 - No offensive gestures.
 - No mixed visual styles within one banner.
-- **No reuse of default themes** (AI chip / fintech chart / trading floor / person-with-phone) unless the brief clearly calls for them.
-- **No background fighting the title.** Readability zone wins.
-- **No hard split-panel layout.** Continuous integrated scene only.
-- **No readable invented text** in screens/charts/UI/documents.
+- **No dark office / desk / lamp / notebook / coffee / chip-on-desk** as default scene.
+- **No black + gold luxury-finance mood** unless the brief explicitly asks.
+- **No photograph-with-text-overlay** when a campaign poster is required.
+- **Claude does NOT enumerate exact subject features, exact props, or 5-layer depth descriptions in the Higgsfield prompt.**
 
 ---
 
-## Final Guardrail (v2.5)
+## Final Internal Check (v2.7 — 6 questions before MVP and after)
 
-Before sending the final prompt to GPT Image 2, Claude must internally answer:
+Before sending the prompt to GPT Image 2, Claude must mentally answer:
 
-> What is the continuous scene?
-> Where is the clean copy zone, and how is it integrated into the background?
-> What is the hero subject?
-> What visual bridge connects subject and text?
-> Why does this feel native to the market?
-> Why does this look like a premium paid ad, not a flat template?
-> Which of the 5 archetypes is this, and why?
-> Does the prompt explicitly forbid hard split-panel layout?
-> Does the prompt explicitly forbid readable invented text?
+1. Does this **sound like a brief** or a photoshoot direction?
+2. Is the **title / offer the hero**?
+3. Is the **layout lock present** for the aspect ratio?
+4. Did I **avoid enumerating** exact features, exact props, exact lighting angles?
+5. Did I **name the forbidden defaults** to avoid?
+6. Is the prompt **≤ 900 chars** (preferably 450–750)?
 
-If any answer is missing or weak, revise the prompt before sending.
+If any answer is weak, tighten the prompt before generation.
 
-The final output must always feel like a real paid banner designed for a specific campaign — never a template, never a split panel, never a generic AI image.
+After MVP renders, the Phase 2.5 cliché QA asks the same set against the rendered image.
+
+The final output should feel like:
+
+> *a localized performance-ad poster*
+
+Not:
+
+> *a premium finance photograph with text overlay*
 
 ---
 
 ## Constraints
 
-- Visual Prompt 900–1,200 chars preferred, ≤1,400 hard.
-- Recomp Prompt ≤1,800.
-- GPT Image 2 only. `gpt_image_2`. Never substitute.
+- Visual Prompt 450–750 chars preferred, ≤900 hard.
+- Recomp Prompt ≤1,200 hard.
+- GPT Image 2 only (`gpt_image_2`). Never substitute.
 - Resolution always `1k`.
 - MVP always 1200×1200 (1:1).
 - MVP is the source of truth for recomps via `medias[].role: "image"`.
@@ -1064,28 +779,24 @@ The final output must always feel like a real paid banner designed for a specifi
 - **Phase 0.4 size selection BLOCKING** (unless sizes in input).
 - **Phase 0.45 creative mode BLOCKING** (Customize vs Auto).
 - **Phase 0.5 polls run ONLY in Customize mode.**
-- **Phase 1.0 visual reasoning required** — fresh metaphor per task.
+- **Auto mode internally generates 3 candidate campaign directions** before picking.
+- **Phase 1.0 — Creative Card extraction** (9 lines per concept) replaces v2.6 8-step scene reasoning.
 - **Pick ONE of 5 creative archetypes per concept** — no archetype default.
-- **Three-zone composition** planned before render.
-- **Background = continuous integrated scene with 5-layer depth formula** — NEVER hard split-panel.
-- **Integrated copy zone** via blur/vignette/gradient — NEVER hard rectangle behind text.
-- **Per-aspect layout** = redesign per format, not resize.
+- **Typography Hero Rule:** when title has number / % / strong claim, type is the hero.
+- **Background = continuous promotional campaign composition** — NEVER hard split-panel, NEVER dark office scene.
+- **Per-aspect layout lock** = one sentence per format (§ Aspect-Ratio Layout Locks).
 - **Title visual rows pinned across recomps.**
 - **Title block height = clamp(canvas_h × 0.22, 180, 480) px.**
-- **Alignment per-aspect:** TALL/PORTRAIT → center; WIDE/LANDSCAPE → match master.
-- **Subject vertical fill in TALL/PORTRAIT:** 45–55% of canvas height minimum.
-- **CTA height = clamp(canvas_h × 0.08, 80, 160) px** — ratio of canvas.
+- **CTA height = clamp(canvas_h × 0.08, 80, 160) px.**
+- **Subject vertical fill in TALL/PORTRAIT:** 45–55% of canvas height (only when a subject is used).
 - **CTA color tier rule:** Tier 1 (highlight) ≠ Tier 2 (CTA) in hex.
 - **Highlight structure mode:** Inline vs Stacked from formula.
 - **Highlight color-collision fallback** required.
-- **Master prop manifest** carried into every recomp.
-- **Market exclusion lists** applied before composing the prompt.
-- **On-screen data BLURRED/ABSTRACT only** — no readable invented data.
-- **Readability zone:** zero hard edges / structural lines crossing the title or button overlay.
-- **Safe-area axis derived from fill math.**
-- **Multi-concept supported:** multiple `Title:` lines → parallel concepts.
-- **Landmarks named in prompt** require do-not-invent clause.
-- **Phase 6.5 silent visual QA** before painting recomps — includes hard-split-panel check.
+- **Campaign element manifest** (design assets, not physical props) carried into every recomp.
+- **Phase 2.5 MVP cliché QA + auto-redo** — 1 corrective retry max before designer pause.
+- **Phase 6.5 silent visual QA** before painting recomps.
+- **Queue-aware polling:** extend past t+5min, hard cap t+30min. Cross-check `show_generations` if `job_display` returns empty for a known-good job ID.
+- **Claude does NOT enumerate exact subject features, exact props, lighting angles, or 5-layer depth** in the Higgsfield prompt.
 - Exact pixel sizes.
 - Figma is read+write.
 - Egress allowlist required: `d8j0ntlcm91z4.cloudfront.net` + `mcp.figma.com`.
