@@ -90,9 +90,9 @@ Audit a Figma LP for translation parity, image localization, overflow, broken pl
 </details>
 
 <details>
-<summary><strong>/banner</strong> v2.5 — user-controlled setup + premium localized performance-ad style</summary>
+<summary><strong>/banner</strong> v2.7 — Claude writes a short brief, Higgsfield draws the picture</summary>
 
-Render one or more banner concepts with **Higgsfield GPT Image 2** and paint them into a Figma file at exact pixel sizes. **You** pick the hero frame in Figma first (so the URL carries the node-id), then paste the URL + Title(s) + CTA. Claude reads only that node for LP context, asks at most 4 short clickable questions per concept, renders, and paints. Runs silently — only critical issues surface.
+Render one or more banner concepts with **Higgsfield GPT Image 2** and paint them into a Figma file at exact pixel sizes. **You** pick the hero frame in Figma first (so the URL carries the node-id), then paste the URL + Title(s) + CTA. Claude reads only that node for LP context, asks at most 4 short clickable questions per concept, writes a **short creative brief** (not a photoshoot direction), lets Higgsfield create the picture, and paints. Runs silently — only critical issues surface.
 
 ```
 /banner <figma-url-with-node-id>
@@ -127,39 +127,38 @@ Title: 43 analytiker säger Stark Köp. AI-handeln är inte över.
 
 1. **Title highlight** — which part of the title pops? (3–4 candidates + "no highlight")
 2. **Button** — only if `CTA:` missing. Claude suggests 3 short options + "no button"
-3. **Visual direction** — 3 specific directions Claude composes from LP + title + register + "Creative AI decides"
+3. **Visual direction** — 3 campaign-first directions Claude composes (Typography-led poster / Local hero campaign / Cultural-environment campaign) + "Creative AI decides"
 4. **Local cues** — only for non-English markets. Subtle (default) / Strong / None. Asked once across all concepts (shared)
 
 **Strict requirements**
 
 - Figma URL must contain `node-id=X-Y` — pre-select the hero frame in Figma before copying the URL. If missing, `/banner` fails fast with a clear instruction.
-- `Title:` is required (full headline text verbatim). Multiple `Title:` lines = multiple concepts (cap 4 per run).
+- `Title:` is required (full headline text verbatim). Multiple `Title:` lines = multiple concepts (cap 10 per run). Customize mode gets click-heavy beyond 5 concepts — Auto mode is recommended for high N.
 - For cloud Claude Code workspaces, allowlist both `d8j0ntlcm91z4.cloudfront.net` and `mcp.figma.com` — pre-flight checks both and fails fast if blocked.
 
-**v2.5 deltas vs v2.4** — user-controlled setup + premium localized style + integrated-scene background rule
+**v2.7 deltas vs v2.6 — split responsibility: Claude writes the brief, Higgsfield writes the picture**
 
-**Flow changes (user back in control):**
+v2.6 fixed the visual direction (campaign poster, not editorial photo) but Claude was still **over-describing** scenes — naming exact subjects, props, lighting, depth layers, design-layer-rule items. That over-specification was steering Higgsfield back toward "realistic photo + text overlay." v2.7 stops Claude from acting like a photoshoot director.
 
-- **Phase 0.4 size selection poll (NEW, BLOCKING).** Multi-select clickable poll with the most common ad formats (1:1, wide social, story/reel, portrait, landscape, display, leaderboard, half-page, all standard, custom). Skipped only if sizes were passed in input.
-- **Phase 0.45 creative control mode (NEW, BLOCKING).** Customize direction vs Claude decides automatically.
-- **Phase 0.5 creative polls run ONLY in Customize mode.** In Auto mode, Claude infers silently and proceeds.
+**The core split:**
 
-**Visual style direction — premium localized performance ads:**
+- **Claude controls the BRIEF.** Campaign understanding · size/layout rules · copy hierarchy · text + CTA placement · market/localization · LP consistency · what to avoid.
+- **Higgsfield controls the PICTURE.** Visual creativity · atmosphere · subject interpretation · lighting · decorative energy · poster feel · final image style.
 
-- **5 preferred creative archetypes.** Local hero campaign / Premium offer poster / Editorial lifestyle ad / Cultural prestige layout / Minimal premium typographic ad. Pick fresh per task — no archetype default.
-- **NO hard split-panel layouts.** Banners must be ONE continuous cinematic scene with the copy zone integrated into the background through lighting, depth, blur, decorative bridges. The "dark rectangle next to a photo" anti-pattern is now banned.
-- **Integrated copy zone rule.** Soft gradient + blur + vignette + atmospheric haze creates readability. No hard panels behind text.
-- **5-layer background depth formula.** Foreground / Midground / Background atmosphere / Readability zone / Visual bridge — every prompt declares all five.
-- **Target standard.** Bold localized advertising, large confident typography, one clear hero subject, polished CTA, cinematic lighting, art-directed (not just realistic).
+**Concrete changes:**
 
-**Higgsfield prompt restructure:**
+- **Prompt length tightened again.** v2.7: **450–750 chars preferred, 900 max** (was 700–1,000 / 1,300 in v2.6). GPT Image 2 needs concentrated creative direction, not a system spec.
+- **6-section prompt structure** (was 7 / 8): Format + market + mood → Campaign-poster direction → Layout lock → Visual atmosphere → Copy/CTA → Constraints.
+- **Phase 1.0 reasoning replaced.** v2.6's 8-step scene reasoning + 5-layer depth formula + Mandatory Design Layer enumeration → **single 9-line Creative Card** per concept (campaign purpose, market, register, hook, hierarchy, LP style, sizes, layout lock, avoid). Tight. No prop enumeration.
+- **Aspect-ratio layout locks shortened to ONE LINE each** (1:1 / 1200×628 / 9:16 / 3:4 / 16:9). That one line is the only layout guidance that goes to Higgsfield.
+- **What Claude no longer enumerates in the Higgsfield prompt:** exact person details (age, hair, wardrobe, expression) · specific room interiors · detailed prop lists · 5-layer depth breakdown · 8-step reasoning narrative · multi-clause material/texture/light descriptions · the 12-item design layer checklist · highlight treatment in 4 dimensions. Higgsfield decides those.
+- **Claude vs Higgsfield responsibility table** added to § Design Framework. Stay in your lane.
+- **Phase 2.5 cliché QA simplified** to 6 yes/no questions: campaign-poster vs photoshoot? title is hero? design layer visible? palette not too dark? no office cliché? close to regional reference? One auto-retry max.
+- **Background described in 1–2 short phrases**, not enumerated 5-layer depth. "Stockholm waterfront atmosphere" replaces a paragraph.
+- **Campaign element manifest scope clarified:** design assets only (title hierarchy, highlight treatment, CTA treatment, main visual metaphor, market atmosphere, color system, graphic panel style, hero subject type if used). Never desk / lamp / notebook / coffee / chip / laptop / monitor unless explicitly the concept.
+- **Job-display flakiness handling.** If `job_display` returns empty `{results: []}` for a known-good job ID, cross-check `show_generations` (it's occasionally flaky — treat empty as transient, not failed). Captured from the v2.6 problem-list.
 
-- **Prompt length 900–1,200 chars preferred, 1,400 max.** Compact, visual, production-oriented. Describes the AD COMPOSITION, not a long system explanation.
-- **7-section prompt structure:** Format + market + mood → Concept → Hero → Integrated background → Text + CTA layout → Style + palette → Constraints.
-- **Hard ban on readable invented text** inside screens / charts / UI / documents. Only the provided Title and CTA may be readable text on the banner.
-- **Hard ban on hard split-panel layout.** Restated in every prompt's constraints block.
-
-All v2.4 rules carry over (Phase 1.0 visual reasoning, three-zone composition, per-aspect layouts, banner quality standard + anti-patterns, on-screen data localization, Stacked/Inline highlight mode, CTA tier rule, title block height ratio, Phase 6.5 silent QA, master prop manifest, subject vertical fill for TALL, multi-concept, market exclusion lists, fill-math safe-area, landmark do-not-invent).
+**Carried over from v2.6:** campaign-poster-first creative ceiling, forbidden default style drivers (no walnut desk / brass lamp / analyst portrait / AI chip still life / dark prestige finance), Typography Hero Rule (number / % / strong claim → typography is hero), Nordic localization rewrite (Stockholm waterfront, not desk + lamp), 5 archetypes campaign-first, "continuous promotional campaign composition" background rule, Phase 0.4 / 0.45 / 0.5 polls, Stacked/Inline highlight mode, CTA tier rule, title block height ratio, CTA height ratio, subject vertical fill 45–55% for TALL when subject used, Phase 6.5 silent QA, multi-concept, market exclusion lists, fill-math safe-area, queue-aware polling (hard cap t+30min), Auto-mode 3-direction picker, hard ban on readable invented text, hard ban on hard split-panel.
 
 **Requires**
 - Higgsfield MCP connector configured
