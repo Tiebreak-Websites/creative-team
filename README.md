@@ -90,15 +90,14 @@ Audit a Figma LP for translation parity, image localization, overflow, broken pl
 </details>
 
 <details>
-<summary><strong>/banner</strong> v1.8 — CTR-optimized banners → Figma</summary>
+<summary><strong>/banner</strong> v2.0 — multi-concept banners → Figma with auto-LP context + designer review pause</summary>
 
-Generate ad banners with **Higgsfield GPT Image 2** and paint them into a Figma file at exact pixel sizes. Claude reads the design framework, classifies the emotional register of your copy, optionally analyzes an LP screenshot for visual continuity, lets you pick the subject archetype, then composes the prompt, renders the banner, recomposes for every other aspect ratio, and paints each into a Figma frame.
+Generate **multiple** ad banner concepts with **Higgsfield GPT Image 2** and paint them into a Figma file at exact pixel sizes. Claude auto-reads the LP hero from the same Figma file, asks you which visual approaches should ship via clickable polls, renders one MVP per chosen approach, pauses for you to review in Figma, and then recomposes every approved MVP to every requested size.
 
 ```
 /banner <figma-url> <WxH> [<WxH> ...]
 Title: <verbatim title copy>
 cta: <verbatim CTA copy>
-[+ optional LP hero screenshot attachment]
 ```
 
 **Example**
@@ -108,42 +107,46 @@ cta: <verbatim CTA copy>
 Title: O Brasil está comprando ações de IA. E você?
 cta: Entre agora
 1200x1200, 1200x628, 960x1200
-[drag-drop the LP hero screenshot here]
 ```
 
 **What you get**
-- One Figma frame per requested size at exact pixel dimensions
-- The rendered banner painted in as a fill (FILL scale mode)
-- A summary table with frame node IDs, Higgsfield job IDs, and any crop or timeout warnings
+- One Figma frame per (concept × size) combination at exact pixel dimensions, grouped per concept in a single row
+- Every rendered banner painted in as a FILL — MVPs first, recomps after your Continue click
+- A summary table with concept index, frame node IDs, Higgsfield job IDs, and any crop/timeout warnings
 
 **Workflow** *(blocking points marked 🛑)*
 
-1. **Phase 0** — auto-detect language from copy (drives subject, palette, typography, LTR/RTL direction)
+1. **Phase 0** — auto-detect language from copy (drives subject demographics, typography script, LTR/RTL direction)
 2. **Phase 0.2** — one-line cost preview before any credit fires
 3. **Phase 0.3** — classify emotional register (aspiration / urgency / provocation / trust / curiosity / empowerment / identity)
-4. **Phase 0.4** — analyze attached LP screenshot for subject archetype + dominant palette + tone (skipped if none attached)
-5. **Phase 0.5** — 🛑 **interactive variant-selection poll** — pick from human / AI robot / product-led / editorial metaphor. LP-derived option is marked `(Recommended)`.
-6. **Phase 1** — silently compose the visual prompt using your chosen variant
-7. **Phase 2** — render at 1200×1200 (1:1 master)
-8. **Phase 3** — recompose for every other requested aspect (16:9, 3:4, etc.)
-9. **Phase 4–5** — create Figma frames + paint each rendered image
-10. **Phase 6** — summary table with all job IDs and any warnings
+4. **Phase 0.4** — **auto-screenshot the LP hero** from the same Figma file. Extract subject archetype + 3 dominant hex + tone. (Mandatory, fail-soft — proceeds without LP if the hero frame can't be found.)
+5. **Phase 0.5** — 🛑 **two clickable polls (AskUserQuestion, no chat typing)**:
+   - Poll #1 (multi-select): which visual approaches should ship — Human / AI Robot / Mirror LP / Wild Card
+   - Poll #2 (single-select): 0–3 extra Claude-picked variations
+   - Total = your picks + extras (1–7 concepts)
+6. **Phase 1** — compose N short visual prompts (~500 chars soft, ≤800 hard). Adaptive — no register lookup tables.
+7. **Phase 2** — render all N MVPs in parallel at 1200×1200
+8. **Phase 3** — create all (N × M) Figma frames upfront, grouped per concept in a single row
+9. **Phase 4** — paint MVPs into their 1:1 frames
+10. **Phase 5** — 🛑 **designer review pause**: AskUserQuestion → Continue / Regenerate one MVP / Stop. Regenerate loops back to this pause.
+11. **Phase 6** — recompose every surviving MVP to every requested non-1:1 size (parallel)
+12. **Phase 7** — paint recomps into their frames
+13. **Phase 8** — summary table with concept index, frame IDs, job IDs, and warnings
 
-**v1.8 features** *(closes the v1.6 quality gap)*
+**v2.0 deltas vs v1.8**
 
-- **Register-driven defaults** — lighting, palette, CTA finishing, typography ladder all derive from the copy
-- **Typography ladder** — 3-4 line headlines for HERO > 6 words (was: 2 cramped lines)
-- **Gold-gradient money element** — letterforms + thin ornamental underline (was: yellow highlighter swipe)
-- **Background depth ornament** — exactly one subtle arc / radial light / vignette / streak at ≤15% opacity
-- **Premium CTA finishing** — gradient + outer glow + inner highlight for aspiration register (was: flat red Shopify button)
-- **Product proof persistence** — phone with readable trading UI never disappears in non-1:1 recompositions
-- **CTA alignment rule** — CTA always shares an x-anchor with the text block (no more floating buttons)
-- **LP context bias** — banner palette + subject mirror the landing page for visual continuity
-- **Interactive variant poll** — explicit creative control before any credit is spent
+- **Auto LP-context read** — no more drag-drop screenshots; Claude calls `get_screenshot` on the same Figma file
+- **Multi-concept, no winner pick** — every picked approach ships; Phase 0.5 picks become deliverables, not candidates
+- **Clickable polls everywhere** — Phase 0.5 and Phase 5 both use `AskUserQuestion`, never chat replies
+- **Designer review pause** — between MVPs and recomps, the run pauses so you can review and regenerate any concept in Figma
+- **Adaptive framework** — register lookup tables dropped (color family, CTA finishing, lighting matrix); decisions made per banner from LP palette + register + copy
+- **Compressed prompts** — visual prompt template down to ~500 chars soft target so the model has room to be creative
+- **CTR-anxiety rules pruned** — highlighter ban, 2-line ban, flat-CTA ban, neutral-lighting ban, ornament-from-list rule all removed; cultural / RTL / brand-safety guardrails stay
+- **Bigger but disciplined CTA** — 110–140px tall, text fills 60–80% button width, no wrap, no clip
 
 **Requires**
 - Higgsfield MCP connector configured
-- Figma MCP connector configured
+- Figma MCP connector configured (now **read + write** — needs `get_screenshot`, `use_figma`, `upload_assets`)
 
 [Full spec →](.claude/commands/banner.md)
 
