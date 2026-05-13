@@ -90,71 +90,56 @@ Audit a Figma LP for translation parity, image localization, overflow, broken pl
 </details>
 
 <details>
-<summary><strong>/banner</strong> v2.1 — multi-concept banners → Figma, loose input + content-driven visual options</summary>
+<summary><strong>/banner</strong> v2.2 — strict input + minimal questions + silent execution</summary>
 
-Generate **multiple** ad banner concepts with **Higgsfield GPT Image 2** and paint them into a Figma file at exact pixel sizes. Paste the Figma URL + the full ad copy + sizes — no labels needed. Claude auto-reads the LP hero from the same Figma file, analyzes the copy + LP purpose, asks simple clickable questions ("which line should be biggest?", "want a button?", "what should the banner show?"), renders one MVP per pick, pauses for you to review in Figma, then recomposes every approved MVP to every requested size.
+Render one banner concept with **Higgsfield GPT Image 2** and paint it into a Figma file at exact pixel sizes. **You** pick the hero frame in Figma first (so the URL carries the node-id), then paste the URL + Title + CTA. Claude reads only that node for LP context, asks at most 4 short clickable questions, renders, and paints. Runs silently — only critical issues surface.
 
 ```
-/banner <figma-url>
-<full ad copy — multiple lines OK, no Title:/cta: labels needed>
-[<WxH> ...]  ← optional; Claude will ask if missing
+/banner <figma-url-with-node-id>
+Title: <full title text verbatim>
+CTA: <button text verbatim>      ← optional; Claude suggests if missing
+[<WxH> ...]                       ← optional; defaults to 1200×1200, 1200×628, 1080×1920
 ```
 
 **Example**
 
 ```
-/banner https://figma.com/design/<fileKey>/...
-เงินฝากครั้งแรกของคุณจะเพิ่มเป็นสองเท่าทันทีที่คุณฝาก
-เริ่มต้นลงทุนกับ Academy ที่ครบครัน
-โบนัส 100%
-เรียนรู้ ฝึกฝน ลงทุน — กับที่ปรึกษาตัวจริง
+/banner https://figma.com/design/<fileKey>/...?node-id=38-1040
+Title: เงินฝากครั้งแรกของคุณจะเพิ่มเป็นสองเท่า โบนัส 100%
+CTA: เริ่มต้นลงทุนกับ Academy
 ```
 
 **What you get**
-- One Figma frame per (concept × size) combination at exact pixel dimensions, grouped per concept in a single row
-- Every rendered banner painted in as a FILL — MVPs first, recomps after your Continue click
-- A summary table with concept index, frame node IDs, Higgsfield job IDs, and any crop/timeout warnings
+- One Figma frame per requested size at exact pixel dimensions, single row
+- The rendered banner painted in as a FILL (MVP first, recomps after your Continue click)
+- A one-line success summary + an optional problem-list of any silent issues from the run
 
-**Workflow** *(blocking points marked 🛑)*
+**Polls (at most 4, all clickable, plain language)**
 
-1. **Phase 0** — auto-detect language from copy (drives subject demographics, typography script, LTR/RTL direction)
-2. **Phase 0.2** — one-line cost preview before any credit fires
-3. **Phase 0.3** — classify emotional register (aspiration / urgency / provocation / trust / curiosity / empowerment / identity)
-4. **Phase 0.4** — **auto-screenshot the LP hero** from the same Figma file (with 2x retry on session-expired). Extract subject archetype + 3 dominant hex + tone + LP purpose.
-5. **Pre-flight CDN check** — quickly test outbound HTTP to the Higgsfield CDN; if blocked, surface a warning + Continue/Abort poll before spending credits.
-6. **Phase 0.5** — 🛑 **series of simple clickable polls (AskUserQuestion, plain language, no jargon)**:
-   - **Sizes** (skip if already provided): square / landscape / portrait / story
-   - **Headline**: which line should be the biggest text?
-   - **Sub-line**: any supporting text under the headline? (or "no sub-line")
-   - **Button**: which line goes on the button? (or "no button" — first-class option)
-   - **Visual direction**: 3–4 specific content-driven options Claude composes from the LP purpose + copy + register, plus "Creative AI decides"
-   - **Local cues**: Yes (visibly local) / Subtle (default) / No
-   - **More ideas**: just this one / +1 / +2 / +3 (max 4 total concepts)
-7. **Phase 1** — compose N short visual prompts (~500 chars soft, ≤800 hard). Adaptive — no register lookup tables. **Background = scene with depth** + explicit clean readability zone for text.
-8. **Phase 2** — render all N MVPs in parallel at 1200×1200 (first poll at t+60s, then every 30s)
-9. **Phase 3** — create all (N × M) Figma frames upfront, grouped per concept in a single row
-10. **Phase 4** — paint MVPs into their 1:1 frames
-11. **Phase 5** — 🛑 **designer review pause**: AskUserQuestion → Looks good / Redo one / Stop here. Redo loops back to this pause.
-12. **Phase 6** — recompose every surviving MVP to every requested non-1:1 size (parallel)
-13. **Phase 7** — paint recomps into their frames
-14. **Phase 8** — summary table with concept index, frame IDs, job IDs, and warnings
+1. **Title highlight** — which part of the title pops? (3–4 candidates + "no highlight")
+2. **Button** — only if `CTA:` missing. Claude suggests 3 short options + "no button"
+3. **Visual direction** — 3 specific directions Claude composes from LP + title + register + "Creative AI decides"
+4. **Local cues** — only for non-English markets. Subtle (default) / Strong / None
 
-**v2.1 deltas vs v2.0**
+**Strict requirements**
 
-- **Loose input** — no more `Title:` / `cta:` labels required. Paste the Figma URL + the whole ad copy, Claude figures it out and confirms via polls
-- **"No button" is a first-class poll option** — for banners without a CTA, click "No button" and Claude renders a clean button-less banner
-- **Content-driven visual options** — the generic "Human / AI Robot / Product / Wild Card" menu is gone. Claude analyzes the LP purpose + copy + register and composes 3–4 specific creative directions tailored to **this** banner
-- **"Wild card" → "Creative AI decides"** — clearer label for the free-form option
-- **Localization poll** — new optional poll asks whether the banner should include explicit local cultural cues (Yes / Subtle / No)
-- **Simpler poll language everywhere** — short sentences, plain words, no design jargon
-- **Pre-flight CDN connectivity check** — catches harness egress restrictions before spending Higgsfield credits
-- **Figma MCP retry-on-session-expired** — 2x exponential backoff (2s, 4s) before falling back to no-LP-context
-- **Backgrounds breathe** — dropped the "clean 2-stop gradient" prescription that was flattening output. Backgrounds are now scene-driven with depth; readability is protected by an explicit clean zone where text overlays
-- **Polling cadence tuned** — Phase 2 first check moves from t+25s to t+60s, then every 30s (matches actual GPT Image 2 timing)
+- Figma URL must contain `node-id=X-Y` — pre-select the hero frame in Figma before copying the URL. If missing, `/banner` fails fast with a clear instruction.
+- `Title:` is required (full headline text verbatim).
+- For cloud Claude Code workspaces, allowlist both `d8j0ntlcm91z4.cloudfront.net` and `mcp.figma.com` — pre-flight checks both and fails fast if blocked.
+
+**v2.2 deltas vs v2.1**
+
+- **Strict input is back.** `Title:` and `CTA:` labels required (CTA optional). No more "guess which line is the headline" polls.
+- **One question per missing piece.** Title highlight (always), CTA suggestion (only if missing), visual direction (always), local cues (only for non-English). Removed: headline pick, sub-line pick, extras count, sizes pick (uses sensible default).
+- **Hero node required in URL.** Pre-select the hero in Figma; the URL carries node-id. Removes the `get_metadata` exploration that was failing on session expiry.
+- **Silent execution.** No language-detection / register / cost-preview status lines. Only critical issues surface mid-run. Phase 8 summary lists any silent problems so the team can upgrade the spec.
+- **Whole title is rendered.** No headline + sub-line split. The Title goes on the banner verbatim. The poll picks which phrase inside the title gets the gold-gradient highlight.
+- **Egress requirement documented up front.** Pre-flight tests both required hosts (`d8j0ntlcm91z4.cloudfront.net` and `mcp.figma.com`) and fails fast with the exact hostnames to allowlist.
 
 **Requires**
 - Higgsfield MCP connector configured
-- Figma MCP connector configured (now **read + write** — needs `get_screenshot`, `use_figma`, `upload_assets`)
+- Figma MCP connector configured (read + write)
+- Cloud workspaces: allowlist `d8j0ntlcm91z4.cloudfront.net` and `mcp.figma.com`
 
 [Full spec →](.claude/commands/banner.md)
 
