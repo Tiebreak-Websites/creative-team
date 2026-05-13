@@ -90,18 +90,19 @@ Audit a Figma LP for translation parity, image localization, overflow, broken pl
 </details>
 
 <details>
-<summary><strong>/banner</strong> v2.2 — strict input + minimal questions + silent execution</summary>
+<summary><strong>/banner</strong> v2.4 — general visual intelligence + reasoning-first ad design</summary>
 
-Render one banner concept with **Higgsfield GPT Image 2** and paint it into a Figma file at exact pixel sizes. **You** pick the hero frame in Figma first (so the URL carries the node-id), then paste the URL + Title + CTA. Claude reads only that node for LP context, asks at most 4 short clickable questions, renders, and paints. Runs silently — only critical issues surface.
+Render one or more banner concepts with **Higgsfield GPT Image 2** and paint them into a Figma file at exact pixel sizes. **You** pick the hero frame in Figma first (so the URL carries the node-id), then paste the URL + Title(s) + CTA. Claude reads only that node for LP context, asks at most 4 short clickable questions per concept, renders, and paints. Runs silently — only critical issues surface.
 
 ```
 /banner <figma-url-with-node-id>
-Title: <full title text verbatim>
-CTA: <button text verbatim>      ← optional; Claude suggests if missing
-[<WxH> ...]                       ← optional; defaults to 1200×1200, 1200×628, 1080×1920
+Title: <full title text verbatim>           ← one or more (each = one concept)
+Title: <second concept's title>             ← optional additional concepts
+CTA: <button text verbatim>                  ← optional; Claude suggests if missing
+[<WxH> ...]                                   ← optional; defaults to 1200×1200, 1200×628, 1080×1920
 ```
 
-**Example**
+**Example — single concept**
 
 ```
 /banner https://figma.com/design/<fileKey>/...?node-id=38-1040
@@ -109,32 +110,54 @@ Title: เงินฝากครั้งแรกของคุณจะเ�
 CTA: เริ่มต้นลงทุนกับ Academy
 ```
 
+**Example — two concepts in one run (parallel masters + recomps)**
+
+```
+/banner https://figma.com/design/<fileKey>/...?node-id=1-456
+Title: +171% 2024. +39% 2025. Investerar du?
+Title: 43 analytiker säger Stark Köp. AI-handeln är inte över.
+```
+
 **What you get**
-- One Figma frame per requested size at exact pixel dimensions, single row
+- One Figma frame **row per concept**, one frame per requested size
 - The rendered banner painted in as a FILL (MVP first, recomps after your Continue click)
 - A one-line success summary + an optional problem-list of any silent issues from the run
 
-**Polls (at most 4, all clickable, plain language)**
+**Polls (at most 4 per concept, all clickable, plain language)**
 
 1. **Title highlight** — which part of the title pops? (3–4 candidates + "no highlight")
 2. **Button** — only if `CTA:` missing. Claude suggests 3 short options + "no button"
 3. **Visual direction** — 3 specific directions Claude composes from LP + title + register + "Creative AI decides"
-4. **Local cues** — only for non-English markets. Subtle (default) / Strong / None
+4. **Local cues** — only for non-English markets. Subtle (default) / Strong / None. Asked once across all concepts (shared)
 
 **Strict requirements**
 
 - Figma URL must contain `node-id=X-Y` — pre-select the hero frame in Figma before copying the URL. If missing, `/banner` fails fast with a clear instruction.
-- `Title:` is required (full headline text verbatim).
+- `Title:` is required (full headline text verbatim). Multiple `Title:` lines = multiple concepts (cap 4 per run).
 - For cloud Claude Code workspaces, allowlist both `d8j0ntlcm91z4.cloudfront.net` and `mcp.figma.com` — pre-flight checks both and fails fast if blocked.
 
-**v2.2 deltas vs v2.1**
+**v2.4 deltas vs v2.3** — general visual intelligence + three P1 fixes from the v2.3 visual review
 
-- **Strict input is back.** `Title:` and `CTA:` labels required (CTA optional). No more "guess which line is the headline" polls.
-- **One question per missing piece.** Title highlight (always), CTA suggestion (only if missing), visual direction (always), local cues (only for non-English). Removed: headline pick, sub-line pick, extras count, sizes pick (uses sensible default).
-- **Hero node required in URL.** Pre-select the hero in Figma; the URL carries node-id. Removes the `get_metadata` exploration that was failing on session expiry.
-- **Silent execution.** No language-detection / register / cost-preview status lines. Only critical issues surface mid-run. Phase 8 summary lists any silent problems so the team can upgrade the spec.
-- **Whole title is rendered.** No headline + sub-line split. The Title goes on the banner verbatim. The poll picks which phrase inside the title gets the gold-gradient highlight.
-- **Egress requirement documented up front.** Pre-flight tests both required hosts (`d8j0ntlcm91z4.cloudfront.net` and `mcp.figma.com`) and fails fast with the exact hostnames to allowlist.
+**Visual intelligence overhaul:**
+
+- **Phase 1.0 visual reasoning (NEW).** Before composing any prompt, Claude reasons about what the ad is selling, what emotion it should create, and what visual metaphor best fits the copy. No reflexive AI-chip / fintech-chart / trading-floor unless the brief clearly calls for them. Visual concept is derived fresh per task.
+- **Campaign-meaning → visual logic catalog.** Reference table mapping meaning archetypes (AI/tech, investing, education, luxury, lifestyle, urgency, trust, SaaS, problem/solution, local-identity) to characteristic visual logics. Seeds Poll 3 options; doesn't dictate them.
+- **Three-zone composition planning.** Every prompt has an explicit Text Zone, Main Visual Zone, CTA Zone — planned before render. Prompt describes an advertising layout, not a scene.
+- **Per-aspect layout rules.** Each aspect (1:1, 1.91:1, 16:9, 3:4, 9:16) has a placement recipe. Recomp redesigns layout per format, never just resize.
+- **Banner quality standard + anti-patterns.** Hard guardrails against generic stock-photo people, random people-on-laptops, fake logos, fake platform screenshots, excessive glow, decorative text effects, template aesthetics.
+- **On-screen data localization.** Data-product subjects (terminal / dashboard / app UI) populated with market-native data labels (SEB, Nordea, Handelsbanken for Nordic; etc.) instead of US defaults.
+
+**P1 fixes from v2.3:**
+
+- **Stacked vs inline highlight mode.** Resolves the line-break ↔ size-escalation conflict. `(highlight_chars × base_size × 1.12) / column_width` decides: > 0.40 = Inline (drop size escalation); ≤ 0.40 = Stacked (highlight on its own row at 1.12×).
+- **CTA color tier rule.** Tier 1 (highlight) and Tier 2 (CTA) never share the same hex. When highlight = LP accent, CTA uses a darker shade (~70% L) or LP's actual button color.
+- **Title block height as ratio of canvas.** `clamp(canvas_h × 0.22, 180, 480) px` locks campaign-wide typographic rhythm.
+
+**P2 additions:**
+
+- **Phase 6.5 silent visual QA.** Claude reads every recomp PNG before painting and scores composition fidelity (line structure, prop manifest, edge clipping, alignment, highlight treatment, readability). Auto-retries critical failures once.
+- **Master prop manifest enforced.** Every prop named in master is a checklist for recomps.
+- **Subject vertical fill rule for TALL.** 9:16 / 3:4 subject occupies 45–55% of canvas height (no crushing).
 
 **Requires**
 - Higgsfield MCP connector configured
