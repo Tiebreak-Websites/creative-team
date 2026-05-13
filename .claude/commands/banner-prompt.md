@@ -2,7 +2,7 @@
 description: Generate a ready-to-copy Higgsfield GPT Image 2 banner prompt using the /banner design framework. No image generation, no Figma writes — pure prompt output, plus 5 numbered alternative approach variants the user can pick by replying with a number.
 ---
 
-# /banner-prompt — Prompt generator only (no rendering, no Figma) v1.1 (tracks /banner v1.7)
+# /banner-prompt — Prompt generator only (no rendering, no Figma) v1.2 (tracks /banner v1.8)
 
 ## What this does
 
@@ -25,9 +25,13 @@ Use `/banner` when:
 
 This command reuses **§ Design Framework**, **§ Composition Guide**, **§ Visual Prompt Template**, **§ Emotional Register Library**, **§ Money element treatment by register**, **§ Visual Reference Library**, and the **DO NOT RENDER list** from `.claude/commands/banner.md`. Read those sections — do not re-derive them here.
 
-Everything that applies to `/banner` Phase 0 + Phase 0.3 + Phase 1 applies here unchanged:
+Everything that applies to `/banner` Phase 0 + Phase 0.3 + Phase 0.4 + Phase 0.5 + Phase 1 applies here unchanged:
 - Language auto-detection (incl. dialect cues)
 - **Emotional register classification (v1.7)** — per-banner derivation from copy, drives lighting / palette / typography ladder / CTA finishing / background depth ornament
+- **LP context analysis (v1.8)** — if user attaches an LP hero screenshot, derive subject archetype + dominant palette + tone register and bias the prompt's subject + accent hex toward continuity
+- **Interactive variant-selection poll (v1.8)** — BLOCKING AskUserQuestion with 4 options (human / AI robot / product-led / editorial metaphor) before composing the prompt
+- **CTA-alignment rule (v1.8)** — CTA shares an explicit x-anchor with the text block (right-edge align default for LTR aspiration); never floats
+- **Lean Visual Prompt Template (v1.8)** — descriptive sections stay prose, structured sections become atomic bullets
 - Cultural safety + market-aware imagery rules
 - RTL composition + RTL typography
 - Money element expanded priority list (number → identity hook → verb → brand → urgency → hero)
@@ -37,7 +41,7 @@ Everything that applies to `/banner` Phase 0 + Phase 0.3 + Phase 1 applies here 
 - Premium CTA finishing per register (gradient + glow + inner highlight for aspiration, etc.)
 - Product proof element rule for finance/SaaS/etc.
 - Verbatim copy rule (HERO + CTA never edited)
-- Negative-prompt list + v1.7 bans (highlighter yellow, pure white neutral, 2-cramped-lines, flat CTA for aspiration, flat gradient background, cool flat lighting for non-trust)
+- Negative-prompt list + v1.7/v1.8 bans (highlighter yellow, pure white neutral, 2-cramped-lines, flat CTA for aspiration, flat gradient background, cool flat lighting for non-trust, CTA floating without an x-anchor)
 
 What is **explicitly removed** from this flow:
 - ❌ No `models_explore` / `generate_image` / `job_display` — no Higgsfield calls of any kind
@@ -88,6 +92,22 @@ Identical to `/banner` Phase 0.3. Read HERO + CTA + LANGUAGE, pick exactly ONE r
 ```
 
 The register drives defaults for decisions 4, 6, 7, 9, 11, 12 in the next phase.
+
+## Phase 0.4 — LP context analysis (optional, only when a screenshot is attached)
+
+Identical to `/banner` Phase 0.4. If the user attached an LP hero screenshot, extract subject archetype + dominant hex + tone register + setting/typography style. Surface:
+
+```
+🖼️ LP context: <subject archetype> + <2–3 dominant hex> + <tone match: yes/conflict>. Prompt will mirror.
+```
+
+If no screenshot → skip this phase.
+
+## Phase 0.5 — interactive variant-selection poll (BLOCKING)
+
+Identical to `/banner` Phase 0.5. Fire `AskUserQuestion` with 4 options (human / AI robot / product-led / editorial metaphor). LP-recommended option (if any) goes first with `(Recommended)` label. The user's pick substitutes into decisions 2/3/4/partial-7 in Phase 1.
+
+This phase blocks. /banner-prompt is interactive — there is no auto-pick fallback.
 
 ---
 

@@ -2,7 +2,7 @@
 description: Read the design framework, reason through the creative decisions for this specific banner, write a tight scene-level prompt, and ship it to Higgsfield GPT Image 2 — then recompose into every requested size and paste each into a Figma frame
 ---
 
-# /banner — Designer flow (Higgsfield GPT Image 2 → Figma) v1.7
+# /banner — Designer flow (Higgsfield GPT Image 2 → Figma) v1.8
 
 ## Architecture
 
@@ -18,13 +18,14 @@ Three layers, three audiences:
 
 Workflow:
 
-1. **MVP pass.** Claude reads the framework → applies the guide → composes a concrete visual prompt for this specific banner → generates the master at 1200×1200 / 1:1.
-2. **Recomposition pass.** For every non-1:1 size, Claude composes a spatial-translation prompt (same scene, new aspect) → generates with the master as reference (`medias[].role: "image"`).
-3. **Figma pass (write-only).** Create frames at exact pixel sizes → paint each finished image as a fill.
+1. **Pre-flight (Phases 0–0.5).** Detect language → cost preview → classify emotional register → analyze optional LP screenshot → **interactive variant-selection poll (BLOCKING)** → user picks subject + visual recipe.
+2. **MVP pass.** Claude composes a concrete visual prompt using the user's chosen variant → generates the master at 1200×1200 / 1:1.
+3. **Recomposition pass.** For every non-1:1 size, Claude composes a spatial-translation prompt (same scene, new aspect) → generates with the master as reference (`medias[].role: "image"`).
+4. **Figma pass (write-only).** Create frames at exact pixel sizes → paint each finished image as a fill.
 
-Banner structure is always **Title + CTA**. The visual direction is *not* an input — Claude derives it from the copy + LANGUAGE using the framework.
+Banner structure is always **Title + CTA**. The visual direction is *derived* from the copy + LANGUAGE + register + optional LP context, then *chosen* by the user via the Phase 0.5 poll.
 
-Figma is **write-only**: create frames + paint fills. Never call `get_metadata`, never call `get_design_context`, never read the file tree.
+Figma is **write-only**: create frames + paint fills. Never call `get_metadata`, never call `get_design_context`, never read the file tree. (Phase 0.4 reads an LP screenshot attached by the user, NOT the Figma file.)
 
 ---
 
@@ -38,6 +39,7 @@ Pull these out of the message (free-form, no rigid syntax):
 - **Sizes** — REQUIRED. One or more `WxH` pixel tokens (`1200x1200`, `1200x628`, `960x1200`, ...). Both `x` and `×` accepted. Always pixels.
 - **Title** — REQUIRED. The full banner copy verbatim. Accept `Title:`, `Tittle:` (common typo), `Headline:`, or an unlabeled line. This becomes the `HERO` slot. Never split, never "improve," never translate.
 - **CTA** — REQUIRED. Accept `cta:` / `CTA:` / `button:`. Goes verbatim into the `CTA` slot.
+- **LP screenshot** — OPTIONAL (v1.8). Any image attachment in the message — typically a screenshot of the landing-page hero section the banner links to. If attached, Phase 0.4 analyzes it for subject archetype + palette + tone and biases the variant poll. If absent, /banner still runs — the variant poll just uses register defaults instead of LP-derived ones.
 
 ### Hard fail-fast — STOP and error out
 
@@ -127,6 +129,108 @@ Examples:
 - `🎭 Register: provocation (cues: "a escola te ensinou", "ninguém te conta"). Direction: dramatic low-key photo, near-monochrome + one saturated accent, raw editorial typography.`
 
 Do not block — fire and continue. The user will interrupt if it's wrong.
+
+### Phase 0.4 — landing-page context analysis (optional, only when a screenshot is attached)
+
+Banners are not standalone — they're the doorway to a landing page (LP). Visual continuity between the banner and the LP hero meaningfully lifts CTR. v1.8 lets the user attach an LP hero screenshot to the /banner invocation; if attached, Claude reads it and biases the 12-decision checklist toward continuity.
+
+**Inputs:** any image attachment in the user's message (drag-drop, paste, or `/banner ... [screenshot]`). If NO screenshot is attached, skip this phase entirely.
+
+**What to extract from the screenshot (silent reasoning):**
+1. **Subject archetype.** Does the LP hero show a human (and what kind — Western / LATAM / MENA / SEA / mixed)? An AI/robot? A product render only? An abstract illustration? Or no hero visual at all?
+2. **Palette.** Top 3 dominant hex codes visible in the hero section. Read them off the screenshot — don't guess.
+3. **Tone register.** Does the LP hero feel aspirational / urgent / contrarian / trustworthy / curious / empowering / identity-led? This will *modify* the register classified in Phase 0.3 if there's a strong mismatch (e.g. copy reads urgent but LP feels trustworthy → re-check the register pick).
+4. **Setting/environment.** Is the LP hero set in an office / outdoors / studio / abstract / domestic?
+5. **Typography style.** Editorial / minimal / bold / hand-drawn? Same family or sharp contrast?
+
+**How this changes the 12 decisions:**
+- **Decision 2 (Hero subject):** STRONG bias toward matching the LP archetype. If LP shows an AI robot, the banner subject becomes an AI robot too (culturally adapted). If LP shows a human of a specific demographic, the banner subject matches that demographic. The variant poll in Phase 0.5 surfaces this as the *recommended* option.
+- **Decision 3 (Setting):** moderate bias toward matching the LP setting category.
+- **Decision 7 (Color palette):** strong bias — pull 1–2 of the dominant LP hex codes into the banner palette so the visual handoff feels seamless. The register's color family from § Emotional Register Library still drives the *role* assignments (which color is background vs accent vs CTA), but the specific hex codes pull from the LP.
+- **Decision 8 (Typography):** weak bias — match the LP's weight register (heavy / medium / light) but stay within the framework's typeface allowlist.
+
+**Surface a one-line preview to the user** after the register line:
+
+```
+🖼️ LP context: <subject archetype> + <2–3 dominant hex> + <tone match: yes/conflict>. Banner palette + subject will mirror.
+```
+
+Examples:
+- `🖼️ LP context: human subject (LATAM, late 20s) + #0E3B2E + #D4A017 + #F5EFE3 + tone match. Banner palette + subject will mirror.`
+- `🖼️ LP context: AI robot hero + #1A1A2E + #6B5BFF + #F4F6F8 + tone match. Banner will use AI robot subject + cool tech palette.`
+- `🖼️ LP context: product-only (laptop with chart) + #0A1A3D + #FF7532 + #FFFFFF + tone conflict (LP=trust, copy=urgency). Defaulting to copy's urgency register; pulling navy from LP for continuity.`
+
+Do not block — emit and continue. The poll in Phase 0.5 lets the user override the LP-derived subject if they want.
+
+### Phase 0.5 — interactive variant selection poll (BLOCKING)
+
+This is the only phase in /banner that blocks for a user response. It runs **every time /banner is invoked** so the user has explicit creative control over the visual approach before any credit is spent.
+
+**Tool:** `AskUserQuestion` with 4 options (single-select, not multiSelect).
+
+**Compose the 4 options** from the register classified in Phase 0.3 + the LP context from Phase 0.4 (if available). Each option is a distinct **subject archetype** + matching setting/lighting recipe — same register, same copy, same money-element treatment across all four. The user is picking the hero subject and visual flavor, not the message.
+
+The 4 options always include:
+1. **Human (mirror/aspirational)** — A human subject matching the realistic customer from decision 1. For non-English markets, culturally native (no Western default).
+2. **AI / robot** — A humanoid robot, AI agent, or futuristic device, culturally adapted to the market (different aesthetic register for LATAM vs MENA vs SEA vs Western).
+3. **Product-led** — The product itself as the hero (phone/laptop/UI close-up with the readable product proof). No human, no robot.
+4. **Editorial / metaphor** — An abstract or symbolic visual (currency notes, rising chart, market-relevant object) — no subject, treats the headline as the hero.
+
+**LP-bias rule.** If a screenshot was provided in Phase 0.4:
+- The option that matches the LP's subject archetype gets `"(Recommended)"` appended to its label and is placed FIRST in the options array.
+- Other options preserve order: human → AI → product → editorial (skipping the recommended one).
+
+**No LP attached.** Default order is human → AI → product → editorial. The "human" option gets `"(Default)"` appended and is placed first.
+
+**One-line per option label** describing the visual recipe:
+- Imagery style (photoreal / illustrated / 3D)
+- Subject archetype description (specific person/robot/product)
+- Setting category (location / studio / abstract)
+- Lighting mood
+- Palette mood
+
+Example for "O Brasil está comprando ações de IA. E você?" / aspiration register / pt-BR / no LP screenshot:
+
+```
+AskUserQuestion {
+  question: "Which visual approach should this banner take? (All options use the same headline, money element treatment, and CTA — only the subject and visual recipe change.)",
+  header: "Visual approach",
+  multiSelect: false,
+  options: [
+    {
+      label: "Human — Brazilian male, golden-hour balcony (Default)",
+      description: "Photoreal Brazilian man early 30s holding a phone with the trading chart. Penthouse balcony, São Paulo skyline at golden hour. Dark green + gold palette. The 'realistic customer' mirror approach."
+    },
+    {
+      label: "AI — humanoid AI character, futuristic study",
+      description: "Photoreal humanoid AI subject (sleek, modern, culturally-styled for LATAM) interacting with a holographic trading interface. Dark interior with warm key + cool rim. Dark green + gold + accent cyan."
+    },
+    {
+      label: "Product-led — phone hero, no human",
+      description: "Close-up of the trading app phone with hands cropped in frame, espresso + monstera context. Golden hour fall-off. Dark green + gold palette. Subject = the product itself."
+    },
+    {
+      label: "Editorial metaphor — rising real, no subject",
+      description: "Abstract editorial composition: Brazilian Real bills folded into an upward-rising form, gold-lit, against the dark green backdrop. Typographic-led, no human, no product. Cinematic still-life."
+    }
+  ]
+}
+```
+
+**Surface a one-line preview before the poll** so the user knows what to expect:
+
+```
+🎨 Picking visual approach for this banner — 4 options. The headline, money element, ladder, palette family, and CTA stay constant across options. You pick the subject + visual recipe.
+```
+
+**On user reply:**
+- Capture the chosen option's recipe.
+- Substitute its choices into decisions 2 (subject), 3 (setting), 4 (lighting), and partially 7 (palette accent) of the 12-decision checklist.
+- Proceed to Phase 1 — compose the visual prompt with the user's choice.
+
+**On "Other" reply (user provides free-form text):** treat it as a `style:` hint. Bias the 12-decision answers toward the user's description while keeping register/money-element/cultural-safety non-negotiable.
+
+**No timeout / no skip.** The poll always blocks. If the user is in /loop mode or scheduled mode and unattended, /banner stops and reports "❌ /banner needs a visual-approach choice — re-run when available." Do not auto-pick to keep the flow moving — the whole point of the poll is creative control.
 
 ---
 
@@ -363,41 +467,56 @@ End with: `Open the file in Figma to review (search "<runStamp>" to jump to this
 This is the skeleton Claude fills per banner. Replace every `[...]` with the concrete decisions from the 12-decision checklist. **Total filled length ≤ 2,800 chars.** This text — and ONLY this text — gets sent to GPT Image 2.
 
 ```
-1200×1200 square banner ad. [photorealistic | clean vector illustration]. [{LANGUAGE} ({market})] audience. Register: [aspiration | urgency | provocation | trust | curiosity | empowerment | identity].
+1200×1200 square banner. [photorealistic | illustrated]. {LANGUAGE} ({market}) audience. Register: [aspiration | urgency | provocation | trust | curiosity | empowerment | identity].
 
-SUBJECT: [concrete description in 1–2 sentences — nationality, age, build, skin tone, hair, facial hair, expression, exact wardrobe garment + color, pose, framing (mid-shot / portrait / full body)].
+SUBJECT: [one paragraph — nationality, age, skin tone, hair, facial hair, expression, framing (mid-shot / portrait / full body), wardrobe garment + color, pose, hand positions, gaze direction].
 
-PRODUCT PROOF (if applicable): [exact named element with readable detail — e.g. "phone in right hand showing a dark-mode trading app: ticker name 'IA Global' at top, price 'R$ 156,42' with '+4,75 (2,96%)' in green, green candlestick chart trending up, time intervals '1D 1S 1M 3M 1A SA' along the bottom, green 'Comprar' button at bottom. Phone is held at chest height, screen tilted slightly toward viewer, screen content sharp and readable."]. If no product proof element applies (no product / no UI), omit this line entirely.
+PRODUCT PROOF: [one paragraph — exact device + position + readable UI detail. Example: "phone in right hand at chest height, dark-mode trading app: ticker 'IA Global' top-left, price 'R$ 156,42' with green '+4,75 (2,96%)' below, green-rising candlestick chart in main area, time row '1D 1S 1M 3M 1A SA' at bottom, green 'Comprar' button. Sharp and readable."]. Omit entirely if no product proof applies.
 
-SCENE: [specific setting + named props — e.g. "modern penthouse balcony at golden hour, blurred city skyline of São Paulo in background, monstera plant in left foreground, wooden table edge with espresso cup at lower-left"].
+SCENE: [one paragraph — specific location + time of day + named props with positions].
 
-LIGHTING: [direction, color temp, mood, time of day, depth of field — driven by register. e.g. for aspiration: "warm golden-hour key light from camera-right, soft golden rim from camera-left, late afternoon, shallow depth of field, warm bokeh on city skyline behind subject"].
+LIGHTING: [one paragraph — key direction + warmth, rim direction + warmth, DoF + bokeh. Register-driven defaults from § Emotional Register Library].
 
-COMPOSITION ([LTR | RTL]): [subject placement — e.g. "subject occupies LEFT 40% of canvas, mid-shot, eyes meeting camera"; text placement — "text block on RIGHT 55%, left-aligned, vertically centered around midline" (LTR) or right-aligned for RTL].
+COMPOSITION ({LTR|RTL}): subject [side + % of canvas]; text block [side + % + alignment].
 
-COPY — render every character verbatim, perfect spelling, accents, and punctuation. Use the typography ladder below.
+TYPOGRAPHY LADDER (4 lines required for HERO > 6 words; 2–3 lines allowed for shorter HERO):
+- L1 — "[exact line 1]" — Inter [weight 800–900], ~[size]px, [color hex]
+    · [if money element on this line: "'[exact phrase]' in gold gradient #D4A017→#F5C842 across letterforms + thin 3px #D4A017 underline 8px below baseline spanning only those words. Rest of line in [neutral hex]."]
+- L2 — "[exact line 2]" — Inter [weight], ~[size]px, [color hex]
+- L3 — "[exact line 3]" — Inter [weight], ~[size]px, [color hex]
+- L4 — "[exact line 4]" — Inter [weight], ~[size]px, [color hex]
 
-TYPOGRAPHY LADDER (descending size, register-driven weights):
-- L1 ([typeface] [weight 800–900], ~[size]px, [color hex] [optional: "with gold-gradient treatment on the named money phrase, plus a thin 3px [hex] underline ornament spanning only those words"]): "[exact line 1]"
-- L2 ([typeface] [weight], ~[size]px, [color hex]): "[exact line 2]"
-- L3 ([typeface] [weight], ~[size]px, [color hex]): "[exact line 3]"
-- L4 ([typeface] [weight], ~[size]px, [color hex]): "[exact line 4]"
-(Use exactly the number of lines needed to break the headline at natural phrase boundaries. For headlines > 6 words, 3–4 lines required — never 2 cramped lines. Money element line uses the gold-gradient + ornamental underline treatment for aspiration, or the register-appropriate equivalent.)
+Render every character verbatim. Perfect spelling, accents, punctuation. Line breaks ONLY at the natural phrase boundaries shown above — never collapse into 2 cramped lines.
 
-MONEY ELEMENT: the phrase "[exact words]" rendered with [register-specific treatment, e.g. "gold gradient from #D4A017 to #F5C842 across the letterforms, weight 900, plus a thin 3px #D4A017 ornamental underline spanning only those words, centered 8px below the baseline"]. Position: [on its line in the ladder above]. No competing treatments anywhere else on the canvas.
+MONEY ELEMENT: "[exact words]" on L[N], rendered with the gold-gradient + thin underline treatment described in the ladder. No competing emphasis anywhere else on the canvas.
 
-BACKGROUND DEPTH (exactly one ornament, opacity capped):
-- Base gradient: [direction + 2 hex stops, e.g. "dark green #0E3B2E at top-left to deeper green #082821 at bottom-right, smooth linear"]
-- Ornament: [pick ONE — e.g. "thin gold arc, 2px stroke in #D4A017 at 12% opacity, sweeping from upper-right corner inward and downward like a graceful curve framing the headline area" | "soft radial light overlay from upper-right corner in warm #F5C842 at 10% opacity, falloff over 60% of canvas" | "gentle vignette darkening the four corners at 18% opacity" | "single warm directional light streak from upper-right at 14% opacity"]
-- NO blobs, NO hexagons, NO tech orbs, NO "digital network" lines, NO generic gradient soup. The ornament is a subtle design element, not a generated artifact.
+BACKGROUND DEPTH:
+- Base: [hex] at [direction] → [hex] at [direction], linear gradient.
+- Ornament (exactly one): [pick ONE — "thin [hex] arc, 2px stroke at [N]% opacity, sweeping from [corner] inward and downward, framing the headline area" | "soft radial light overlay from [corner] in [hex] at [N]% opacity" | "gentle vignette darkening corners at [N]% opacity" | "single warm directional light streak from [corner] at [N]% opacity"].
 
-CTA: [position — "bottom-right at lower-third intersection" (LTR) or "bottom-LEFT at lower-third intersection" (RTL)]. [shape — pill 18px radius | rectangular 8px radius] button, [height ~110px], horizontal padding ~1.5× text x-height. Fill: [solid [hex] | gradient from [hex] at left to [hex] at right]. [optional finishing for aspiration/curiosity: "Soft outer glow in [hex] at 20% opacity, 14px blur. 1px top inner highlight at 15% white."]. Button text: [typeface] [weight 700–800], [text color hex]: "[exact CTA text]".
+CTA:
+- Position anchor: [right edge at x=[N], matching text block right edge (LTR default) | left edge at x=[N] | horizontal center at x=[N]]
+- Vertical: top edge ~[N]px below L[last] baseline.
+- Shape: [pill 18–22px radius | rectangular 8–12px radius], ~110px height, horizontal padding ~1.5× text x-height.
+- Fill: [solid [hex] | gradient from [hex] left to [hex] right]
+- Finishing: [for aspiration/curiosity: "Soft outer glow [hex] at 20% opacity, 14px blur. 1px top inner highlight at 15% white." | for urgency/trust/provocation: "none"]
+- Text: Inter [weight 700–800], [text hex]: "[exact CTA text]"
 
-PALETTE: [3 named colors with hex + neutral. Pull family from register, pick specific hex per banner. e.g. "dark green #0E3B2E dominant, gold #D4A017 accent + CTA gradient stop, warm gold #F5C842 secondary accent + CTA gradient stop, warm off-white #F5EFE3 neutral for L2/L3/L4 body lines". Pure #FFFFFF is banned — use warm off-white. Highlighter yellow is banned for text — use gold gradient instead.].
+PALETTE:
+- Background: [hex] + [hex]
+- Accent / CTA: [hex] + [hex if gradient]
+- Neutral (body lines L2–L4): [warm off-white hex — #F5EFE3 or #F2EBDD for aspiration/empowerment/identity/provocation; cool white #F4F6F8 for urgency/trust. Never pure #FFFFFF.]
+- CTA text: [hex]
 
-MARGINS: 60px safe area on all edges. 8% padding around the text block. Strong negative space around the headline. The text block must not crowd the subject — leave breathing room between subject's edge and L1's left edge (LTR) or right edge (RTL).
+MARGINS: 60px safe area on all edges. 8% padding around text block. Breathing room between subject's edge and L1's nearest edge.
 
-CONSTRAINTS: flat finished banner. No mockup frame, no device bezel around the banner itself (the in-scene phone IS the product proof, not a mockup chrome), no "Ad" or "Sponsored" label, no browser UI, no watermarks, no signatures, no AI marks. No text anywhere except in the lines above. No glowing tech orbs, no upward arrows over cities, no stock-photo plastic smiles, no lightbulb metaphors, no hexagon grids, no generic "digital network" lines, no highlighter-yellow swipes behind text. No drop shadows on text. [If LANGUAGE is non-English: + "Subject features, wardrobe, setting must feel native to {market} — no generic Western stock-photo defaults, no cross-region cultural cues. Avoid gesture taboos for {market}."]
+CONSTRAINTS:
+- Flat finished banner. No mockup chrome around the banner itself (the in-scene phone IS the product proof, not chrome).
+- No "Ad"/"Sponsored" label, no browser UI, no watermarks, no AI marks.
+- No text beyond the lines above.
+- No drop shadows on text.
+- No highlighter-yellow swipes behind text.
+- [If non-English: subject features, wardrobe, setting must feel native to {market}. No Western stock-photo defaults. Avoid gesture taboos for {market}.]
 ```
 
 After filling, the prompt should read like a **specific photoshoot brief** to a photographer + retoucher — concrete enough to render without interpretation.
@@ -469,6 +588,10 @@ Once chosen, write down the *exact words* and *which line they fall on*. The mon
 **8. Typography.** Pick by LANGUAGE script. Latin → Inter (default), Söhne, or Helvetica Now. Arabic → Tajawal (default) or Cairo. Hebrew → Heebo or Rubik. Urdu/Farsi → Vazirmatn or Noto Naskh Arabic. Pick one face for the headline. If you want a second face for an accent line, the framework allows max 2 typefaces total — never more. Headline weight 700–900. Money element weight 800–900. NEVER mix Latin and RTL typefaces on the same script line.
 
 **9. CTA treatment.** Shape default by register (see decision 9 in step 1.1). Position: bottom-right or bottom-left at thirds for LTR; **always** bottom-LEFT at thirds for RTL. Height: 90–120px on the 1200px canvas. Color: highest contrast in palette. Text: exact CTA copy verbatim, no rewording.
+
+**Alignment rule (v1.8 — critical).** The CTA must **share an x-anchor with the text block** — never float at an arbitrary x-coordinate. The CTA's *right edge* aligns to the text block's *right edge* by default (the CTA "closes" the text column from below, like a New Yorker hero). Alternatives: CTA's left edge aligns to text block's left edge (when CTA is wider than text), OR CTA is centered horizontally to the text block's vertical centerline. Pick one anchor per banner and state it explicitly in the visual prompt with the same x-coordinate referenced for both the text block edge and the CTA edge. The v1.6/v1.7 failure mode was "text block left-aligned at x=A" and "CTA bottom-right at thirds intersection" — two unrelated rules that left the CTA visually unmoored. v1.8 closes this.
+
+Vertical position: the CTA sits **80–120px below the last line of the headline**, never overlapping the typography ladder, never crowded into the bottom 60px safe-area margin.
 
 **10. Typography ladder.** Resist the urge to fit a long headline into 2 cramped lines — that is the v1.6 failure mode. For headlines > 6 words, break into 3 or 4 lines at **natural phrase boundaries** (after a verb, after a comma, between independent clauses). Each line gets its own ladder rank. Example for "O Brasil está comprando ações de IA. E você?" → 4 lines: L1 "O Brasil está" / L2 "comprando" / L3 "ações de IA." / L4 "E você?" with descending sizes 150 / 120 / 100 / 100. The money element ("O Brasil") sits on L1 with the gold-gradient + ornamental underline treatment. Verify two designers reading the ladder would produce the same line breaks.
 
@@ -672,6 +795,15 @@ On non-1200 canvases the ladder scales proportionally — preserve relative rati
 - For RTL languages, CTA button text renders in the RTL script using the same typeface as the headline.
 - If the CTA slot is empty, do not render any button-shaped element anywhere.
 
+**CTA alignment to text block (v1.8 — critical).** The CTA must share an x-anchor with the text block — never float. Three valid anchors:
+- **Right-edge align (default for LTR aspiration):** CTA's right edge sits at the same x-coordinate as the text block's right edge. Visually the CTA "closes" the text column from below.
+- **Left-edge align:** CTA's left edge matches the text block's left edge. Use when CTA text is significantly longer than the headline's longest line, so right-edge align would push the button beyond the safe area.
+- **Center align:** CTA's horizontal center matches the text block's vertical centerline (which equals the midpoint of the longest headline line for left-aligned text). Use for short CTAs under wide text blocks.
+
+Vertical position: 80–120px below the last line of the headline. Never overlaps the ladder. Never crowds the 60px bottom safe-area margin.
+
+The visual prompt MUST state the chosen x-anchor explicitly, e.g. "CTA right edge at x=1140, matching the right edge of the headline text block. 90px gap between L4 baseline and CTA top edge."
+
 **Premium CTA finishing (v1.7).** Layered on top of the basic chassis, register-driven:
 
 | Register | Fill | Shape | Glow | Inner highlight | Stroke |
@@ -724,6 +856,9 @@ For non-finance verticals, adapt: SaaS → laptop with dashboard UI; fitness →
 - No mixed visual styles (photo + vector together).
 - No button, button shape, or button placeholder if the CTA slot is empty.
 - No competing emphasis treatments — only the money element gets the gradient-text/underline/box treatment. The CTA's glow is the CTA's glow, not a competing emphasis.
+
+**v1.8 addition:**
+- **No floating CTA without an explicit x-anchor matching the text block.** The CTA's right edge (LTR aspiration default), left edge, or horizontal center MUST share an x-coordinate with one of the text block's edges or its vertical centerline. The visual prompt must state the anchor explicitly. The v1.6/v1.7 failure mode was "CTA bottom-right at thirds" floating ~30–50px away from the text column edge — banned.
 
 **v1.7 additions:**
 - **No highlighter-yellow swipe behind text.** Yellow #FFFF00 / #FFE600 as a rectangular highlight bar behind a word reads like a Word doc — banned. Use gold-gradient (#D4A017 → #F5C842) applied to the letterforms themselves for aspiration; use the register-specific treatment from § Money element treatment by register for everything else.
