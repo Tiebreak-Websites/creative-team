@@ -90,7 +90,7 @@ Audit a Figma LP for translation parity, image localization, overflow, broken pl
 </details>
 
 <details>
-<summary><strong>/banner</strong> v2.4 — general visual intelligence + reasoning-first ad design</summary>
+<summary><strong>/banner</strong> v2.5 — user-controlled setup + premium localized performance-ad style</summary>
 
 Render one or more banner concepts with **Higgsfield GPT Image 2** and paint them into a Figma file at exact pixel sizes. **You** pick the hero frame in Figma first (so the URL carries the node-id), then paste the URL + Title(s) + CTA. Claude reads only that node for LP context, asks at most 4 short clickable questions per concept, renders, and paints. Runs silently — only critical issues surface.
 
@@ -136,28 +136,30 @@ Title: 43 analytiker säger Stark Köp. AI-handeln är inte över.
 - `Title:` is required (full headline text verbatim). Multiple `Title:` lines = multiple concepts (cap 4 per run).
 - For cloud Claude Code workspaces, allowlist both `d8j0ntlcm91z4.cloudfront.net` and `mcp.figma.com` — pre-flight checks both and fails fast if blocked.
 
-**v2.4 deltas vs v2.3** — general visual intelligence + three P1 fixes from the v2.3 visual review
+**v2.5 deltas vs v2.4** — user-controlled setup + premium localized style + integrated-scene background rule
 
-**Visual intelligence overhaul:**
+**Flow changes (user back in control):**
 
-- **Phase 1.0 visual reasoning (NEW).** Before composing any prompt, Claude reasons about what the ad is selling, what emotion it should create, and what visual metaphor best fits the copy. No reflexive AI-chip / fintech-chart / trading-floor unless the brief clearly calls for them. Visual concept is derived fresh per task.
-- **Campaign-meaning → visual logic catalog.** Reference table mapping meaning archetypes (AI/tech, investing, education, luxury, lifestyle, urgency, trust, SaaS, problem/solution, local-identity) to characteristic visual logics. Seeds Poll 3 options; doesn't dictate them.
-- **Three-zone composition planning.** Every prompt has an explicit Text Zone, Main Visual Zone, CTA Zone — planned before render. Prompt describes an advertising layout, not a scene.
-- **Per-aspect layout rules.** Each aspect (1:1, 1.91:1, 16:9, 3:4, 9:16) has a placement recipe. Recomp redesigns layout per format, never just resize.
-- **Banner quality standard + anti-patterns.** Hard guardrails against generic stock-photo people, random people-on-laptops, fake logos, fake platform screenshots, excessive glow, decorative text effects, template aesthetics.
-- **On-screen data localization.** Data-product subjects (terminal / dashboard / app UI) populated with market-native data labels (SEB, Nordea, Handelsbanken for Nordic; etc.) instead of US defaults.
+- **Phase 0.4 size selection poll (NEW, BLOCKING).** Multi-select clickable poll with the most common ad formats (1:1, wide social, story/reel, portrait, landscape, display, leaderboard, half-page, all standard, custom). Skipped only if sizes were passed in input.
+- **Phase 0.45 creative control mode (NEW, BLOCKING).** Customize direction vs Claude decides automatically.
+- **Phase 0.5 creative polls run ONLY in Customize mode.** In Auto mode, Claude infers silently and proceeds.
 
-**P1 fixes from v2.3:**
+**Visual style direction — premium localized performance ads:**
 
-- **Stacked vs inline highlight mode.** Resolves the line-break ↔ size-escalation conflict. `(highlight_chars × base_size × 1.12) / column_width` decides: > 0.40 = Inline (drop size escalation); ≤ 0.40 = Stacked (highlight on its own row at 1.12×).
-- **CTA color tier rule.** Tier 1 (highlight) and Tier 2 (CTA) never share the same hex. When highlight = LP accent, CTA uses a darker shade (~70% L) or LP's actual button color.
-- **Title block height as ratio of canvas.** `clamp(canvas_h × 0.22, 180, 480) px` locks campaign-wide typographic rhythm.
+- **5 preferred creative archetypes.** Local hero campaign / Premium offer poster / Editorial lifestyle ad / Cultural prestige layout / Minimal premium typographic ad. Pick fresh per task — no archetype default.
+- **NO hard split-panel layouts.** Banners must be ONE continuous cinematic scene with the copy zone integrated into the background through lighting, depth, blur, decorative bridges. The "dark rectangle next to a photo" anti-pattern is now banned.
+- **Integrated copy zone rule.** Soft gradient + blur + vignette + atmospheric haze creates readability. No hard panels behind text.
+- **5-layer background depth formula.** Foreground / Midground / Background atmosphere / Readability zone / Visual bridge — every prompt declares all five.
+- **Target standard.** Bold localized advertising, large confident typography, one clear hero subject, polished CTA, cinematic lighting, art-directed (not just realistic).
 
-**P2 additions:**
+**Higgsfield prompt restructure:**
 
-- **Phase 6.5 silent visual QA.** Claude reads every recomp PNG before painting and scores composition fidelity (line structure, prop manifest, edge clipping, alignment, highlight treatment, readability). Auto-retries critical failures once.
-- **Master prop manifest enforced.** Every prop named in master is a checklist for recomps.
-- **Subject vertical fill rule for TALL.** 9:16 / 3:4 subject occupies 45–55% of canvas height (no crushing).
+- **Prompt length 900–1,200 chars preferred, 1,400 max.** Compact, visual, production-oriented. Describes the AD COMPOSITION, not a long system explanation.
+- **7-section prompt structure:** Format + market + mood → Concept → Hero → Integrated background → Text + CTA layout → Style + palette → Constraints.
+- **Hard ban on readable invented text** inside screens / charts / UI / documents. Only the provided Title and CTA may be readable text on the banner.
+- **Hard ban on hard split-panel layout.** Restated in every prompt's constraints block.
+
+All v2.4 rules carry over (Phase 1.0 visual reasoning, three-zone composition, per-aspect layouts, banner quality standard + anti-patterns, on-screen data localization, Stacked/Inline highlight mode, CTA tier rule, title block height ratio, Phase 6.5 silent QA, master prop manifest, subject vertical fill for TALL, multi-concept, market exclusion lists, fill-math safe-area, landmark do-not-invent).
 
 **Requires**
 - Higgsfield MCP connector configured
