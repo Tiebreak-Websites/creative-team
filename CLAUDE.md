@@ -30,6 +30,13 @@ so Claude Code behaves consistently for everyone.
 - When unsure about a change, create a new branch and open a PR
 - Keep code changes focused — one feature per branch
 
+## Keep README.md in sync (REQUIRED)
+- **Any change to a file in `.claude/commands/` MUST update `README.md` in the same PR.**
+- Update the slash command's version number, one-line summary, usage example, key features, and any new requirements.
+- If you add a new slash command, add a new expandable `<details>` section for it in the README's `## Commands` block, following the same shape as the existing ones (summary line → what it does → usage → example → features → requires → full spec link).
+- If you delete a slash command, remove its README section.
+- The README is the team's surface area — out-of-date docs cost everyone time. Treat it as part of the slash command, not a separate task.
+
 ---
 
 ## Project Knowledge (Claude Memory)
