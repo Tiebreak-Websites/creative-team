@@ -1,0 +1,109 @@
+{
+  "_comment": "Global translation glossary. Per-brand overrides live at projects/<brand>/i18n/glossary.json — they merge on top of this file (later wins).",
+
+  "doNotTranslate": [
+    "BrainTrade",
+    "Tiebreak",
+    "Claude",
+    "Figma",
+    "Anthropic",
+    "Higgsfield",
+    "GPT Image 2",
+    "P/E",
+    "ROI",
+    "B2B",
+    "B2C",
+    "SaaS",
+    "API",
+    "URL",
+    "CTA",
+    "FAQ",
+    "iOS",
+    "Android",
+    "macOS",
+    "Windows",
+    "Linux"
+  ],
+
+  "preferred": {
+    "de": {
+      "trading": "Trading",
+      "coach": "Coach",
+      "coaching": "Coaching",
+      "online": "online"
+    },
+    "es": {
+      "trading": "trading",
+      "coach": "coach",
+      "coaching": "coaching",
+      "online": "en línea"
+    },
+    "fr": {
+      "trading": "trading",
+      "coach": "coach",
+      "coaching": "coaching",
+      "online": "en ligne"
+    },
+    "it": {
+      "trading": "trading",
+      "coach": "coach",
+      "coaching": "coaching",
+      "online": "online"
+    },
+    "pt": {
+      "trading": "trading",
+      "coach": "coach",
+      "coaching": "coaching",
+      "online": "online"
+    },
+    "bg": {
+      "trading": "трейдинг",
+      "coach": "коуч",
+      "coaching": "коучинг",
+      "online": "онлайн"
+    }
+  },
+
+  "characterLimits": {
+    "auto": {
+      "ctaButton": 22,
+      "buttonText": 22,
+      "heroTitle": 60,
+      "h1": 80,
+      "h2": 100
+    }
+  },
+
+  "lengthBudget": {
+    "_comment": "Multiplier of source length the translation may not exceed. Calibrated against typical web LP copy expansion ratios.",
+    "de": 1.35,
+    "fr": 1.20,
+    "es": 1.15,
+    "es-LATAM": 1.18,
+    "es-ES": 1.15,
+    "it": 1.20,
+    "pt": 1.20,
+    "pt-BR": 1.20,
+    "pt-PT": 1.20,
+    "ru": 1.10,
+    "ja": 0.70,
+    "zh": 0.65,
+    "ko": 0.85,
+    "ar": 1.05,
+    "he": 1.00,
+    "bg": 1.25,
+    "nl": 1.25,
+    "pl": 1.30,
+    "tr": 1.15,
+    "el": 1.30,
+    "uk": 1.15,
+    "ro": 1.25,
+    "cs": 1.20,
+    "sk": 1.20,
+    "hu": 1.25,
+    "sv": 1.10,
+    "da": 1.10,
+    "no": 1.10,
+    "fi": 1.20
+  }
+}

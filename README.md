@@ -150,6 +150,44 @@ cta: Entre agora
 </details>
 
 <details>
+<summary><strong>/translate-figma</strong> v1.0 — auto-translate any 3-breakpoint Figma page</summary>
+
+Hand Claude a Figma URL + a comma-separated list of locales. It walks the desktop / tablet / mobile frames, deduplicates the source copy across all three (≈80 unique strings from ≈240 nodes is typical), translates with the `anthropic-skills:translate` skill — feeding it a brand glossary + voice file + per-string character limits — validates every translation against length budgets and placeholder integrity (silent retry on failure), then duplicates the source page once per locale and writes the translations back into Figma. End-to-end ≤ 5 minutes for up to 5 locales. Fully automated, no third-party QA, source page never touched.
+
+```
+/translate-figma <figma-url> <locales> [--page <name>] [--brand <name>] [--dry-run]
+```
+
+**Example**
+
+```
+/translate-figma https://figma.com/design/<fileKey>/... de,es,fr,it,bg
+```
+
+**What you get**
+- One new Figma page per locale, named `<original> — <LOCALE>`, with all 3 breakpoints translated
+- A Markdown QA report per locale at `projects/<brand-or-default>/translate-reports/`
+- Length-change stats, skipped-strings list, validation failures, and a list of image nodes with visible text (flagged for manual re-render)
+
+**Key features**
+- **String-match dedupe** — same copy across desktop/tablet/mobile is translated once and fanned out, guaranteeing consistency across breakpoints
+- **Strict 3-frame mode** — refuses to run on pages without exactly 1 desktop (≥1200px), 1 tablet (600–1199px), 1 mobile (<600px) frame; surfaces a clear error if ambiguous
+- **Non-destructive** — duplicates the source page; original is read-only. Component instances on the new page get instance overrides; masters are never touched
+- **Auto-skip rules** — URLs, emails, phone numbers, pure numbers, brand-allowlist terms, and any layer prefixed `🔒` / `[notrans]` / `EN:` are preserved verbatim
+- **Validation with retry** — placeholder integrity, length budget (DE ≤135%, FR ≤120%, ES ≤115%, …), glossary respect, CTA character limits. One silent retry per failed string; if still failing, keeps the source in place and flags in the report
+- **Parallel per-locale execution** — translation Agents and Figma writes both fan out in parallel; 5 locales finish in the same wall time as 1
+
+**Requires**
+- `FIGMA_TOKEN` env var (same as `/qa`)
+- Figma MCP `use_figma` capability connected (write phase)
+
+**When to use**: every time you ship a localized version of an LP. The new pages are designer-reviewable in Figma without leaving the file.
+
+[Full spec →](.claude/commands/translate-figma.md) · [Project docs →](projects/translate/README.md)
+
+</details>
+
+<details>
 <summary><strong>/banner-prompt</strong> v1.2 — banner prompts only (no rendering, no Figma)</summary>
 
 Same creative reasoning as `/banner` — **without** firing Higgsfield or touching Figma. Pure prompt output you can copy-paste anywhere, plus 5 numbered alternative approaches you can switch between by replying with a single digit.
@@ -200,6 +238,7 @@ Every variant respects the same framework as `/banner` — cultural safety, RTL 
 | [`projects/braintrade-template/`](projects/braintrade-template/) | BrainTrade LP template (protected — PR review required) |
 | [`projects/creative-summary/`](projects/creative-summary/) | Bilingual creative summary automation (in progress) |
 | [`projects/qa/`](projects/qa/) | Automated QA for localized Figma LPs |
+| [`projects/translate/`](projects/translate/) | Automated Figma translation pipeline (extract → translate → push back) |
 
 ---
 
