@@ -90,23 +90,24 @@ Audit a Figma LP for translation parity, image localization, overflow, broken pl
 </details>
 
 <details>
-<summary><strong>/banner</strong> v2.0 — multi-concept banners → Figma with auto-LP context + designer review pause</summary>
+<summary><strong>/banner</strong> v2.1 — multi-concept banners → Figma, loose input + content-driven visual options</summary>
 
-Generate **multiple** ad banner concepts with **Higgsfield GPT Image 2** and paint them into a Figma file at exact pixel sizes. Claude auto-reads the LP hero from the same Figma file, asks you which visual approaches should ship via clickable polls, renders one MVP per chosen approach, pauses for you to review in Figma, and then recomposes every approved MVP to every requested size.
+Generate **multiple** ad banner concepts with **Higgsfield GPT Image 2** and paint them into a Figma file at exact pixel sizes. Paste the Figma URL + the full ad copy + sizes — no labels needed. Claude auto-reads the LP hero from the same Figma file, analyzes the copy + LP purpose, asks simple clickable questions ("which line should be biggest?", "want a button?", "what should the banner show?"), renders one MVP per pick, pauses for you to review in Figma, then recomposes every approved MVP to every requested size.
 
 ```
-/banner <figma-url> <WxH> [<WxH> ...]
-Title: <verbatim title copy>
-cta: <verbatim CTA copy>
+/banner <figma-url>
+<full ad copy — multiple lines OK, no Title:/cta: labels needed>
+[<WxH> ...]  ← optional; Claude will ask if missing
 ```
 
 **Example**
 
 ```
 /banner https://figma.com/design/<fileKey>/...
-Title: O Brasil está comprando ações de IA. E você?
-cta: Entre agora
-1200x1200, 1200x628, 960x1200
+เงินฝากครั้งแรกของคุณจะเพิ่มเป็นสองเท่าทันทีที่คุณฝาก
+เริ่มต้นลงทุนกับ Academy ที่ครบครัน
+โบนัส 100%
+เรียนรู้ ฝึกฝน ลงทุน — กับที่ปรึกษาตัวจริง
 ```
 
 **What you get**
@@ -119,30 +120,37 @@ cta: Entre agora
 1. **Phase 0** — auto-detect language from copy (drives subject demographics, typography script, LTR/RTL direction)
 2. **Phase 0.2** — one-line cost preview before any credit fires
 3. **Phase 0.3** — classify emotional register (aspiration / urgency / provocation / trust / curiosity / empowerment / identity)
-4. **Phase 0.4** — **auto-screenshot the LP hero** from the same Figma file. Extract subject archetype + 3 dominant hex + tone. (Mandatory, fail-soft — proceeds without LP if the hero frame can't be found.)
-5. **Phase 0.5** — 🛑 **two clickable polls (AskUserQuestion, no chat typing)**:
-   - Poll #1 (multi-select): which visual approaches should ship — Human / AI Robot / Mirror LP / Wild Card
-   - Poll #2 (single-select): 0–3 extra Claude-picked variations
-   - Total = your picks + extras (1–7 concepts)
-6. **Phase 1** — compose N short visual prompts (~500 chars soft, ≤800 hard). Adaptive — no register lookup tables.
-7. **Phase 2** — render all N MVPs in parallel at 1200×1200
-8. **Phase 3** — create all (N × M) Figma frames upfront, grouped per concept in a single row
-9. **Phase 4** — paint MVPs into their 1:1 frames
-10. **Phase 5** — 🛑 **designer review pause**: AskUserQuestion → Continue / Regenerate one MVP / Stop. Regenerate loops back to this pause.
-11. **Phase 6** — recompose every surviving MVP to every requested non-1:1 size (parallel)
-12. **Phase 7** — paint recomps into their frames
-13. **Phase 8** — summary table with concept index, frame IDs, job IDs, and warnings
+4. **Phase 0.4** — **auto-screenshot the LP hero** from the same Figma file (with 2x retry on session-expired). Extract subject archetype + 3 dominant hex + tone + LP purpose.
+5. **Pre-flight CDN check** — quickly test outbound HTTP to the Higgsfield CDN; if blocked, surface a warning + Continue/Abort poll before spending credits.
+6. **Phase 0.5** — 🛑 **series of simple clickable polls (AskUserQuestion, plain language, no jargon)**:
+   - **Sizes** (skip if already provided): square / landscape / portrait / story
+   - **Headline**: which line should be the biggest text?
+   - **Sub-line**: any supporting text under the headline? (or "no sub-line")
+   - **Button**: which line goes on the button? (or "no button" — first-class option)
+   - **Visual direction**: 3–4 specific content-driven options Claude composes from the LP purpose + copy + register, plus "Creative AI decides"
+   - **Local cues**: Yes (visibly local) / Subtle (default) / No
+   - **More ideas**: just this one / +1 / +2 / +3 (max 4 total concepts)
+7. **Phase 1** — compose N short visual prompts (~500 chars soft, ≤800 hard). Adaptive — no register lookup tables. **Background = scene with depth** + explicit clean readability zone for text.
+8. **Phase 2** — render all N MVPs in parallel at 1200×1200 (first poll at t+60s, then every 30s)
+9. **Phase 3** — create all (N × M) Figma frames upfront, grouped per concept in a single row
+10. **Phase 4** — paint MVPs into their 1:1 frames
+11. **Phase 5** — 🛑 **designer review pause**: AskUserQuestion → Looks good / Redo one / Stop here. Redo loops back to this pause.
+12. **Phase 6** — recompose every surviving MVP to every requested non-1:1 size (parallel)
+13. **Phase 7** — paint recomps into their frames
+14. **Phase 8** — summary table with concept index, frame IDs, job IDs, and warnings
 
-**v2.0 deltas vs v1.8**
+**v2.1 deltas vs v2.0**
 
-- **Auto LP-context read** — no more drag-drop screenshots; Claude calls `get_screenshot` on the same Figma file
-- **Multi-concept, no winner pick** — every picked approach ships; Phase 0.5 picks become deliverables, not candidates
-- **Clickable polls everywhere** — Phase 0.5 and Phase 5 both use `AskUserQuestion`, never chat replies
-- **Designer review pause** — between MVPs and recomps, the run pauses so you can review and regenerate any concept in Figma
-- **Adaptive framework** — register lookup tables dropped (color family, CTA finishing, lighting matrix); decisions made per banner from LP palette + register + copy
-- **Compressed prompts** — visual prompt template down to ~500 chars soft target so the model has room to be creative
-- **CTR-anxiety rules pruned** — highlighter ban, 2-line ban, flat-CTA ban, neutral-lighting ban, ornament-from-list rule all removed; cultural / RTL / brand-safety guardrails stay
-- **Bigger but disciplined CTA** — 110–140px tall, text fills 60–80% button width, no wrap, no clip
+- **Loose input** — no more `Title:` / `cta:` labels required. Paste the Figma URL + the whole ad copy, Claude figures it out and confirms via polls
+- **"No button" is a first-class poll option** — for banners without a CTA, click "No button" and Claude renders a clean button-less banner
+- **Content-driven visual options** — the generic "Human / AI Robot / Product / Wild Card" menu is gone. Claude analyzes the LP purpose + copy + register and composes 3–4 specific creative directions tailored to **this** banner
+- **"Wild card" → "Creative AI decides"** — clearer label for the free-form option
+- **Localization poll** — new optional poll asks whether the banner should include explicit local cultural cues (Yes / Subtle / No)
+- **Simpler poll language everywhere** — short sentences, plain words, no design jargon
+- **Pre-flight CDN connectivity check** — catches harness egress restrictions before spending Higgsfield credits
+- **Figma MCP retry-on-session-expired** — 2x exponential backoff (2s, 4s) before falling back to no-LP-context
+- **Backgrounds breathe** — dropped the "clean 2-stop gradient" prescription that was flattening output. Backgrounds are now scene-driven with depth; readability is protected by an explicit clean zone where text overlays
+- **Polling cadence tuned** — Phase 2 first check moves from t+25s to t+60s, then every 30s (matches actual GPT Image 2 timing)
 
 **Requires**
 - Higgsfield MCP connector configured

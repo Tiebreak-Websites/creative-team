@@ -1,16 +1,20 @@
 ---
-description: Read the LP context from Figma, let the user pick visual approaches via clickable polls, render one MVP per chosen approach, pause for designer review in Figma, then recompose every approved MVP into every requested size.
+description: Read the LP context from Figma, analyze the copy, propose content-driven visual options via simple clickable polls, render one MVP per pick, pause for designer review in Figma, then recompose every approved MVP into every requested size.
 ---
 
-# /banner — Designer flow (Higgsfield GPT Image 2 → Figma) v2.0
+# /banner — Designer flow (Higgsfield GPT Image 2 → Figma) v2.1
 
-## What changed in v2.0
+## What changed in v2.1 (from v2.0)
 
-- **LP context is auto-read from Figma.** No more "drag the screenshot in." Claude calls `get_screenshot` on the same Figma file the banners get painted into and pulls subject archetype + 3 dominant hex + tone. The Figma file is now read AND write.
-- **Multi-MVP, no winner pick.** The user picks 1–7 visual approaches in Phase 0.5; every picked approach ships as its own MVP and gets recomposed to every requested size. No "render N, pick 1" — all picked concepts survive.
-- **Two clickable polls, no chat typing.** Phase 0.5 uses `AskUserQuestion` (multi-select styles + single-select for extras). Phase 5 uses `AskUserQuestion` to pause between MVP render and recomposition — designer reviews in Figma, clicks Continue / Regenerate / Stop.
-- **Adaptive framework.** Register-lookup tables for color / CTA finishing / lighting are gone. Claude decides per banner from LP palette + register + copy. Visual prompt template compressed to ~500 chars soft target (≤800 hard cap).
-- **CTR-anxiety rules pruned.** The v1.7/v1.8 "NO highlighter / NO 2-cramped-lines / NO neutral lighting" hard bans are gone — they were producing stiff, blank-feeling banners. Cultural / RTL / brand-safety guardrails stay.
+- **Loose input.** Paste the Figma URL + the full ad copy + sizes — no `Title:` / `cta:` labels needed. Claude analyzes the copy, proposes which line is the headline / sub-line / button, and a simple clickable poll confirms each.
+- **"No button" is a first-class option.** If you don't want a CTA, click that — Claude renders a button-less banner with the visual flow ending on the headline.
+- **Visual options are LP-derived, not a generic menu.** Phase 0.5 no longer lists "Human / AI Robot / Product / Wild Card." Claude analyzes the LP + copy + register and composes 3–4 specific creative directions tailored to **this** banner's purpose. The "wild card" is now "Creative AI decides" so users know it's a free-form pick.
+- **Localization poll.** New optional poll asks whether the banner should include explicit local cultural cues (e.g. Thai-temple silhouette, Mexican plaza palette, Gulf coastline texture) — Yes / Subtle / No.
+- **Simpler poll language.** Every poll question is one short sentence. Options are 1–4 words. Descriptions are one short sentence. No jargon.
+- **Pre-flight CDN check.** Phase pre-flight tests outbound HTTP to the Higgsfield CDN. If blocked by harness egress (common on cloud Claude Code), surface an early warning + a "continue / abort" poll so the user isn't surprised when paint fails.
+- **Retry-on-session-expired for Figma MCP.** Phase 0.4 retries the Figma metadata/screenshot calls 2x with exponential backoff (2s, 4s) before falling back to no-LP-context.
+- **Polling cadence tuned.** Phase 2 (MVP render) first check at **t+60s**, then **every 30s**. GPT Image 2 typically takes 60–180s — earlier checks waste tool calls.
+- **Backgrounds get permission to breathe.** Dropped the prescriptive "clean 2-stop gradient" rule that was flattening the output. Backgrounds are now scene-driven with depth — *but* the prompt must explicitly call out a clean low-contrast area where the headline + CTA overlay so readability stays high.
 
 ---
 
@@ -26,7 +30,13 @@ description: Read the LP context from Figma, let the user pick visual approaches
 
 Workflow:
 
-1. **Pre-flight (Phases 0–0.5).** Detect language → cost preview → register → **auto-screenshot LP hero** → 2 clickable polls (styles + extras) → user has picked N visual approaches.
+1. **Pre-flight (Phases 0 → 0.5).** Detect language → register → **auto-screenshot LP hero** → CDN connectivity check → series of simple clickable polls:
+   - Headline (pick the line that should be biggest)
+   - Sub-line (pick the supporting line, or skip)
+   - Button (pick the line, or "no button")
+   - Visual direction (pick from 3–4 content-derived options or "Creative AI decides")
+   - Local cultural cues (Yes / Subtle / No)
+   - Extras (0–3 additional Claude variations)
 2. **MVP pass.** Compose N short prompts → render N masters at 1200×1200 in parallel.
 3. **Figma scaffold + MVP paint.** Create all N × M frames upfront in a single grouped row → paint MVPs into the 1:1 frames.
 4. **🛑 Designer review pause.** AskUserQuestion: Continue / Regenerate one / Stop. User clicks.
@@ -37,23 +47,25 @@ Figma is both **read** (Phase 0.4 hero screenshot) and **write** (Phase 3 frames
 
 ---
 
-## Input parsing
+## Input parsing — loose, content-aware
 
 Arguments: `$ARGUMENTS`
 
-Pull these from the message (free-form, no rigid syntax):
+The user pastes a Figma URL + the full ad copy + (optionally) sizes. Labels like `Title:` / `cta:` are **not required** — Claude analyzes the copy and asks the user to confirm via polls in Phase 0.5.
+
+Extract:
 
 - **Figma URL** — REQUIRED. Any `https://figma.com/design/<fileKey>/...` link. Extract `fileKey`. Ignore `node-id` / `p` / `t` query params. **This same file is read for the LP hero and written for the banner frames.**
-- **Sizes** — REQUIRED. One or more `WxH` pixel tokens (`1200x1200`, `1200x628`, `960x1200`, ...). Both `x` and `×` accepted. Always pixels.
-- **Title** — REQUIRED. The full banner copy verbatim. Accept `Title:`, `Tittle:` (common typo), `Headline:`, or an unlabeled line. This becomes the `HERO` slot. Never split, never "improve," never translate.
-- **CTA** — REQUIRED. Accept `cta:` / `CTA:` / `button:`. Goes verbatim into the `CTA` slot.
+- **Sizes** — OPTIONAL. One or more `WxH` pixel tokens (`1200x1200`, `1200x628`, `960x1200`, ...). Both `x` and `×` accepted. If none provided, ask in Phase 0.5 — never fail.
+- **Text lines** — REQUIRED. Every remaining non-empty line in the message becomes a candidate text line. Preserve original order. Don't try to guess which is the headline / CTA — that's resolved by polls in Phase 0.5.
+- **Optional explicit labels** — if the user *does* write `Title:` / `Headline:` / `cta:` / `button:`, treat those as pre-confirmed picks and skip the corresponding poll. Labels are a shortcut, not a requirement.
 
-### Hard fail-fast — STOP and error out
+### Only one hard fail
 
 - No Figma URL → `❌ /banner needs a Figma file URL.`
-- No sizes → `❌ /banner needs at least one size in pixels, e.g. 1200x1200.`
-- No title → `❌ /banner needs the title copy verbatim.`
-- No CTA → `❌ /banner needs the CTA copy verbatim.`
+- No text lines → `❌ /banner needs at least one line of banner copy.`
+
+Everything else (sizes, which line is headline, which is sub-line, whether to include a CTA) is resolved by the Phase 0.5 polls — **never** fail on missing labels.
 
 ---
 
@@ -61,6 +73,20 @@ Pull these from the message (free-form, no rigid syntax):
 
 1. **Resolve GPT Image 2 model id.** Call `models_explore` once with `action=search`, `query="gpt image 2"`, `type=image`, `limit=5`. Pick the model whose id contains `gpt_image_2`. Fall back to literal `gpt_image_2`.
 2. **Confirm Figma MCP is connected.** The flow needs `get_screenshot` (Phase 0.4), `use_figma` (Phase 3), and `upload_assets` (Phases 4 + 7). If any are missing, abort early with `❌ /banner needs Figma MCP read+write access.`
+3. **CDN connectivity check (NEW in v2.1).** Higgsfield serves rendered banners from CloudFront. Some Claude Code environments (cloud / managed) restrict outbound egress to an allowlist. Test once:
+   ```bash
+   curl -sS -o /dev/null -w "%{http_code} %{header_json}" --max-time 5 "https://d8j0ntlcm91z4.cloudfront.net/" 2>&1
+   ```
+   - **HTTP 200/403/404 from CloudFront itself** → egress is open, continue.
+   - **HTTP 403 with `x-deny-reason: host_not_allowed`** → harness is blocking the host. Surface:
+     ```
+     ⚠️ Your Claude Code environment blocks outbound HTTP to the Higgsfield CDN (d8j0ntlcm91z4.cloudfront.net). /banner can generate images and create Figma frames, but the final paint step will fail. To fix: add the host to your harness allowlist, or run /banner from a local Claude Code where egress is unrestricted.
+     ```
+     Then ask via `AskUserQuestion` (single-select, 2 options):
+     - **Continue anyway** — you'll get image URLs you can drag into Figma manually
+     - **Stop here** — abort before spending Higgsfield credits
+
+   This check fires **before** any Higgsfield call so the user doesn't pay credits for a broken paint.
 
 ---
 
@@ -106,11 +132,11 @@ Surface one line:
 
 The register informs mood, lighting feel, palette family — but no longer dictates exact hex or CTA shape. Those are decided on the spot in Phase 1 from LP + copy.
 
-### Phase 0.4 — AUTO LP hero context (NEW — mandatory, replaces v1.8's optional drag-drop)
+### Phase 0.4 — AUTO LP hero context (mandatory, with retry — v2.1 update)
 
 Claude reads the LP hero directly from the Figma file. No user attachment needed.
 
-**Tool sequence:**
+**Tool sequence with retry-on-session-expired (NEW in v2.1):**
 
 1. **Locate the hero node.** Call `get_metadata` on the file with `fileKey`. From the returned tree, pick the first frame whose name matches (case-insensitive): `hero`, `Hero`, `Hero Section`, `Above the fold`, `Top`, or `Header`. Prefer the largest-width such frame (desktop breakpoint). If none match, fall back to the FIRST top-level frame on the page.
 2. **Screenshot it.** Call `get_screenshot` with `fileKey` + the located `nodeId`. Capture the returned image.
@@ -119,87 +145,206 @@ Claude reads the LP hero directly from the Figma file. No user attachment needed
    - **Palette.** Top 3 dominant hex codes visible in the screenshot. Read off the pixels — don't guess.
    - **Tone.** Aspirational / urgent / contrarian / trustworthy / curious / empowering / identity-led.
    - **Setting.** Office / outdoors / studio / abstract / domestic.
+   - **Purpose hint.** A one-line read of *what the LP is selling* (e.g. "first-deposit-double bonus for Thai retail traders + investing academy"). This feeds Phase 0.5's content-driven visual options.
+
+**Retry rules (v2.1).** Both `get_metadata` and `get_screenshot` can return `session expired` mid-run. On that specific error:
+- Retry 1: wait 2s, retry the call.
+- Retry 2: wait 4s, retry the call.
+- After retry 2 fails: fall back to no-LP-context (the fail-soft path below).
+
+Don't retry on any other error type — those usually mean the node doesn't exist or the file is permission-locked, and retrying won't fix it.
 
 **Surface one line:**
 
 ```
-🖼️ LP hero: <subject archetype>, palette <hex1> + <hex2> + <hex3>, <tone>.
+🖼️ LP: <one-line purpose>. Subject <archetype>. Palette <hex1> · <hex2> · <hex3>. Tone: <tone>.
 ```
 
 Examples:
-- `🖼️ LP hero: human subject (LATAM, 30s), palette #0E3B2E + #D4A017 + #F5EFE3, aspirational.`
-- `🖼️ LP hero: AI robot, palette #1A1A2E + #6B5BFF + #F4F6F8, curious.`
+- `🖼️ LP: first-deposit bonus + investing academy for Thai retail. Subject: human (Thai, 30s). Palette #0E3B2E · #D4A017 · #F5EFE3. Tone: aspirational.`
+- `🖼️ LP: AI-stock-tip subscription for Brazil. Subject: AI robot. Palette #1A1A2E · #6B5BFF · #F4F6F8. Tone: curious.`
 
-**Fail-soft.** If the hero node can't be found or `get_screenshot` errors, surface `⚠️ LP hero auto-read failed — proceeding without LP continuity.` and continue. Don't block.
+**Fail-soft.** If the hero node can't be found or both retries error out, surface `⚠️ LP hero auto-read failed — proceeding without LP continuity. Visual options will derive from copy + register only.` and continue. Don't block.
 
 **Cache the result** keyed by `fileKey + nodeId` so re-running /banner on the same LP doesn't re-screenshot.
 
-### Phase 0.5 — interactive style + variation polls (TWO clickable polls, BLOCKING)
+### Phase 0.5 — series of simple clickable polls (BLOCKING)
 
-This phase blocks for two `AskUserQuestion` calls back-to-back. No chat typing.
+This phase blocks for a sequence of `AskUserQuestion` polls. All clickable. **No jargon.** Each poll question is one short sentence; each option label is 1–4 words; each description is one short sentence.
 
-**Poll #1 — style selection (multi-select).**
+The polls run in order. Some are skipped automatically if input already provided the answer (e.g. user wrote `Title:` → skip the headline poll; user provided sizes → skip the size poll).
+
+#### Poll A — Sizes (skip if user already provided sizes)
 
 ```
 AskUserQuestion {
-  question: "Which visual approaches should ship? Each picked approach becomes one banner concept, recomposed to every requested size.",
-  header: "Visual approaches",
+  question: "What sizes do you need?",
+  header: "Sizes",
   multiSelect: true,
   options: [
+    { label: "1200×1200 square",   description: "Instagram feed. Required as the master." },
+    { label: "1200×628 landscape", description: "Facebook / LinkedIn link card." },
+    { label: "1080×1350 portrait", description: "Instagram portrait, max feed space." },
+    { label: "1080×1920 story",    description: "Story / Reel / TikTok vertical." }
+  ]
+}
+```
+
+If user picks 0 sizes (deselects all), default to `1200×1200` and continue. Always include 1200×1200 even if user didn't tick it — it's the mandatory master.
+
+#### Poll B — Headline (the biggest text on the banner)
+
+Compose options from the parsed text lines. Show **up to 4** options (if more lines, surface the 4 most-likely candidates ranked by length + position). Each option's description includes a one-line English meaning so the user can pick fast even in a non-English script.
+
+```
+AskUserQuestion {
+  question: "Which line should be the biggest text?",
+  header: "Headline",
+  multiSelect: false,
+  options: [
+    { label: "Line 1",  description: "<first 60 chars of the line> — <1-line English meaning>" },
+    { label: "Line 2",  description: "<first 60 chars of the line> — <1-line English meaning>" },
+    { label: "Line 3",  description: "<first 60 chars of the line> — <1-line English meaning>" },
+    { label: "Line 4",  description: "<first 60 chars of the line> — <1-line English meaning>" }
+  ]
+}
+```
+
+Label one option `"<Line N>  (Recommended)"` if Claude's content analysis surfaces a clear winner (shortest punchy line / strongest money-element / matches the LP's call-out).
+
+#### Poll C — Sub-line (the supporting text — optional)
+
+Show the remaining text lines (the ones not picked as Headline). Same format as Poll B.
+
+```
+AskUserQuestion {
+  question: "Any supporting text under the headline?",
+  header: "Sub-line",
+  multiSelect: false,
+  options: [
+    { label: "Line X",  description: "<60 chars> — <meaning>" },
+    { label: "Line Y",  description: "<60 chars> — <meaning>" },
+    { label: "No sub-line", description: "Headline only — keep it clean." }
+  ]
+}
+```
+
+#### Poll D — Button (CTA)
+
+Show the remaining text lines + a "No button" option. **First-class no-button path.**
+
+```
+AskUserQuestion {
+  question: "Which line goes on the button?",
+  header: "Button",
+  multiSelect: false,
+  options: [
+    { label: "Line X",  description: "<60 chars> — <meaning>" },
+    { label: "Line Y",  description: "<60 chars> — <meaning>" },
+    { label: "No button", description: "Skip the CTA — visual flow ends on the headline." }
+  ]
+}
+```
+
+If user picks **No button**: set `CTA = null`. Phase 1 prompts will say "No button on the canvas; flow ends on headline." Frames are still created normally; the rendered banner just has no button element.
+
+#### Poll E — Visual direction (content-driven, NEW in v2.1)
+
+**This is where Claude earns its keep.** Claude composes 3–4 *specific* directions for this banner — not a generic category menu. Each direction is grounded in the LP purpose + register + market + copy.
+
+**How to compose options:**
+
+1. Read the LP purpose (from Phase 0.4).
+2. Read the headline + sub-line meaning.
+3. Read the register (Phase 0.3) and the language (Phase 0).
+4. Compose 3 directions that each:
+   - Connect to the LP's *promise* (not just its aesthetic)
+   - Are *visually distinct* from each other (different subject, setting, lighting, or emotional cue)
+   - Are *culturally native* to the LANGUAGE market
+5. Add a 4th option: `"Creative AI decides"` — Claude picks freely, no constraints beyond cultural-safety + copy-verbatim.
+
+**Example** (Thai LP, first-deposit-doubling bonus, aspirational register):
+
+```
+AskUserQuestion {
+  question: "What should the banner show?",
+  header: "Visual",
+  multiSelect: false,
+  options: [
     {
-      label: "Human — matching LP demographic",
-      description: "Photoreal human subject. Demographics match the LP hero's demographic (or the LANGUAGE market if no LP human). Mirror-the-customer approach."
+      label: "Thai trader, the moment of doubling",
+      description: "Photoreal Thai person, late 20s, looking at a phone where their balance just doubled. Warm urban background. Mirror-the-customer."
     },
     {
-      label: "AI / Robot — culturally adapted",
-      description: "Photoreal humanoid AI / robot. Aesthetic register adapted to the market (sleek for Western, ornate for MENA, expressive for LATAM, etc)."
+      label: "Money transforming — 1 banknote → 2",
+      description: "Editorial money-object visual. A Thai baht banknote splits or duplicates with motion. No human."
     },
     {
-      label: "Mirror LP hero exactly",
-      description: "Whatever the LP hero shows — same archetype, same palette, same energy. Maximum visual continuity."
+      label: "Academy classroom + first win",
+      description: "Photoreal Thai student in a warm-lit Academy setting, phone showing first-trade success. Emphasizes 'learn + invest'."
     },
     {
-      label: "Wild card — Claude's bold take",
-      description: "Claude breaks from defaults. Editorial metaphor, product-as-hero, abstract typography-led, or another unexpected direction that fits the copy + register."
+      label: "Creative AI decides",
+      description: "Claude picks freely. Could be anything fitting the copy + register."
     }
   ]
 }
 ```
 
-Order tweak: if Phase 0.4 succeeded AND the LP archetype clearly matches one option (e.g. LP shows an AI robot), append `"(Recommended)"` to that option's label and surface it FIRST. If LP failed, leave default order.
+**Counter-example — what NOT to do** (the v2.0 failure mode): showing a generic "Human / AI Robot / Product / Wild card" menu that has nothing to do with this specific Thai deposit-doubling LP. Even if AI Robot is technically an option, it has no connection to the banner's purpose, so it should not appear.
 
-**Capture:** the user's checked options. Call this set `picked_styles` (1–4 items).
+**LP-failed fallback.** If Phase 0.4 failed, the 3 directions still must be content-driven — Claude derives them from headline + sub-line + register + language, just without the LP archetype/palette bias.
 
-**Poll #2 — extras count (single-select).**
+**Capture:** `picked_direction` (one item, 1–4).
+
+#### Poll F — Localization cues (NEW in v2.1)
+
+Optional poll. Skip entirely for `English` language unless the copy has identity-hook cues (Brazilian, Mexican, Gulf, etc).
 
 ```
 AskUserQuestion {
-  question: "Add extra Claude-picked variations on top? Each adds one more banner concept that ships alongside your picks.",
-  header: "Extras",
+  question: "Want explicit local cultural cues?",
+  header: "Local cues",
   multiSelect: false,
   options: [
-    { label: "0 — only my picks (Recommended)", description: "Ship exactly what I selected above. Faster, cheaper." },
-    { label: "1 extra Claude variation", description: "Claude picks one additional approach (different subject, different setting, same register and copy)." },
-    { label: "2 extra Claude variations", description: "Claude picks two additional approaches. Different from each other and from your picks." },
-    { label: "3 extra Claude variations", description: "Claude picks three additional approaches. Maximum variety in one run." }
+    { label: "Yes — make it visibly local", description: "Architecture, flag colors, traditional dress, regional skyline cues. Bold local signature." },
+    { label: "Subtle — hint, don't shout",   description: "Native subject features and a small regional cue (e.g. a city skyline silhouette). Default for non-English markets." },
+    { label: "No — just match the language", description: "Native subject features only. No flags, no architecture, no overt local props." }
+  ]
+}
+```
+
+`Subtle` is the recommended default for non-English markets. `Yes` is for identity-led copy ("O Brasil," "ประเทศไทย," "للعرب"). `No` is for clean SaaS / institutional banners.
+
+#### Poll G — Extras count
+
+```
+AskUserQuestion {
+  question: "Want more banner ideas?",
+  header: "More ideas",
+  multiSelect: false,
+  options: [
+    { label: "Just this one",       description: "1 banner concept. Fastest." },
+    { label: "Add 1 more",          description: "2 total. A bit more variety." },
+    { label: "Add 2 more",          description: "3 total. Good for A/B testing." },
+    { label: "Add 3 more (max)",    description: "4 total. Maximum variety in one run." }
   ]
 }
 ```
 
 **Capture:** `extras_count` (0–3).
 
-**Total concepts** `N = len(picked_styles) + extras_count` (clamp to 1–7).
+**Total concepts** `N = 1 + extras_count` (range 1–4). The user's picked direction is concept 1. Each extra is a fresh content-driven direction Claude composes (distinct from concept 1 + every previous extra).
 
-**Build the concept list** internally:
+**Re-emit cost preview** with the final N (see Phase 0.2):
 
-- Each picked style → one concept with its archetype.
-- Each extra → Claude picks a fresh archetype + setting + lighting that's distinct from every already-chosen concept (no duplicate subjects).
+```
+🧾 Confirmed: <N> banner(s) × <M> size(s) = <N + N×(M-1_non_1x1)> generation(s). Generating…
+```
 
-**Re-emit cost preview** with the final N (see Phase 0.2).
+**Other-answer handling.** If the user picks "Other" on any poll and types free-form, treat it as a hint. Phase 1 biases decisions toward the typed description while keeping cultural-safety + copy-verbatim + RTL non-negotiable.
 
-**Other-answer handling.** If the user picks "Other" on either poll and types free-form, treat it as a `style:` hint. Add it as one additional concept with the user's description biasing decisions in Phase 1.
-
-**No timeout / no skip.** The polls always block. Headless/scheduled runs that can't show a poll abort: `❌ /banner needs interactive style picks — re-run when available.`
+**No timeout / no skip.** All polls block. Headless / scheduled runs abort: `❌ /banner needs interactive picks — re-run when available.`
 
 ---
 
@@ -209,17 +354,23 @@ For each concept in the concept list, compose ONE visual prompt using **§ Visua
 
 **Decide per concept on the spot** (no register lookup tables):
 
-1. **Subject.** Concrete one-line subject — nationality, age, expression, wardrobe color, pose. Driven by the concept's archetype + LANGUAGE + LP demographic.
+1. **Subject.** Concrete one-line subject derived from the concept's specific direction (from Poll E) + LANGUAGE + LP demographic. If sub-line exists, the subject can lean into supporting context (e.g. "holding a phone with a doubled balance" for a deposit-doubling banner).
 2. **Scene.** One-line setting with one or two named props. Bias toward the LP setting category for continuity.
 3. **Lighting.** One word + direction — "golden-hour side-key," "dramatic low-key," "soft studio." Match the register's mood; if LP has a dominant lighting feel, lean toward it.
 4. **Palette.** TWO hex codes max in the prompt — one for the dominant background, one for the accent / CTA. Prefer hex from the LP palette (Phase 0.4) for continuity; pick the second hex to maximize contrast with the first. If LP failed, pick two hex that fit the register mood.
-5. **CTA.** Color = highest-contrast hex in the chosen palette. Shape (pill or rectangular) = decided per concept based on mood (pill for warm/aspirational, rectangular for urgent/institutional). Height 110–140px on the 1200 canvas. Critical: CTA text must occupy 60–80% of button width — never wrap, never clip.
+5. **Background depth (v2.1 — adaptive).** Drop the old "clean 2-stop gradient" prescription. Backgrounds are **scene-driven with depth** — describe the actual environment with light, atmosphere, depth of field, optional foreground/midground/background separation. *But* the prompt MUST explicitly call out a **clean low-contrast zone** where the headline + button overlay, so readability is preserved. Phrasing the model should see: `"Reserve a low-contrast area in the [side / corner] of the canvas — softer focus, single tonal direction — where the headline and button overlay cleanly without visual competition."`
+6. **CTA.** If `CTA = null` (Poll D = No button), state explicitly: `"No button on the canvas; flow ends on the headline. Use breathing room at the bottom — do not fill with random graphics."` Otherwise: color = highest-contrast hex in the palette; shape (pill or rectangular) decided per concept; height 110–140px on the 1200 canvas; text fills 60–80% of button width — no wrap, no clip.
+7. **Sub-line.** If a sub-line was picked in Poll C, render it as a smaller text element below the headline, ~50–60% of headline size, lower weight, same color family or one step softer. If `sub-line = null`, headline stands alone.
+8. **Local cues (from Poll F).**
+   - `Yes` → include one or two named cultural references in the scene (e.g. "Bangkok temple roofline silhouette visible in the bokeh"; "Mexican tile pattern as a subtle backdrop texture"; "Gulf coastline at sunset behind the subject").
+   - `Subtle` → native subject features + one ambient cue only (e.g. "Bangkok skyline at golden hour"). Default.
+   - `No` → native features only, no overt cultural props.
 
-**Render in the prompt** (verbatim, no edits): every word of HERO and CTA. Spell every accent, every diacritic, every digit exactly.
+**Render in the prompt** (verbatim, no edits): every word of HEADLINE, sub-line (if any), CTA (if any). Spell every accent, every diacritic, every digit exactly.
 
-**Length check after composing.** If filled prompt > 800 chars, tighten by dropping adjectives and merging sentences. Never drop: language, register cue, subject one-liner, scene one-liner, every word of copy, CTA spec one-liner, palette hex pair.
+**Length check after composing.** If filled prompt > 800 chars, tighten by dropping adjectives and merging sentences. Never drop: language, register cue, subject one-liner, scene one-liner, every word of copy, palette hex pair, the "clean low-contrast zone for text" line, the "no button" line if applicable.
 
-For the **wild card** concept (if picked): drop the register mood constraint. Keep cultural safety + copy-verbatim + RTL. Otherwise let Claude go strange.
+For the **Creative AI decides** concept (if picked): drop the register mood constraint. Keep cultural safety + copy-verbatim + RTL + the readability-zone requirement. Otherwise let Claude go strange.
 
 ---
 
@@ -240,12 +391,12 @@ mcp__7e69985f-4eb5-4034-a063-d465c056f301__generate_image
 
 Capture each returned `id` as `mvp_job_id[K]` keyed by concept index.
 
-**Wait for the slowest.** Polling cadence:
+**Wait for the slowest.** Polling cadence (v2.1 — tuned to actual GPT Image 2 timings):
 
-1. **First batch check at t+25s** — call `job_display` on every pending `id` in parallel. Collect `rawUrl` for any already-completed.
-2. **Then every 8s,** re-check only pending ids in parallel.
-3. **At t+120s,** emit `⚠️ <K> MVP(s) still rendering after 120s — continuing.` Drop cadence to every 15s.
-4. **Hard cap at t+5min per MVP.** Any still pending after 5min: mark as failed, proceed with the completed set, surface the failed concepts in the Phase 8 summary so the user can retry.
+1. **First batch check at t+60s** — call `job_display` on every pending `id` in parallel. GPT Image 2 typically takes 60–180s; earlier checks waste tool calls.
+2. **Then every 30s,** re-check only pending ids in parallel.
+3. **At t+180s,** emit `⚠️ <K> MVP(s) still rendering after 180s — continuing.` Cadence stays at 30s.
+4. **Hard cap at t+5min per MVP.** Any still pending after 5min: mark as failed, proceed with the completed set, surface the failed concepts in the summary so the user can retry.
 
 A single MVP failure does NOT abort the run — paint the successes, skip the failures.
 
@@ -320,51 +471,42 @@ After paint completes, surface one line:
 
 ## Phase 5 — 🛑 designer review pause (BLOCKING, clickable)
 
-This pause is the v2.0 contract. Designer reviews the N MVPs in Figma, then clicks.
+Designer reviews the N MVPs in Figma, then clicks. Plain-language poll.
 
 ```
 AskUserQuestion {
-  question: "Check the <N> MVP(s) in Figma. Continue to recompose every approved MVP into the remaining size(s)?",
-  header: "Continue?",
+  question: "Banners ready in Figma. What next?",
+  header: "Next step",
   multiSelect: false,
   options: [
-    {
-      label: "Continue — recompose all (Recommended)",
-      description: "Recompose every MVP to every requested non-1:1 size. <N × non_1x1_count> Higgsfield generation(s)."
-    },
-    {
-      label: "Regenerate one MVP",
-      description: "Pick which MVP to regenerate (follow-up poll). The new MVP replaces the current one in its frame, then this pause repeats."
-    },
-    {
-      label: "Stop — MVPs only, no resize",
-      description: "Don't recompose. Keep the N MVPs at 1200×1200 only. Delete the empty non-1:1 frames before exiting."
-    }
+    { label: "Looks good — make the other sizes", description: "Recompose each banner to every other requested size." },
+    { label: "Redo one of them",                  description: "Pick which one to redo. Then check again." },
+    { label: "Stop here",                         description: "Keep only the 1200×1200 versions. Skip the other sizes." }
   ]
 }
 ```
 
-**On "Continue":** proceed to Phase 6.
+**On "Looks good":** proceed to Phase 6.
 
-**On "Regenerate one":** fire a follow-up `AskUserQuestion` listing concepts 1–N (up to 4; if N > 4, split into 4-option chunks):
+**On "Redo one of them":** fire a follow-up `AskUserQuestion` listing concepts 1–N (up to 4; if N > 4, split into 4-option chunks):
 
 ```
 AskUserQuestion {
-  question: "Which MVP to regenerate?",
-  header: "MVP",
+  question: "Which one to redo?",
+  header: "Pick",
   multiSelect: false,
   options: [
-    { label: "MVP 1 — <approach label>", description: "Concept 1: <subject one-liner>." },
-    { label: "MVP 2 — <approach label>", description: "Concept 2: <subject one-liner>." },
-    { label: "MVP 3 — <approach label>", description: "Concept 3: <subject one-liner>." },
-    { label: "MVP 4 — <approach label>", description: "Concept 4: <subject one-liner>." }
+    { label: "Banner 1 — <short label>", description: "<one-line subject>." },
+    { label: "Banner 2 — <short label>", description: "<one-line subject>." },
+    { label: "Banner 3 — <short label>", description: "<one-line subject>." },
+    { label: "Banner 4 — <short label>", description: "<one-line subject>." }
   ]
 }
 ```
 
-Re-compose that concept's prompt fresh (Claude varies the subject specifics so the regen isn't identical to the first attempt), render at 1200×1200, paint into the existing frame (overwrite the fill), then **return to Phase 5 — the review pause repeats.** The user can regenerate again or finally Continue.
+Re-compose that concept's prompt fresh (Claude varies the subject specifics so the regen isn't identical), render at 1200×1200, paint into the existing frame (overwrite the fill), then **return to Phase 5 — the review pause repeats.** The user can regenerate again or finally proceed.
 
-**On "Stop":** clean up empty non-1:1 frames for this run (single `use_figma` call iterating over the run's frame ids, removing the ones with empty `fills`), emit a Phase 8 summary with only the MVP rows, exit.
+**On "Stop here":** clean up empty non-1:1 frames for this run (single `use_figma` call iterating over the run's frame ids, removing the ones with empty `fills`), emit a Phase 8 summary with only the MVP rows, exit.
 
 ---
 
@@ -454,38 +596,49 @@ End with: `Open the file in Figma to review (search "<runStamp>" to jump to this
 This is the skeleton Claude fills per concept. Replace every `[...]` with the concrete decision. **Total filled length ~500 chars soft target, ≤800 hard cap.** This text — and ONLY this text — gets sent to GPT Image 2.
 
 ```
-1200×1200 banner, [photoreal | illustrated]. {LANGUAGE} ({market}). [register] mood.
+1200×1200 banner, [photoreal | illustrated]. {LANGUAGE} ({market}). [register] mood. Direction: [concept's one-line direction from Poll E].
 
-Subject: [one line — nationality, age, expression, wardrobe color, pose. Or "AI robot, [aesthetic descriptor]" for AI concept. Or "[product object] in [framing]" for product concept.]
+Subject: [one line — nationality, age, expression, wardrobe color, pose. Or "no human; [object] as hero" for product/typography concepts.]
 
-Scene: [one line — setting + 1-2 named props. Match LP setting if available.]
+Scene: [one line — setting + 1-2 named props. Atmospheric depth (foreground/midground/background separation, light direction, particles or texture if appropriate). Match LP setting if available.]
+[If local cues = Yes: + one named cultural reference in the scene.]
+[If local cues = Subtle: + one ambient regional cue.]
 
 Lighting: [one phrase — direction + warmth + mood, e.g. "golden-hour warm side-key, soft rim, shallow DoF".]
 
-Layout ({LTR|RTL}): subject on [left|right] half; headline stacked on the [opposite] half, [left|right]-aligned.
+Readability zone: reserve a clean low-contrast area in the [side / corner where the text and button overlay] — softer focus, single tonal direction — so the headline and button read cleanly without visual competition.
 
-Headline copy (render verbatim, all characters exact):
-"[HERO line 1]"
-"[HERO line 2]"
-"[HERO line 3 if applicable]"
+Layout ({LTR|RTL}): subject on [left|right] half; text block on the [opposite] half, [left|right]-aligned.
 
-CTA: [pill | rectangular] button, 110–140px tall, fill [hex] (highest contrast in palette), text "[CTA verbatim]" in [contrast hex]. Text fills 60–80% of button width — no wrap, no clip.
+Headline (render verbatim, all characters exact):
+"[Headline line 1]"
+"[Headline line 2 if natural break]"
 
-Palette: dominant [hex1], accent [hex2]. Background = clean 2-stop gradient between these or a thematically coherent variation.
+[If sub-line picked:]
+Sub-line under the headline (smaller, ~55% of headline size, lighter weight, same color family or one step softer):
+"[sub-line verbatim]"
 
-Render every character of headline and CTA exactly as written. No invented words, no logos, no watermarks, no "Ad"/"Sponsored" labels, no mockup chrome around the banner.
+[If CTA picked:]
+Button: [pill | rectangular], 110–140px tall, fill [hex] (highest contrast in palette), text "[CTA verbatim]" in [contrast hex]. Text fills 60–80% of button width — no wrap, no clip.
+
+[If CTA = null:]
+No button on the canvas. Flow ends on the headline. Breathing room at the bottom — do not fill with random graphics.
+
+Palette: dominant [hex1], accent [hex2]. Background should feel like a real scene with depth — not a flat gradient. The readability zone above keeps the text area clean.
+
+Render every character of headline, sub-line, and button exactly as written. No invented words, no logos, no watermarks, no "Ad"/"Sponsored" labels, no mockup chrome around the banner.
 [If non-English: subject and setting must feel native to {market}. No Western stock-photo defaults.]
-[If RTL: hero subject LEFT half, headline RIGHT-aligned on right half, CTA bottom-LEFT.]
+[If RTL: subject LEFT half, headline RIGHT-aligned on right half, button bottom-LEFT.]
 ```
 
-After filling, the prompt reads like a **short photoshoot brief** — enough to disambiguate the subject and copy, loose enough that the model brings creative execution.
+After filling, the prompt reads like a **short photoshoot brief** — enough to disambiguate the subject, scene, and copy, loose enough that the model brings creative execution to the scene, tight enough on the readability zone that the text never gets eaten by the background.
 
 If the filled prompt exceeds 800 chars, tighten by:
 1. Dropping adjectives ("warm side-key" not "soft warm side-key with golden bokeh")
 2. Merging Scene + Lighting into one line
 3. Dropping the second palette hex if the first carries enough mood
 
-Never drop: language, register, copy verbatim, CTA verbatim, CTA color, no-invent constraints, cultural-native flag (non-English), RTL flag (when applicable).
+Never drop: language, register, copy verbatim, button verbatim (or "No button" line), the **readability zone** line, no-invent constraints, cultural-native flag (non-English), RTL flag (when applicable).
 
 ---
 
@@ -516,28 +669,39 @@ After filling, this reads as **spatial choreography** — "the master moves here
 
 The principles Claude reasons from when composing Phase 1 prompts. **Never sent to the model.**
 
-### Five decision principles (replace the old register lookup tables)
+### Six decision principles (replace the old register lookup tables)
 
 For each concept, decide on the spot:
 
-**1. Subject** = (concept archetype) + (LANGUAGE → market demographics) + (LP demographic if Phase 0.4 succeeded). Make it specific: nationality, age range, expression, one wardrobe garment + color. Authentic to the market — never Western stock defaults for non-English banners.
+**1. Subject** = the concept's specific direction (from Poll E) + (LANGUAGE → market demographics) + (LP demographic if Phase 0.4 succeeded). Make it specific: nationality, age range, expression, one wardrobe garment + color. Authentic to the market — never Western stock defaults for non-English banners. If the concept is product / typography-led, "no human" is a valid subject.
 
 **2. Scene** = a real place + 1–2 named props that fit the copy's narrative. Bias toward matching the LP setting category for continuity. Don't over-describe — one line.
 
 **3. Lighting** = matches register mood. Aspirational → warm/golden. Urgent → harder side / neon edge. Provocation → dramatic low-key. Trust → soft studio. Curiosity → soft directional + slight haze. Empowerment → cinematic mid-key. Identity → warm regional. **No lookup table — pick the descriptor that fits.** Avoid "neutral / balanced studio" unless the register is Trust.
 
-**4. Palette** = TWO hex codes max in the prompt. Pick one dominant + one accent.
-- **Continuity bias:** if Phase 0.4 succeeded, pull one or both hex from the LP palette.
-- **Contrast rule:** the second hex must contrast strongly with the first (≥ 4.5:1 luminance ratio for the CTA pair).
-- **Register flavor:** lean the palette family toward the register's mood, but don't over-prescribe. Aspirational tends warm + deep. Urgent tends dark + saturated accent. Trust tends cool + restrained. Curiosity tends muted + one bold accent.
-- Pure `#FFFFFF` is fine if the design calls for it — the old "banned for premium copy" rule is gone. Use what works.
+**4. Background depth (v2.1 — adaptive, NOT a flat gradient).** Backgrounds must feel like real scenes with depth — atmospheric, layered, light-modeled. Foreground/midground/background separation, light direction, particles or texture where it fits the scene. The v2.0 "clean 2-stop gradient" rule was producing flat, boring banners — it is removed.
 
-**5. CTA** = highest-contrast hex in the palette. Shape decided per concept:
-- Pill (16–24px radius) for warm / aspirational / curious / empowerment moods.
-- Rectangular (4–12px radius) for urgent / trust / institutional moods.
-- Height 110–140px on the 1200 canvas.
-- Text fills 60–80% of button width. **Hard rule:** no wrap, no clip.
-- For RTL: bottom-LEFT at thirds. For LTR: bottom-right or bottom-left at thirds, sharing an x-anchor with the headline text block (right-edge align is the default).
+**Readability rule (hard, not soft):** every prompt must explicitly call out a *clean low-contrast zone* on the canvas where the headline + button overlay. This zone is the one place the background is intentionally simpler — softer focus, single tonal direction. The rest of the canvas can be as rich as the scene wants. The text never overlays the busiest part of the background.
+
+**5. Palette** = TWO hex codes max in the prompt. Pick one dominant + one accent.
+- **Continuity bias:** if Phase 0.4 succeeded, pull one or both hex from the LP palette.
+- **Contrast rule:** the second hex must contrast strongly with the first (≥ 4.5:1 luminance ratio for the button pair, if a button exists).
+- **Register flavor:** lean the palette family toward the register's mood, but don't over-prescribe. Aspirational tends warm + deep. Urgent tends dark + saturated accent. Trust tends cool + restrained. Curiosity tends muted + one bold accent.
+- Pure `#FFFFFF` is fine if the design calls for it.
+
+**6. Button (CTA).** Two branches:
+
+- **Button picked in Poll D:**
+  - Color = highest-contrast hex in the palette.
+  - Shape: pill (16–24px radius) for warm / aspirational / curious / empowerment moods; rectangular (4–12px radius) for urgent / trust / institutional moods.
+  - Height 110–140px on the 1200 canvas.
+  - Text fills 60–80% of button width. **Hard rule:** no wrap, no clip.
+  - For RTL: bottom-LEFT at thirds. For LTR: bottom-right or bottom-left at thirds, sharing an x-anchor with the headline text block (right-edge align is the LTR default).
+
+- **No button picked (Poll D = "No button"):**
+  - No button-shaped element anywhere on the canvas.
+  - Visual flow ends on the headline.
+  - Breathing room at the bottom — the prompt must explicitly state "no button; do not invent one; do not fill the bottom with graphics."
 
 ### Register cues (classification only — no longer drives exact hex/shape)
 
@@ -627,13 +791,16 @@ RTL typography:
 - Yellow / highlighter accent treatments (use whatever fits the palette)
 - 2-line cramped headlines (Claude decides line breaks per concept)
 - Pure white neutral (`#FFFFFF` is fine if the design calls for it)
-- Flat single-tone CTAs (gradient OR solid — Claude decides)
-- Flat backgrounds without an ornament (add depth only if the concept needs it)
+- Flat single-tone buttons (gradient OR solid — Claude decides per banner)
 - "Neutral / balanced studio" lighting (fine for trust-register concepts)
 - Symmetric / geometric / abstract backgrounds (let the model decide)
 - Pixel-prescribed typography ladder (let the model handle line sizes within the canvas)
 
-The principle: **specify intent, not execution.** Tell the model the scene + mood + copy + CTA color; trust it on the rest.
+### What v2.1 newly bans
+
+- **Flat 2-stop gradient as the entire background.** This was the v2.0 default and it kept producing dead, boring banners. Backgrounds must feel like real scenes with depth. The "readability zone" requirement protects the text — there's no longer a need to flatten the whole canvas to keep copy readable.
+
+The principle: **specify intent, not execution.** Tell the model the scene + mood + copy + button color + readability zone; trust it on the rest.
 
 ---
 
