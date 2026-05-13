@@ -15,6 +15,7 @@ Open this folder with `claude`, type `/pull` to sync the latest tools, and start
 | [`projects/braintrade-template/`](projects/braintrade-template/) | BrainTrade landing-page template (`index.html` + `content.json`). Protected — changes need PR review. |
 | [`projects/creative-summary/`](projects/creative-summary/) | Bilingual creative summary automation for Figma LPs. Scaffolded, in progress. |
 | [`projects/qa/`](projects/qa/) | Automated QA for localized Figma landing pages. Parity, language, images, overflow, CTAs, regulator phrases. |
+| [`projects/translate/`](projects/translate/) | Automated Figma translation pipeline — extracts text from 3 breakpoints, translates per locale via the `anthropic-skills:translate` skill, writes back to Figma. |
 
 ### Shared infrastructure
 
@@ -133,6 +134,33 @@ Useful when you want to:
 3. A `🎨 5 alternative approaches` list — reply with `1`–`5` to regenerate in that direction, or describe your own in one line, or type `done` to finish.
 
 Every variant is held to the same framework rules as `/banner` — cultural safety, RTL handling, verbatim copy, hex-coded palettes, money-element priority.
+
+### [`/translate-figma`](.claude/commands/translate-figma.md) — v1.0
+
+Auto-translate any 3-breakpoint Figma page (desktop / tablet / mobile) into one or more locales. Fully automated, ≤ 5 min end-to-end, no human QA, source page never touched.
+
+```
+/translate-figma <figma-url> <locales> [--page <name>] [--brand <name>] [--dry-run]
+```
+
+Example:
+
+```
+/translate-figma https://figma.com/design/<fileKey>/... de,es,fr,it,bg
+```
+
+**What you get:** one new Figma page per locale (`<original> — DE`, `<original> — ES`, …), with all 3 breakpoints translated and a Markdown QA report at `projects/<brand-or-default>/translate-reports/`.
+
+**How it works:**
+
+1. **Extract** — REST-API fetch + Python walk of all `TEXT` nodes across the 3 frames; auto-skip URLs / emails / phones / numbers / `🔒`-flagged layers / glossary brand terms; **dedupe by exact string match** (≈80 unique strings from ≈240 nodes is typical).
+2. **Translate** — one `anthropic-skills:translate` Agent per locale, running in parallel. Each one gets the brand glossary, the brand voice file, and per-string character limits.
+3. **Validate** — placeholder integrity, length budget (DE ≤ 135%, FR ≤ 120%, ES ≤ 115%, …), glossary respect, CTA char limits. One silent retry on failure; if still failing, keeps source verbatim and flags in the report.
+4. **Apply** — duplicates the source page once per locale; writes translations back via the Figma `use_figma` MCP. Component instances get instance overrides — masters and the original page are never touched.
+
+**Strict 3-frame mode:** refuses to run on pages without exactly 1 desktop (≥1200px), 1 tablet (600–1199px), 1 mobile (<600px) frame. Use `--page <name>` to scope to a specific page when a file has multiple.
+
+**Requires** `FIGMA_TOKEN` (same as `/qa`) and the Figma `use_figma` MCP connector for the write phase. Project docs: [`projects/translate/README.md`](projects/translate/README.md).
 
 ---
 
