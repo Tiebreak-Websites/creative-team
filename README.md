@@ -170,6 +170,75 @@ v2.6 fixed the visual direction (campaign poster, not editorial photo) but Claud
 </details>
 
 <details>
+<summary><strong>/banner2</strong> v1.0 — same flow as /banner but rendered with OpenAI gpt-image-1</summary>
+
+Drop-in fork of `/banner` v2.7 — **every phase, every poll, every guardrail is identical** — only the image-generation backend is swapped from Higgsfield's `gpt_image_2` MCP tool to **OpenAI's `gpt-image-1` REST endpoints** (`/v1/images/generations` for MVPs, `/v1/images/edits` for recomps with the master attached). Synchronous (no polling), reads key from `$env:OPENAI_API_KEY` or a gitignored `.env`.
+
+```
+/banner2 <figma-url-with-node-id>
+Title: <full title text verbatim>           ← one or more (each = one concept)
+Title: <second concept's title>             ← optional additional concepts
+CTA: <button text verbatim>                  ← optional; Claude suggests if missing
+[<WxH> ...]                                   ← optional; defaults to 1200×1200, 1200×628, 1080×1920
+```
+
+**Example**
+
+```
+/banner2 https://figma.com/design/<fileKey>/...?node-id=1-456
+Title: Peluang keemasan untuk berdagang - Jangan lepaskan!
+Title: Adakah anda bersedia untuk Demam Emas dagangan? Mulakan sekarang!
+```
+
+**What's the same vs `/banner`**
+
+- Claude/image-model responsibility split (Claude = BRIEF, model = PICTURE)
+- 6-section Visual Prompt template (450–750 chars preferred, ≤900 hard)
+- Phase 1.0 Creative Card (9 lines per concept)
+- Phase 2.5 cliché QA + 1 auto-redo
+- Phase 6.5 silent visual QA before paint
+- Polls (size selection / Customize-vs-Auto / per-concept polls in Customize)
+- 5 creative archetypes, Typography Hero Rule, CTA tier rule
+- Localization atmosphere allowlists (incl. Malaysia / Indonesia)
+- Multi-concept, grid frame layout, verbatim Title + CTA, hard guardrails
+
+**What's different**
+
+| Concern | `/banner` (Higgsfield) | `/banner2` (OpenAI) |
+| --- | --- | --- |
+| MVP endpoint | `generate_image` MCP, `gpt_image_2` | `POST /v1/images/generations` with `gpt-image-1` |
+| Recomp endpoint | Same MCP tool, master via `medias[]` | `POST /v1/images/edits` (multipart), master via `image[]=@<path>` |
+| Polling | Async, t+60s poll → 30s cadence, hard cap t+30min | **Synchronous** — request blocks until done (typically 20–90s). HTTP timeout 300s. |
+| Auth | MCP-configured | `OPENAI_API_KEY` env var (or local `.env`). Key never logged. |
+| Concurrency | 8 concurrent (Ultra Monthly) | Default 5 per chunk; org-tier-dependent. |
+| Available sizes | Any aspect at 1k | Fixed: `1024x1024`, `1024x1536`, `1536x1024`. Mapped per target; FILL handles residual crop (typically 10–22% — see /banner2 § Aspect map). |
+| Egress allowlist | `d8j0ntlcm91z4.cloudfront.net` + `mcp.figma.com` | `api.openai.com` + `mcp.figma.com` |
+| Frame name prefix | `Banner — …` | `Banner2 — …` (so /banner and /banner2 grids never collide on the same Figma page) |
+
+**Setup (one-time)**
+
+```bash
+# Option 1 — PowerShell session var (recommended for ad-hoc use)
+$env:OPENAI_API_KEY = "sk-..."
+
+# Option 2 — .env file in repo root (already gitignored)
+echo "OPENAI_API_KEY=sk-..." >> .env
+```
+
+**Requires**
+- An OpenAI org with `gpt-image-1` access
+- `OPENAI_API_KEY` set via env var or `.env` (never committed)
+- Figma MCP connector configured (read + write)
+- Cloud workspaces: allowlist `api.openai.com` and `mcp.figma.com`
+
+**Security**
+- The key is read into a single shell variable / curl `-H` header at run time; it is never printed in tool output, never echoed back to the user, and never written to a committed file. If you ever paste a key directly in chat (it's text — it gets persisted), rotate it at https://platform.openai.com/api-keys before continuing.
+
+[Full spec →](.claude/commands/banner2.md)
+
+</details>
+
+<details>
 <summary><strong>/translate-figma</strong> v1.0 — auto-translate any 3-breakpoint Figma page</summary>
 
 Hand Claude a Figma URL + a comma-separated list of locales. It walks the desktop / tablet / mobile frames, deduplicates the source copy across all three (≈80 unique strings from ≈240 nodes is typical), translates with the `anthropic-skills:translate` skill — feeding it a brand glossary + voice file + per-string character limits — validates every translation against length budgets and placeholder integrity (silent retry on failure), then duplicates the source page once per locale and writes the translations back into Figma. End-to-end ≤ 5 minutes for up to 5 locales. Fully automated, no third-party QA, source page never touched.
