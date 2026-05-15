@@ -11,7 +11,19 @@ v1.7 deltas vs v1.6:
 
 Inputs (in --dir, defaults to $TEMP/banner-openai on Windows or /tmp/banner-openai):
   manifest.json   - see schema docs below
-  urls.json       - [{ concept, size, openaiSize, submitUrl }, ...]
+  urls.json       - [{ concept, size, openaiSize, submitUrl,
+                       mode?, master_size?, master_png? }, ...]
+
+urls.json fields:
+  concept       - key into manifest.concepts (required)
+  size          - target frame size, e.g. "1080x1920" (required)
+  openaiSize    - one of "1024x1024" / "1024x1536" / "1536x1024" (required)
+  submitUrl     - Figma upload URL minted by upload_assets (required)
+  mode          - "gen" (default) -> /v1/images/generations
+                  "edit"          -> /v1/images/edits (multipart, master image input)
+  master_size   - required when mode=edit, e.g. "1200x1200"
+  master_png    - required when mode=edit, absolute path to the master PNG
+                  (typically $dir/<concept>__<master_size>.png from a prior MVP run)
 
 Outputs:
   <dir>/<concept>__<size>.png      - generated PNG per job
@@ -45,12 +57,12 @@ Env:
 Exit code: 0 if all jobs succeeded, 1 otherwise.
 """
 
-import sys, os, json, base64, time, argparse, traceback
+import sys, os, json, base64, time, argparse, traceback, uuid, io
 import urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from prompts import build_prompt, check_moderation, validate_manifest
+from prompts import build_prompt, build_recomp_prompt, check_moderation, validate_manifest
 
 
 def parse_args():
@@ -82,30 +94,94 @@ def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
-def resolve_prompt(concept_data, layouts_legacy, size):
-    """Return a prompt string for (concept, size).
+def resolve_prompt(concept_data, layouts_legacy, frame):
+    """Return a prompt string for a single frame entry.
 
-    If `concept_data` has structured fields (title + locale + ...), build via
-    prompts.build_prompt(). If it only has legacy `base` + `layouts_legacy`,
-    do the v1.6 string substitution.
+    frame.mode = "gen"  (default) -> build_prompt for generation endpoint
+    frame.mode = "edit"            -> build_recomp_prompt for /v1/images/edits
+
+    Legacy v1.6 concepts (with `base` + layouts_legacy) still use string sub.
     """
+    size = frame["size"]
+    mode = frame.get("mode", "gen")
+    if mode == "edit":
+        master_size = frame.get("master_size") or "1200x1200"
+        return build_recomp_prompt(concept_data, master_size, size)
     if "base" in concept_data and layouts_legacy and size in layouts_legacy:
         return concept_data["base"].replace("{LAYOUT}", layouts_legacy[size])
     return build_prompt(concept_data, size)
 
 
+def post_images_edits(api_key, prompt, master_png_path, openai_size, model, quality, timeout):
+    """POST multipart/form-data to /v1/images/edits with the master image.
+
+    stdlib only - assembles the multipart body manually. Returns PNG bytes.
+    """
+    if not os.path.exists(master_png_path):
+        raise FileNotFoundError(f"master_png not found: {master_png_path}")
+    with open(master_png_path, "rb") as fh:
+        master_bytes = fh.read()
+
+    boundary = "----banner-openai-" + uuid.uuid4().hex
+    crlf = b"\r\n"
+    body = io.BytesIO()
+
+    def _field(name, value):
+        body.write(b"--" + boundary.encode() + crlf)
+        body.write(f'Content-Disposition: form-data; name="{name}"'.encode("utf-8") + crlf + crlf)
+        body.write(str(value).encode("utf-8") + crlf)
+
+    def _file(name, filename, data, content_type="image/png"):
+        body.write(b"--" + boundary.encode() + crlf)
+        body.write(f'Content-Disposition: form-data; name="{name}"; filename="{filename}"'.encode("utf-8") + crlf)
+        body.write(f"Content-Type: {content_type}".encode("utf-8") + crlf + crlf)
+        body.write(data + crlf)
+
+    _field("model", model)
+    _field("prompt", prompt)
+    _field("size", openai_size)
+    _field("n", "1")
+    _field("quality", quality)
+    _file("image[]", os.path.basename(master_png_path), master_bytes)
+    body.write(b"--" + boundary.encode() + b"--" + crlf)
+    body_bytes = body.getvalue()
+
+    req = urllib.request.Request(
+        "https://api.openai.com/v1/images/edits",
+        data=body_bytes, method="POST",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        body_resp = resp.read().decode("utf-8")
+    data = json.loads(body_resp)
+    item = data["data"][0]
+    b64 = item.get("b64_json")
+    if b64:
+        return base64.b64decode(b64)
+    url = item.get("url")
+    if url:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return r.read()
+    raise RuntimeError("edits response had no b64_json and no url")
+
+
 def gen_and_paint(idx, total, frame, concept_data, layouts_legacy, args, api_key):
     label = f"{frame['concept']}__{frame['size']}"
     out_png = os.path.join(args.dir, f"{label}.png")
+    mode = frame.get("mode", "gen")
+    op = "EDIT" if mode == "edit" else "GEN"
 
     result = {
         "label": label, "concept": frame["concept"], "size": frame["size"],
-        "openai": frame["openaiSize"], "status": "pending",
+        "openai": frame["openaiSize"], "mode": mode, "status": "pending",
         "gen_ms": None, "paint_ms": None, "bytes": 0, "error": None, "attempts": 0,
     }
 
     try:
-        prompt = resolve_prompt(concept_data, layouts_legacy, frame["size"])
+        prompt = resolve_prompt(concept_data, layouts_legacy, frame)
     except Exception as e:
         result["status"] = "prompt_failed"
         result["error"] = f"{type(e).__name__}: {e}"
@@ -120,40 +196,47 @@ def gen_and_paint(idx, total, frame, concept_data, layouts_legacy, args, api_key
             log(f"[{idx+1:02d}/{total}] {label} MODERATION skip: {reason}")
             return result
 
-    payload = json.dumps({
-        "model": args.model, "prompt": prompt, "n": 1,
-        "size": frame["openaiSize"], "quality": args.quality, "output_format": "png",
-    }).encode("utf-8")
-
     png = None
     for attempt in range(1, args.max_retries + 1):
         result["attempts"] = attempt
         t0 = time.time()
-        log(f"[{idx+1:02d}/{total}] {label} GEN attempt {attempt}/{args.max_retries} ({frame['openaiSize']}, {len(prompt)}c prompt)")
-        req = urllib.request.Request(
-            "https://api.openai.com/v1/images/generations",
-            data=payload, method="POST",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json; charset=utf-8",
-            },
-        )
+        log(f"[{idx+1:02d}/{total}] {label} {op} attempt {attempt}/{args.max_retries} ({frame['openaiSize']}, {len(prompt)}c prompt)")
         try:
-            with urllib.request.urlopen(req, timeout=args.gen_timeout) as resp:
-                body = resp.read().decode("utf-8")
+            if mode == "edit":
+                png = post_images_edits(
+                    api_key, prompt, frame["master_png"],
+                    frame["openaiSize"], args.model, args.quality, args.gen_timeout,
+                )
+            else:
+                payload = json.dumps({
+                    "model": args.model, "prompt": prompt, "n": 1,
+                    "size": frame["openaiSize"], "quality": args.quality,
+                    "output_format": "png",
+                }).encode("utf-8")
+                req = urllib.request.Request(
+                    "https://api.openai.com/v1/images/generations",
+                    data=payload, method="POST",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json; charset=utf-8",
+                    },
+                )
+                with urllib.request.urlopen(req, timeout=args.gen_timeout) as resp:
+                    body = resp.read().decode("utf-8")
+                data = json.loads(body)
+                b64 = data["data"][0].get("b64_json")
+                if not b64:
+                    result["status"] = "gen_failed"
+                    result["error"] = "no b64_json in response"
+                    return result
+                png = base64.b64decode(b64)
+
             gen_ms = int((time.time() - t0) * 1000)
             result["gen_ms"] = gen_ms
-            data = json.loads(body)
-            b64 = data["data"][0].get("b64_json")
-            if not b64:
-                result["status"] = "gen_failed"
-                result["error"] = "no b64_json in response"
-                return result
-            png = base64.b64decode(b64)
             with open(out_png, "wb") as fh:
                 fh.write(png)
             result["bytes"] = len(png)
-            log(f"[{idx+1:02d}/{total}] {label} GEN ok in {gen_ms}ms ({len(png)//1024}KB)")
+            log(f"[{idx+1:02d}/{total}] {label} {op} ok in {gen_ms}ms ({len(png)//1024}KB)")
             break
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
@@ -162,14 +245,19 @@ def gen_and_paint(idx, total, frame, concept_data, layouts_legacy, args, api_key
                 log(f"[{idx+1:02d}/{total}] {label} 429, sleeping {wait}s before retry {attempt+1}")
                 time.sleep(wait)
                 continue
-            result["status"] = "gen_http_error"
+            result["status"] = "gen_http_error" if mode == "gen" else "edit_http_error"
             result["error"] = f"HTTP {e.code}: {body[:300]}"
-            log(f"[{idx+1:02d}/{total}] {label} GEN giving up: HTTP {e.code}")
+            log(f"[{idx+1:02d}/{total}] {label} {op} giving up: HTTP {e.code}")
+            return result
+        except FileNotFoundError as e:
+            result["status"] = "master_missing"
+            result["error"] = str(e)
+            log(f"[{idx+1:02d}/{total}] {label} {op} master PNG missing: {e}")
             return result
         except Exception as e:
-            result["status"] = "gen_failed"
+            result["status"] = "gen_failed" if mode == "gen" else "edit_failed"
             result["error"] = f"{type(e).__name__}: {e}"
-            log(f"[{idx+1:02d}/{total}] {label} GEN failed: {e}")
+            log(f"[{idx+1:02d}/{total}] {label} {op} failed: {e}")
             return result
 
     if png is None:

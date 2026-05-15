@@ -204,14 +204,87 @@ def build_prompt(concept: dict, size: str) -> str:
     return "\n".join(sections)
 
 
+# ---------------------------------------------------------------------------
+# Layout-family labels for the Recomposition prompt header
+# ---------------------------------------------------------------------------
+LAYOUT_FAMILY = {
+    "1200x1200": "SQUARE",
+    "1080x1080": "SQUARE",
+    "1200x628":  "WIDE",
+    "1920x1080": "LANDSCAPE",
+    "1200x960":  "MILD WIDE",
+    "1080x1920": "TALL",
+    "1080x1350": "PORTRAIT",
+    "960x1200":  "PORTRAIT",
+}
+
+
+def build_recomp_prompt(concept: dict, master_size: str, target_size: str) -> str:
+    """Compose a recomposition prompt for the /v1/images/edits endpoint.
+
+    Sent with the MVP (master) image as the input image. The model is told to
+    REDESIGN the layout for the new aspect, NOT to generate a fresh image. Same
+    campaign, same text, same colors, same typography - just repositioned.
+
+    Mirrors framework's § Recomposition Prompt Template (.claude/memory/
+    banner_design_framework.md). Target ~800-1100c, hard cap 1200c.
+    """
+    if target_size == master_size:
+        raise ValueError(f"recomp target {target_size} == master {master_size}; recomp must change aspect")
+    if target_size not in LAYOUT_LOCKS:
+        raise ValueError(f"recomp target {target_size} not in LAYOUT_LOCKS")
+
+    title = concept["title"]
+    locale = concept.get("locale", "en")
+    hook = (concept.get("hook_phrase") or "").strip()
+    palette = concept.get("palette_hex") or []
+    visual = (concept.get("concept_visual") or "").strip()
+
+    palette_str = " + ".join(palette) if palette else "from master"
+    family = LAYOUT_FAMILY.get(target_size, "TARGET")
+    layout = layout_lock(target_size)
+
+    sections = [
+        f"RECOMPOSE the attached master ({master_size}) into {target_size}. "
+        "Same campaign, same text, same colors, same typography. "
+        "NOT a stretch, NOT a crop, NOT a fresh generation. "
+        "Layout is REDESIGNED for this aspect - never split-panel.",
+        f"NEW LAYOUT ({family}): {layout}",
+        "CAMPAIGN ELEMENT MANIFEST (preserve, reposition, do not remove):",
+        "- title hierarchy and verbatim text",
+        (f'- highlight treatment: "{hook}" stays the oversized type-hero'
+         if hook else "- highlight treatment from master"),
+        (f"- main visual metaphor: {visual}"
+         if visual else "- main visual metaphor from master"),
+        f"- color system: {palette_str}",
+        "- market atmosphere and graphic panel style from master",
+        f'TITLE (verbatim): "{title}".',
+        f"Constraints: exactly {target_size} px. No new content. No watermarks. "
+        "NO HARD SPLIT-PANEL. NO regression into dark office, desk, lamp, fake UI, real person, flag.",
+    ]
+    if is_rtl(locale):
+        sections.append("RTL composition: keep mirrored direction, title block on right.")
+    if needs_typography_rule(title):
+        sections.append(
+            "Render every word fully and legibly with all accents intact. "
+            "Punctuation sits clearly AFTER the final letter - never overlap or cut letters."
+        )
+    return "\n".join(sections)
+
+
 def check_moderation(concept: dict) -> tuple[bool, Optional[str]]:
-    """Pre-flight: scan ONLY user-supplied fields for forbidden keywords.
+    """Pre-flight: scan ONLY positive-instruction user fields for forbidden keywords.
 
     Crucially does NOT scan the assembled prompt - the auto-injected
     "no real person" / "no flag" guardrails would always trigger a false
     positive against the FORBIDDEN_KEYWORDS list.
 
-    Scans: title, hook_phrase, concept_visual, lp_visual_style, avoid.
+    Scans: title, hook_phrase, concept_visual, lp_visual_style.
+
+    The `avoid` field is intentionally EXCLUDED - it is a negative-instruction
+    field ("do NOT show X"). Including it caused false positives where a user
+    writing `avoid: "us flag"` to keep flags OUT of the render would block the
+    render entirely.
 
     Returns (allowed, reason_if_blocked). Case-insensitive substring match.
     Saves ~30s + ~$0.04 per blocked job vs letting OpenAI return moderation_blocked.
@@ -221,7 +294,6 @@ def check_moderation(concept: dict) -> tuple[bool, Optional[str]]:
         concept.get("hook_phrase", ""),
         concept.get("concept_visual", ""),
         concept.get("lp_visual_style", ""),
-        concept.get("avoid", ""),
     ]
     haystack = "\n".join(s for s in user_fields if s).lower()
     for kw in FORBIDDEN_KEYWORDS:
@@ -269,6 +341,13 @@ if __name__ == "__main__":
         print(f"--- {size} ({len(p)} chars) ---")
         print(p)
         print()
+    print(f"--- recomp tests ---")
+    for size in ("1200x628", "1080x1920"):
+        p = build_recomp_prompt(sample_concept, "1200x1200", size)
+        print(f"--- recomp 1200x1200 -> {size} ({len(p)} chars) ---")
+        print(p)
+        print()
+
     print(f"--- moderation tests ---")
     cases = [
         ({"title": "Lär dig handla olja"}, True),
@@ -276,6 +355,8 @@ if __name__ == "__main__":
         ({"title": "Clean campaign", "concept_visual": "elon musk silhouette"}, False),
         ({"title": "Stockholm investing", "hook_phrase": "real person"}, False),
         ({"title": "Premium fund management", "lp_visual_style": "navy + gold"}, True),
+        # avoid is exempt from scan - keywords here must NOT block
+        ({"title": "Clean campaign", "avoid": "us flag, swastika, real person"}, True),
     ]
     for c, expected in cases:
         ok, reason = check_moderation(c)

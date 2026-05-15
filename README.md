@@ -237,102 +237,88 @@ v2.6 fixed the visual direction (campaign poster, not editorial photo) but Claud
 </details>
 
 <details>
-<summary><strong>/banner-openai</strong> v1.7 — Python runtime + structured prompts + LP cache + moderation pre-flight + resume, ~75–150s for a 3×3 run, ~$0.80</summary>
+<summary><strong>/banner-openai</strong> v1.9 — MVP-first (1:1 master → recomp via /v1/images/edits) + interactive polls + designer pause + push notification, ~115-165s for a 3×3 run</summary>
 
-Renders banner concepts with **OpenAI gpt-image-2** (default) or **gpt-image-1-mini** (`--mini` for previews). Loads the full design framework + reads LP context (cached, TTL 24h) + composes structured Creative Cards + runs silent cliché QA every run — same briefing depth as `/banner-higgsfield`. Paints into Figma via a Python pipeline (stdlib + ThreadPoolExecutor) with built-in 429 retry, pre-flight moderation, and `--resume` after crashes.
+Renders banner concepts with **OpenAI gpt-image-2** (default) or **gpt-image-1-mini** (`--mini`) and paints them into Figma. **MVP-first** — the 1200×1200 master is generated first, then every other size is a **recomposition** of that master via `POST /v1/images/edits` (multipart, master via `image[]`). Mirrors the higgsfield model — same campaign across all aspects, no cross-aspect drift.
 
-Three modes:
-- **fast (default)** — gpt-image-2, no polls, full framework + LP cache + Creative Card + auto-QA. **~75–150s for a 3×3 run, ~$0.80.**
-- **`--mini`** — gpt-image-1-mini for previews + iteration. ~50s, ~$0.50.
-- **`--strict`** — adds blocking polls + MVP→designer pause→edit-chain. ~6 min.
+| Command | Polls | Designer pause | Sizes | Use when |
+|---|---|---|---|---|
+| `/banner-openai ...` | Yes (sizes · count · model · brief) | Yes (after MVP) | optional | Default — designer-driven |
+| `/banner-openai --fast ...` | No | No | **required** | Ship now |
+| `/banner-openai --mini ...` | Yes | Yes | optional | Same flow, gpt-image-1-mini model |
+| `/banner-openai --fast --mini ...` | No | No | **required** | Fastest possible preview |
 
-Reads key from `$env:OPENAI_API_KEY` or any of `./.env`, `../.env`, `../../.env`, `../../../.env`, `$HOME/.env` (first hit wins, ordered).
+**Reasoning style is strict.** Fast = 1-2 status lines then a push notification. Casual = one short line per phase, then notification + total wall clock. The PNG painted into Figma is the deliverable — no narration of the brief, no QA report, no summary table.
 
-**v1.7 deltas vs v1.6 — post-runtime cleanup:**
-- **Prompt assembly moved to [`.claude/scripts/banner-openai/prompts.py`](.claude/scripts/banner-openai/prompts.py).** v1.6 built ~14KB of per-run prompt strings inside Claude's context every time — untestable + token-heavy. v1.7 takes a structured concept dict and emits the 6-section template + all 4 auto-injections (localization, typography, RTL, layout) deterministically. Saves ~$0.30/run in Claude tokens, prompt size 1100 → 870c (under framework's 900-char hard limit), unit-testable.
-- **LP screenshot cache** at [`.claude/memory/lp_cache/`](.claude/memory/lp_cache/). Repeat campaigns on the same LP skip the screenshot fetch — saves ~5s + ~$0.10 per re-run. TTL 24h, text-only summaries (~200B/file, safe to commit).
-- **Pre-flight moderation** scans user input (title + hook + visual + avoid) for forbidden keywords (politicians, celebrities, banned visual concepts) BEFORE submitting to OpenAI. Saves ~30s + ~$0.04 per blocked job vs. waiting for OpenAI's `moderation_blocked`. Override with `--no-moderation` if user has explicit authorization for a specific person.
-- **`--resume` mode** with incremental `results.json` writes (atomic rename via `.tmp`). If a run is interrupted at job 8/15, restart with `--resume` and only the failed/missing 7 frames re-process. Mid-run kills become recoverable.
-- **Manifest validation** — runner asserts every `(concept, size)` in `urls.json` resolves to a concept in `manifest.concepts` and a size in `LAYOUT_LOCKS`. Catches the silent paint-mismatch bug where `urls.json` and `manifest.json` could drift.
-- **Carries forward from v1.6:** Python ThreadPoolExecutor, concurrency 6, built-in 429 retry exp backoff (8/16/32/64s), live per-job logging, page-root nodeId rejection, drop of `get_metadata` from Phase 0, single key resolver, reusable script in repo.
+**v1.9 changes vs v1.8:**
+- **MVP-first orchestration** — Phase 4 generates only the 1200×1200 master per concept (one `/v1/images/generations` call). Phase 5b then recomposes each non-1:1 size from that master via `/v1/images/edits` — same campaign, same colors, same typography, just relaid out for the new aspect. Eliminates the v1.8 drift where three parallel free gens produced three slightly different barrels / splashes / skylines.
+- **Runner edits-endpoint support** — [`run.py`](.claude/scripts/banner-openai/run.py) now dispatches per-job on `mode: "gen" | "edit"`. Edits go through a new `post_images_edits()` helper that assembles multipart/form-data (stdlib only) with `image[]` pointing at the master PNG saved by the prior MVP run.
+- **New prompt builder** — [`prompts.py`](.claude/scripts/banner-openai/prompts.py) `build_recomp_prompt(concept, master_size, target_size)` composes the layout-redesign brief per the framework's § Recomposition Prompt Template (~800-1100c, hard cap 1200c).
+- **Designer pause in casual** — after the MVP paints, one `AskUserQuestion` to approve / redo / stop before recomp fires. Auto-skipped in `--fast`.
+- **2-batch runner invocation** — Claude runs the runner twice per casual flow (MVP, then recomp with `--resume`), letting `results.json` accumulate atomically and supporting mid-run resume after a kill.
+- **`avoid` excluded from moderation scan** — fixed in `prompts.py:check_moderation`. Was triggering false positives like `avoid: "us flag"` → blocked render. Negative-instruction fields are now exempt; the auto-injected "no flag, no real person, no fake UI" guardrail still applies in the prompt itself.
 
-**Cost per run (3 concepts × 3 sizes, pt-BR):**
+**v1.8 carries forward:**
+- Push notification on done · `--fast` strips polls + pause + requires sizes · phases flat 1-6 · QA / silent QA / Phase 8 summary deleted · hero bounds sanity check · Windows TEMP path portability.
 
-| Mode | Wall clock | OpenAI | Claude | **Total** | $/banner-higgsfield | vs `/banner-higgsfield` quality | Reliability |
-|---|---|---|---|---|---|---|---|
-| v1.5 fast (PS ThreadJob) | ~2 min (or ∞ on hang) | ~$0.55 | ~$0.65 | ~$1.20 | ~$0.13 | parity | broke on long runs |
-| v1.6 fast (Python, conc=6) | ~75–150s | ~$0.55 | ~$0.55 | ~$1.10 | ~$0.12 | parity | production-stable |
-| **v1.7 fast (cold cache)** | **~75–150s** | **~$0.55** | **~$0.25** | **~$0.80** | **~$0.09** | **parity** | **production-stable + resumable** |
-| **v1.7 fast (cache hit)** | **~70–145s** | **~$0.55** | **~$0.15** | **~$0.70** | **~$0.08** | **parity** | **production-stable + resumable** |
-| v1.7 `--mini` | ~50s | ~$0.30 | ~$0.20 | ~$0.50 | ~$0.06 | preview-grade | ok |
+**v1.7 carries forward:**
+- Python ThreadPoolExecutor (conc 6), 429 exp backoff (8/16/32/64s, max 4), LP screenshot cache (24h TTL), structured concept manifest → `prompts.build_prompt()` assembly, moderation pre-flight, `--resume`, manifest validation, frame name prefix `Banner-OpenAI —`.
 
-**When to use which:**
-- **Default** — production deliverables, hero campaigns, client work
-- **`--mini`** — concept iteration, A/B exploration, internal tests
-- **`--strict`** — brand-strict deliverables where you want human gates between MVP and recomps
+**Removed flags:** `--strict`, `--customize`, `--edit-chain` (now default), `--no-qa`, `--no-lp`.
+
+**Wall clock + cost (3 concepts × 3 sizes, sv, LP cache hit):**
+
+| Mode | MVP gen | Pause | Recomp gen (edits) | Total | $/run | $/banner |
+|---|---|---|---|---|---|---|
+| `--fast` | ~60-75s | — | ~50-65s | **~115-145s** | ~$0.75 | ~$0.08 |
+| `--fast --mini` | ~30-40s | — | ~25-35s | **~55-75s** | ~$0.45 | ~$0.05 |
+| default (casual) | ~60-75s | ~10-20s | ~50-65s | **~125-165s** | ~$0.80 | ~$0.09 |
+| `--mini` (casual) | ~30-40s | ~10-20s | ~25-35s | **~65-95s** | ~$0.50 | ~$0.06 |
+
+**Input**
 
 ```
-/banner-openai <figma-url-with-node-id>
-Title: <full title text verbatim>           ← one or more (each = one concept)
-Title: <second concept's title>             ← optional additional concepts
-CTA: <button text verbatim>                  ← optional; Claude suggests if missing
-[<WxH> ...]                                   ← optional; defaults to 1200×1200, 1200×628, 1080×1920
+/banner-openai [--fast] [--mini] [--sizes=W1xH1,W2xH2] <figma-url-with-node-id>
+Title: <full title text verbatim>           ← one or more (each = one concept, cap 10)
+CTA: <button text verbatim>                 ← optional
+Sizes: 1200x1200, 1200x628, 1080x1920       ← optional in casual / required in --fast
 ```
 
 **Example**
 
 ```
-/banner-openai https://figma.com/design/<fileKey>/...?node-id=1-456
-Title: Peluang keemasan untuk berdagang - Jangan lepaskan!
-Title: Adakah anda bersedia untuk Demam Emas dagangan? Mulakan sekarang!
+/banner-openai --fast https://figma.com/design/<fileKey>/...?node-id=2001-1697
+Title: Oljepriserna är galet höga just nu!
+Sizes: 1200x1200, 1200x628, 1080x1920
 ```
 
-**What's the same vs `/banner-higgsfield`**
-
-- Claude/image-model responsibility split (Claude = BRIEF, model = PICTURE)
-- 6-section Visual Prompt template (450–750 chars preferred, ≤900 hard)
-- Phase 1.0 Creative Card (9 lines per concept)
-- Polls (size selection / Customize-vs-Auto / per-concept polls in Customize)
-- Phase 5 designer pause (one multi-select in v1.2)
-- 5 creative archetypes, Typography Hero Rule, CTA tier rule
-- Localization atmosphere allowlists (incl. Malaysia / Indonesia)
-- Multi-concept, grid frame layout, verbatim Title + CTA, hard guardrails
-
-**What's different**
-
-| Concern | `/banner-higgsfield` (Higgsfield) | `/banner-openai` (OpenAI) |
-| --- | --- | --- |
-| MVP endpoint | `generate_image` MCP, `gpt_image_2` | `POST /v1/images/generations` with `gpt-image-2` |
-| Recomp endpoint | Same MCP tool, master via `medias[]` | `POST /v1/images/edits` (multipart), master via `image[]=@<path>` |
-| Polling | Async, t+60s poll → 30s cadence, hard cap t+30min | **Synchronous** — request blocks until done (typically 20–90s). HTTP timeout 300s. |
-| Auth | MCP-configured | `OPENAI_API_KEY` env var (or local `.env`). Key never logged. |
-| Concurrency | 8 concurrent (Ultra Monthly) | v1.7: Python ThreadPoolExecutor, default `max_workers=6`, built-in 429 retry (exp backoff 8/16/32/64s), `--resume` for crash recovery. |
-| Available sizes | Any aspect at 1k | Fixed: `1024x1024`, `1024x1536`, `1536x1024`. Mapped per target; FILL handles residual crop (typically 10–22% — see /banner-openai § Aspect map). |
-| Egress allowlist | `d8j0ntlcm91z4.cloudfront.net` + `mcp.figma.com` | `api.openai.com` + `mcp.figma.com` |
-| Frame name prefix | `Banner-Higgsfield — …` | `Banner-OpenAI — …` (so /banner-higgsfield and /banner-openai grids never collide on the same Figma page) |
+**Flags**
+- `--fast` — strip polls, require sizes, ship-only
+- `--mini` — `gpt-image-1-mini` model (same flow as default)
+- `--sizes=W1xH1,W2xH2,...` — explicit sizes (alternative to `Sizes:` block)
+- `--no-paint` — save PNGs only, skip Figma paint
+- `--resume` — re-run skipping frames already `ok` in `results.json`
+- `--no-cache` — bypass LP screenshot cache
+- `--no-moderation` — skip pre-flight forbidden-keyword check
+- `--concurrency=N` — override runner concurrency (default 6)
 
 **Setup (one-time)**
 
 ```bash
-# Option 1 — .env file in repo root (already gitignored, recommended for the team)
+# .env in repo root (gitignored)
 echo "OPENAI_API_KEY=sk-..." >> .env
-
-# Option 2 — PowerShell session var (ad-hoc)
-$env:OPENAI_API_KEY = "sk-..."
 ```
 
-The v1.6 resolver searches in order: `$env:OPENAI_API_KEY` → `./.env` → `../.env` → `../../.env` → `../../../.env` → `$HOME/.env`. First hit wins.
+Resolver order: `$env:OPENAI_API_KEY` → `./.env` → `../.env` → `../../.env` → `../../../.env` → `$HOME/.env`. First hit wins.
 
 **Requires**
-- An OpenAI org with `gpt-image-2` access
-- `OPENAI_API_KEY` set via env var or `.env` (never committed)
-- **Python 3.x on PATH** — v1.7 runs the Python pipeline at [`.claude/scripts/banner-openai/run.py`](.claude/scripts/banner-openai/run.py) + uses the prompt module at [`.claude/scripts/banner-openai/prompts.py`](.claude/scripts/banner-openai/prompts.py) (stdlib only, no `pip install`)
-- Figma MCP connector configured (read + write)
-- Cloud workspaces: allowlist `api.openai.com` and `mcp.figma.com`
-- LP cache lives at [`.claude/memory/lp_cache/`](.claude/memory/lp_cache/) — text-only summaries with 24h TTL, safe to commit and share across team
+- OpenAI org with `gpt-image-2` access · `OPENAI_API_KEY` in env or `.env`
+- Python 3.x on PATH (stdlib only) — runner at [`.claude/scripts/banner-openai/run.py`](.claude/scripts/banner-openai/run.py) + prompts at [`.claude/scripts/banner-openai/prompts.py`](.claude/scripts/banner-openai/prompts.py)
+- Figma MCP connector (read + write)
+- Cloud workspaces: allowlist `api.openai.com` + `mcp.figma.com`
+- LP cache at [`.claude/memory/lp_cache/`](.claude/memory/lp_cache/) (text-only, 24h TTL, safe to commit)
 
-**Security**
-- The key is read into a single shell variable / curl `-H` header at run time; it is never printed in tool output, never echoed back to the user, and never written to a committed file. If you ever paste a key directly in chat (it's text — it gets persisted), rotate it at https://platform.openai.com/api-keys before continuing.
+**Security** — Key is never printed in tool output, never written to a committed file. If you paste a key in chat (it persists as text), rotate it at https://platform.openai.com/api-keys.
 
 [Full spec →](.claude/commands/banner-openai.md)
 
