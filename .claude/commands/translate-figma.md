@@ -36,6 +36,8 @@ Expected format: `<figma-url> <locales> [--page <name>] [--brand <name>] [--dry-
 2. **Python** — `python --version` must be ≥3.8.
 3. **Figma MCP** — verify the `use_figma` capability is available (`mcp__a17e5c91-...__use_figma` or `mcp__figma-desktop__*`). If not, stop with `❌ Figma MCP not connected — translation requires it for the write phase.`
 
+**Figma read path:** see [`.claude/memory/figma_tool_selection.md`](../memory/figma_tool_selection.md). Phase 1 uses the Python `extract.py` (canonical, deterministic). For ad-hoc node lookups during translation review, prefer `mcp__framelink-figma__get_figma_data` — clean structured JSON of any node's text children. Writes always go through `mcp__a17e5c91-…__use_figma`.
+
 ---
 
 ## Phase 1 — Extract (fast, deterministic)

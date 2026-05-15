@@ -15,6 +15,9 @@
       "mcp__a17e5c91-c297-4476-b214-a49f4686570c__use_figma",
       "mcp__a17e5c91-c297-4476-b214-a49f4686570c__upload_assets",
 
+      "mcp__framelink-figma__get_figma_data",
+      "mcp__framelink-figma__download_figma_images",
+
       "Bash(curl -sL -o *)",
       "Bash(curl -sS -X POST *)",
       "Bash(curl -sS *)",

@@ -30,6 +30,8 @@ If `<figma-url>` or `<language-code>` is missing, stop and tell the teammate the
 1. `echo $FIGMA_TOKEN | head -c 4` — if empty, stop and tell the teammate to set `FIGMA_TOKEN` (see [projects/qa/README.md](../../projects/qa/README.md)).
 2. `python --version` — must be ≥3.8. If Python is missing, stop and link the teammate to python.org.
 
+**Figma read path:** see [`.claude/memory/figma_tool_selection.md`](../memory/figma_tool_selection.md). Deterministic Phase 1 checks use the Python scripts (canonical). For ad-hoc node inspection in Phase 2 LLM judgment (e.g. "what does node 1:234 actually contain?"), prefer `mcp__framelink-figma__get_figma_data` over `get_design_context` — cleaner JSON, no code wrapper.
+
 ## Phase 1 — deterministic checks (scripts)
 
 Run both scripts from the repo root:

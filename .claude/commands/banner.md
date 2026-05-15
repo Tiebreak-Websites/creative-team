@@ -234,6 +234,8 @@ Classify from Title + CTA per **§ Register cues**: `aspiration / urgency / prov
 
 ### Phase 0.3 — LP hero (silent, with retry)
 
+**Tool selection:** see [`.claude/memory/figma_tool_selection.md`](../memory/figma_tool_selection.md). For visual style use `mcp__a17e5c91-…__get_screenshot`. For node structure use `mcp__framelink-figma__get_figma_data` (cleaner JSON than `get_design_context`).
+
 1. Call `get_screenshot(fileKey, nodeId, maxDimension=1200)`.
 2. **On `session expired`:** retry with 2s then 4s. After 2 retries → fall back to no-LP-context (silent).
 3. **On success:** extract a one-line `LP visual style` (palette + tone + setting + LP CTA color if visible + LP purpose). That single line is what the Creative Card consumes. **Do NOT enumerate exact props.**

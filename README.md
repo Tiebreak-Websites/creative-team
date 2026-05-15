@@ -5,10 +5,77 @@ A toolkit of slash commands for the design + creative team — runs inside [Clau
 ```bash
 git clone https://github.com/chr1srusevv/creative-team.git
 cd creative-team
+cp .env.example .env   # then fill in your keys
 claude
 ```
 
 Type `/pull` to sync. Type any command below to use it.
+
+---
+
+## 🔌 Project MCP servers
+
+The repo ships a project-level [`.mcp.json`](.mcp.json) so every team member picks up the same MCP servers on next `/pull`. Per-user secrets stay local via `.env` (gitignored).
+
+| MCP | Mode | What it adds | Required env |
+|---|---|---|---|
+| **framelink-figma** ([GLips/Figma-Context-MCP](https://github.com/GLips/Figma-Context-MCP)) | read-only | Clean structured JSON view of any Figma node via Figma REST. Faster + smaller than the default `get_design_context` for design-context lookups. Useful for `/qa`, `/translate-figma`, `/banner2` brief composition. | `FIGMA_API_KEY` (Figma personal access token — read scope is enough) |
+| Official Figma MCP (`a17e5c91-…`) | read+write | Built-in to Claude Code at the user level. Bidirectional writes via `use_figma`, screenshots, asset uploads. Already used by `/translate-figma`, `/banner`, `/banner2`. | OAuth handled by Figma desktop app |
+| OpenAI image MCP (`7e69985f-…`) | read+write | Built-in via Higgsfield. Backs `/banner`. Not used by `/banner2` (which calls OpenAI REST directly). | (Higgsfield MCP setup) |
+
+**Not installed (intentionally):**
+- `grab/cursor-talk-to-figma-mcp` — Cursor-only per its own docs. Requires Bun runtime + a separate WebSocket server + a Figma plugin install. The official Figma MCP already gives us bidirectional writes; adding Grab would duplicate capability while tripling moving parts.
+
+**One-time setup for each teammate** — pick ONE option:
+
+### Option A (recommended) — persistent user env vars (no admin, no launcher needed)
+
+```powershell
+cp .env.example .env
+# Fill in OPENAI_API_KEY + FIGMA_API_KEY
+
+# One-time: copy each key into a persistent USER env var (per-user, no admin/UAC).
+# After this, plain `claude` works from any shell forever.
+Get-Content .env | ForEach-Object {
+  if ($_ -match '^([A-Z_][A-Z0-9_]*)=(.+)$') {
+    $name, $val = $Matches[1], $Matches[2].Trim()
+    if ($val -and $val -notmatch '^(sk-\.\.\.|figd_\.\.\.)$') {
+      [Environment]::SetEnvironmentVariable($name, $val, "User")
+    }
+  }
+}
+
+# Open a fresh PowerShell and run:
+claude
+```
+
+POSIX/macOS — add to `~/.zshrc` or `~/.bashrc`:
+```bash
+set -a; [ -f ~/path/to/creative-team/.env ] && source ~/path/to/creative-team/.env; set +a
+```
+
+### Option B — launcher script (no persistent vars; sources `.env` on each launch)
+
+```powershell
+cp .env.example .env
+# fill in keys, then every time:
+.\scripts\claude.ps1
+```
+
+POSIX/macOS:
+```bash
+./scripts/claude.sh
+```
+
+Use this if you don't want keys in your global user env (e.g. shared machine), or if you frequently rotate keys without restarting your shell.
+
+### Why one of these is required
+
+Claude Code does NOT auto-load `.env`. MCP servers configured in [`.mcp.json`](.mcp.json) (like Framelink) read `${FIGMA_API_KEY}` from Claude Code's process environment at startup. If the var isn't there, the MCP fails to authenticate. Option A makes the var permanent at the user level; Option B injects it for one launch.
+
+### Verify after `claude` starts
+
+Ask Claude *"what Framelink tools are available?"* — you should see `mcp__framelink-figma__get_figma_data` and `mcp__framelink-figma__download_figma_images`. Both are pre-authorized in [`.claude/settings.json`](.claude/settings.json) — no per-call prompts.
 
 ---
 
@@ -170,9 +237,40 @@ v2.6 fixed the visual direction (campaign poster, not editorial photo) but Claud
 </details>
 
 <details>
-<summary><strong>/banner2</strong> v1.0 — same flow as /banner but rendered with OpenAI gpt-image-1</summary>
+<summary><strong>/banner2</strong> v1.5 — gpt-image-2 default with full briefing quality, ~2 min for a 3×3 run, ~$1.20</summary>
 
-Drop-in fork of `/banner` v2.7 — **every phase, every poll, every guardrail is identical** — only the image-generation backend is swapped from Higgsfield's `gpt_image_2` MCP tool to **OpenAI's `gpt-image-1` REST endpoints** (`/v1/images/generations` for MVPs, `/v1/images/edits` for recomps with the master attached). Synchronous (no polling), reads key from `$env:OPENAI_API_KEY` or a gitignored `.env`.
+Renders banner concepts with **OpenAI gpt-image-2** (default) or **gpt-image-1-mini** (`--mini` for previews). Loads the full design framework + reads LP context + composes Creative Cards + runs silent cliché QA every run — same briefing depth as `/banner`. Paints into Figma via single PS ThreadJob.
+
+Three modes:
+- **fast (default)** — gpt-image-2, no polls, full framework + LP + Creative Card + auto-QA. **~2 min for a 3×3 run, ~$1.20.**
+- **`--mini`** — gpt-image-1-mini for previews + iteration. ~50s, ~$0.85.
+- **`--strict`** — adds blocking polls + MVP→designer pause→edit-chain. ~6 min.
+
+Reads key from `$env:OPENAI_API_KEY` or a gitignored `.env`.
+
+**v1.5 deltas vs v1.4 — quality recovery (v1.4 over-optimized; output dropped vs `/banner`):**
+- **Default model swapped back to `gpt-image-2`** (was `gpt-image-1-mini`). Mini is fine for typography-led posters but visibly weaker on complex compositions. `--mini` is now the explicit speed flag.
+- **Framework file loaded every run** (was `--strict` only). The archetypes / layout locks / localization atmosphere allowlists / typography rules / RTL composition / hard guardrails all reach the prompt. This was the biggest single quality lever.
+- **LP context read by default** (was `--lp` opt-in). The Figma screenshot provides brand-palette continuity — without it, every run drifted to generic visuals.
+- **Phase 1.0 Creative Card** silent per concept. 9-line structured reasoning (archetype + register + palette + layout lock + avoid-cliché) before composing the prompt. No user polls.
+- **Typography hard rule auto-injected** for any title with accented characters (ã, ç, ô, é, etc.) — stops "caminho" → "caminh?" class glitches.
+- **Localization atmosphere allowlist auto-injected** by detected language (pt-BR → São Paulo daylight + terracotta; ja → Tokyo minimalism; etc.). Was implicit in v1.4, now explicit.
+- **Silent cliché QA + 1 auto-redo before paint.** Catches dark-office regressions, split-panels, typography glitches before the run ends.
+- **Architecture wins from v1.4 kept:** pre-fetched upload URLs, single PS ThreadJob orchestrates gen + stream-paint, no dual-write.
+
+**Cost per run (3 concepts × 3 sizes, pt-BR):**
+
+| Mode | Wall clock | OpenAI | Claude | **Total** | $/banner | vs `/banner` quality |
+|---|---|---|---|---|---|---|
+| v1.1 (original) | ~40 min | ~$0.85 | $5-15 | $6-16 | ~$1.50+ | parity |
+| v1.4 fast (mini, no framework) | ~30s | ~$0.25 | ~$0.40 | ~$0.65 | ~$0.07 | gap |
+| **v1.5 fast (gpt-image-2)** | **~2 min** | **~$0.55** | **~$0.65** | **~$1.20** | **~$0.13** | **parity** |
+| v1.5 `--mini` | ~50s | ~$0.30 | ~$0.55 | ~$0.85 | ~$0.10 | preview-grade |
+
+**When to use which:**
+- **Default** — production deliverables, hero campaigns, client work
+- **`--mini`** — concept iteration, A/B exploration, internal tests
+- **`--strict`** — brand-strict deliverables where you want human gates between MVP and recomps
 
 ```
 /banner2 <figma-url-with-node-id>
@@ -195,9 +293,8 @@ Title: Adakah anda bersedia untuk Demam Emas dagangan? Mulakan sekarang!
 - Claude/image-model responsibility split (Claude = BRIEF, model = PICTURE)
 - 6-section Visual Prompt template (450–750 chars preferred, ≤900 hard)
 - Phase 1.0 Creative Card (9 lines per concept)
-- Phase 2.5 cliché QA + 1 auto-redo
-- Phase 6.5 silent visual QA before paint
 - Polls (size selection / Customize-vs-Auto / per-concept polls in Customize)
+- Phase 5 designer pause (one multi-select in v1.2)
 - 5 creative archetypes, Typography Hero Rule, CTA tier rule
 - Localization atmosphere allowlists (incl. Malaysia / Indonesia)
 - Multi-concept, grid frame layout, verbatim Title + CTA, hard guardrails
@@ -206,11 +303,11 @@ Title: Adakah anda bersedia untuk Demam Emas dagangan? Mulakan sekarang!
 
 | Concern | `/banner` (Higgsfield) | `/banner2` (OpenAI) |
 | --- | --- | --- |
-| MVP endpoint | `generate_image` MCP, `gpt_image_2` | `POST /v1/images/generations` with `gpt-image-1` |
+| MVP endpoint | `generate_image` MCP, `gpt_image_2` | `POST /v1/images/generations` with `gpt-image-2` |
 | Recomp endpoint | Same MCP tool, master via `medias[]` | `POST /v1/images/edits` (multipart), master via `image[]=@<path>` |
 | Polling | Async, t+60s poll → 30s cadence, hard cap t+30min | **Synchronous** — request blocks until done (typically 20–90s). HTTP timeout 300s. |
 | Auth | MCP-configured | `OPENAI_API_KEY` env var (or local `.env`). Key never logged. |
-| Concurrency | 8 concurrent (Ultra Monthly) | Default 5 per chunk; org-tier-dependent. |
+| Concurrency | 8 concurrent (Ultra Monthly) | v1.3 fast mode: all N×M in one ThreadJob (default ThrottleLimit 12). v1.3 strict: 9 per chunk. |
 | Available sizes | Any aspect at 1k | Fixed: `1024x1024`, `1024x1536`, `1536x1024`. Mapped per target; FILL handles residual crop (typically 10–22% — see /banner2 § Aspect map). |
 | Egress allowlist | `d8j0ntlcm91z4.cloudfront.net` + `mcp.figma.com` | `api.openai.com` + `mcp.figma.com` |
 | Frame name prefix | `Banner — …` | `Banner2 — …` (so /banner and /banner2 grids never collide on the same Figma page) |
@@ -226,7 +323,7 @@ echo "OPENAI_API_KEY=sk-..." >> .env
 ```
 
 **Requires**
-- An OpenAI org with `gpt-image-1` access
+- An OpenAI org with `gpt-image-2` access
 - `OPENAI_API_KEY` set via env var or `.env` (never committed)
 - Figma MCP connector configured (read + write)
 - Cloud workspaces: allowlist `api.openai.com` and `mcp.figma.com`
