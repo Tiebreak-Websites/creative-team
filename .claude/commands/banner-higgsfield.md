@@ -2,7 +2,7 @@
 description: Render banner concepts with Higgsfield GPT Image 2 and paint them into a Figma file. Claude controls the brief (campaign understanding, layout lock, copy hierarchy, market, what to avoid). Higgsfield controls the picture (visual energy, atmosphere, subject interpretation, lighting, decorative style). Prompts are short creative briefs, not photoshoot directions. Never dark editorial office scenes. User-controlled setup (sizes first, then customize vs auto). Multi-concept ready. The user provides one-or-more Title lines + a Figma URL with the hero node pre-selected.
 ---
 
-# /banner — Designer flow (Higgsfield GPT Image 2 → Figma) v2.7
+# /banner-higgsfield — Designer flow (Higgsfield GPT Image 2 → Figma) v2.7
 
 ## What changed in v2.7 (from v2.6)
 
@@ -179,7 +179,7 @@ Workflow:
 The user pastes:
 
 ```
-/banner <figma-url-with-node-id>
+/banner-higgsfield <figma-url-with-node-id>
 Title: <full title text verbatim>           ← one or more lines (multi-concept)
 Title: <second concept's title>             ← optional additional concepts
 CTA: <button text verbatim>                 ← optional; applies to all concepts unless per-concept supplied
@@ -198,9 +198,9 @@ CTA: <button text verbatim>                 ← optional; applies to all concept
 
 ### Fail-fast (clear errors)
 
-- No `node-id` in Figma URL → **`❌ Select the hero frame in Figma first, then copy the URL with the node selected and re-paste. /banner needs node-id=X-Y in the URL to read the LP context.`**
-- No Figma URL at all → **`❌ /banner needs a Figma file URL with the hero node selected.`**
-- No `Title:` → **`❌ /banner needs Title: <headline text> on its own line.`**
+- No `node-id` in Figma URL → **`❌ Select the hero frame in Figma first, then copy the URL with the node selected and re-paste. /banner-higgsfield needs node-id=X-Y in the URL to read the LP context.`**
+- No Figma URL at all → **`❌ /banner-higgsfield needs a Figma file URL with the hero node selected.`**
+- No `Title:` → **`❌ /banner-higgsfield needs Title: <headline text> on its own line.`**
 - Any other missing piece (sizes, CTA, etc.) → resolved by Phase 0.4 / 0.5 polls, never a fail.
 
 ---
@@ -210,7 +210,7 @@ CTA: <button text verbatim>                 ← optional; applies to all concept
 Run in parallel, fail-fast on hard requirements:
 
 1. **Resolve `gpt_image_2` model id** via `models_explore`. Fallback to literal `gpt_image_2`.
-2. **Figma MCP connected?** Need `get_screenshot`, `use_figma`, `upload_assets`. Missing → `❌ /banner needs Figma MCP read+write access.`
+2. **Figma MCP connected?** Need `get_screenshot`, `use_figma`, `upload_assets`. Missing → `❌ /banner-higgsfield needs Figma MCP read+write access.`
 3. **Egress allowlist check.** Test both hosts in parallel:
    - `https://d8j0ntlcm91z4.cloudfront.net/`
    - `https://mcp.figma.com/`
@@ -406,7 +406,7 @@ for (let i = 0; i < conceptLabels.length; i++) {
   const conceptFrames = [];
   for (const [w, h] of sizes) {
     const f = figma.createFrame();
-    f.name = `Banner — ${concept} — ${w}x${h} — ${runStamp}`;
+    f.name = `Banner-Higgsfield — ${concept} — ${w}x${h} — ${runStamp}`;
     f.resize(w, h);
     f.x = x; f.y = rowY;
     f.fills = [];
@@ -427,9 +427,9 @@ return result;
 
 Three parallel turns:
 
-1. `curl -sL -o /tmp/banner/mvp.png "<rawUrl>"`
+1. `curl -sL -o /tmp/banner-higgsfield/mvp.png "<rawUrl>"`
 2. `upload_assets(fileKey, nodeId=<mvp_frame_id>, scaleMode=FILL, count=1)`
-3. `curl -sS -X POST -H "Content-Type: image/png" --data-binary @/tmp/banner/mvp.png "<submitUrl>"`
+3. `curl -sS -X POST -H "Content-Type: image/png" --data-binary @/tmp/banner-higgsfield/mvp.png "<submitUrl>"`
 
 **If Phase 4 fails due to egress block:** record `paint_failed` in problem-list; surface `⚠️ Paint blocked — MVP available at <rawUrl>. Drag into the 1200×1200 frame manually.` Skip to Phase 8.
 
@@ -508,7 +508,7 @@ Same three-turn parallel pattern as Phase 4.
 
 ## Phase 8 — summary + problem list
 
-Short success message + Figma file URL. With encountered problems: a separate `⚠️ Problems during this run` block listing concrete issues for the team to upgrade /banner.
+Short success message + Figma file URL. With encountered problems: a separate `⚠️ Problems during this run` block listing concrete issues for the team to upgrade /banner-higgsfield.
 
 ---
 

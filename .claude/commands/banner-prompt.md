@@ -1,12 +1,12 @@
 ---
-description: Generate a ready-to-copy Higgsfield GPT Image 2 banner prompt using the /banner design framework. No image generation, no Figma writes — pure prompt output, plus 5 numbered alternative approach variants the user can pick by replying with a number.
+description: Generate a ready-to-copy Higgsfield GPT Image 2 banner prompt using the /banner-higgsfield design framework. No image generation, no Figma writes — pure prompt output, plus 5 numbered alternative approach variants the user can pick by replying with a number.
 ---
 
-# /banner-prompt — Prompt generator only (no rendering, no Figma) v1.2 (tracks /banner v1.8)
+# /banner-prompt — Prompt generator only (no rendering, no Figma) v1.2 (tracks /banner-higgsfield v1.8)
 
 ## What this does
 
-Same creative reasoning as `/banner` — but stops before any tool call. Produces:
+Same creative reasoning as `/banner-higgsfield` — but stops before any tool call. Produces:
 
 1. A **ready-to-copy MVP visual prompt** (≤ 2,000 chars) for 1200×1200 / 1:1
 2. **Five alternative approach variants** for the same copy, numbered, so the user can regenerate with a different creative direction by replying with a single digit
@@ -16,16 +16,16 @@ Use `/banner-prompt` when:
 - You want to try multiple creative directions cheaply (~$0 to iterate)
 - You want to hand the prompt to a different image tool or vendor
 
-Use `/banner` when:
+Use `/banner-higgsfield` when:
 - You're ready to render and paint into Figma in one shot
 
 ---
 
-## Source of truth — reuses /banner
+## Source of truth — reuses /banner-higgsfield
 
-This command reuses **§ Design Framework**, **§ Composition Guide**, **§ Visual Prompt Template**, **§ Emotional Register Library**, **§ Money element treatment by register**, **§ Visual Reference Library**, and the **DO NOT RENDER list** from `.claude/commands/banner.md`. Read those sections — do not re-derive them here.
+This command reuses **§ Design Framework**, **§ Composition Guide**, **§ Visual Prompt Template**, **§ Emotional Register Library**, **§ Money element treatment by register**, **§ Visual Reference Library**, and the **DO NOT RENDER list** from `.claude/commands/banner-higgsfield.md`. Read those sections — do not re-derive them here.
 
-Everything that applies to `/banner` Phase 0 + Phase 0.3 + Phase 0.4 + Phase 0.5 + Phase 1 applies here unchanged:
+Everything that applies to `/banner-higgsfield` Phase 0 + Phase 0.3 + Phase 0.4 + Phase 0.5 + Phase 1 applies here unchanged:
 - Language auto-detection (incl. dialect cues)
 - **Emotional register classification (v1.7)** — per-banner derivation from copy, drives lighting / palette / typography ladder / CTA finishing / background depth ornament
 - **LP context analysis (v1.8)** — if user attaches an LP hero screenshot, derive subject archetype + dominant palette + tone register and bias the prompt's subject + accent hex toward continuity
@@ -69,15 +69,15 @@ Arguments: `$ARGUMENTS`. Free-form, no rigid syntax.
 
 - No title → `❌ /banner-prompt needs the title copy verbatim.`
 
-CTA is **optional** here (unlike `/banner` which requires it). Prompt-only mode tolerates a CTA-less hero banner.
+CTA is **optional** here (unlike `/banner-higgsfield` which requires it). Prompt-only mode tolerates a CTA-less hero banner.
 
 ---
 
 ## Phase 0 — auto-detect LANGUAGE
 
-Identical to `/banner` Phase 0. Same label set (`pt-BR`, `pt-PT`, `es-LATAM`, `es-ES`, `English`, `Arabic`, `Hebrew`, `Urdu`, `Farsi`, `Pashto`, `th-TH`, `tr-TR`, …). If `lang:` override is supplied, honor it.
+Identical to `/banner-higgsfield` Phase 0. Same label set (`pt-BR`, `pt-PT`, `es-LATAM`, `es-ES`, `English`, `Arabic`, `Hebrew`, `Urdu`, `Farsi`, `Pashto`, `th-TH`, `tr-TR`, …). If `lang:` override is supplied, honor it.
 
-Surface the detection line (same format as `/banner` v1.7):
+Surface the detection line (same format as `/banner-higgsfield` v1.7):
 
 ```
 🌐 Detected: <LANGUAGE> (cues: "<cue1>", "<cue2>"). Composing prompt…
@@ -85,7 +85,7 @@ Surface the detection line (same format as `/banner` v1.7):
 
 ## Phase 0.3 — classify emotional register
 
-Identical to `/banner` Phase 0.3. Read HERO + CTA + LANGUAGE, pick exactly ONE register from § Emotional Register Library (aspiration / urgency / provocation / trust / curiosity / empowerment / identity), then surface:
+Identical to `/banner-higgsfield` Phase 0.3. Read HERO + CTA + LANGUAGE, pick exactly ONE register from § Emotional Register Library (aspiration / urgency / provocation / trust / curiosity / empowerment / identity), then surface:
 
 ```
 🎭 Register: <register name> (cues: "<cue1>", "<cue2>"). Direction: <one-line visual identity>.
@@ -95,7 +95,7 @@ The register drives defaults for decisions 4, 6, 7, 9, 11, 12 in the next phase.
 
 ## Phase 0.4 — LP context analysis (optional, only when a screenshot is attached)
 
-Identical to `/banner` Phase 0.4. If the user attached an LP hero screenshot, extract subject archetype + dominant hex + tone register + setting/typography style. Surface:
+Identical to `/banner-higgsfield` Phase 0.4. If the user attached an LP hero screenshot, extract subject archetype + dominant hex + tone register + setting/typography style. Surface:
 
 ```
 🖼️ LP context: <subject archetype> + <2–3 dominant hex> + <tone match: yes/conflict>. Prompt will mirror.
@@ -105,7 +105,7 @@ If no screenshot → skip this phase.
 
 ## Phase 0.5 — interactive variant-selection poll (BLOCKING)
 
-Identical to `/banner` Phase 0.5. Fire `AskUserQuestion` with 4 options (human / AI robot / product-led / editorial metaphor). LP-recommended option (if any) goes first with `(Recommended)` label. The user's pick substitutes into decisions 2/3/4/partial-7 in Phase 1.
+Identical to `/banner-higgsfield` Phase 0.5. Fire `AskUserQuestion` with 4 options (human / AI robot / product-led / editorial metaphor). LP-recommended option (if any) goes first with `(Recommended)` label. The user's pick substitutes into decisions 2/3/4/partial-7 in Phase 1.
 
 This phase blocks. /banner-prompt is interactive — there is no auto-pick fallback.
 
@@ -113,11 +113,11 @@ This phase blocks. /banner-prompt is interactive — there is no auto-pick fallb
 
 ## Phase 1 — compose the MVP visual prompt (silent reasoning)
 
-Apply `/banner`'s Composition Guide in full:
+Apply `/banner-higgsfield`'s Composition Guide in full:
 
-1. **Internally answer the 12-decision checklist** from `.claude/commands/banner.md`:
+1. **Internally answer the 12-decision checklist** from `.claude/commands/banner-higgsfield.md`:
    1. Realistic customer · 2. Hero subject · 3. Setting · 4. Lighting (register-driven) · 5. Composition direction (LTR/RTL) · 6. Money element (expanded priority list incl. identity hook) · 7. Color palette (register family + per-banner hex) · 8. Typography by script · 9. CTA treatment chassis · 10. Typography ladder (3–4 lines if HERO > 6 words) · 11. Background depth ornament (exactly one) · 12. Premium CTA finishing (gradient / glow / inner highlight per register)
-2. **Fill the § Visual Prompt Template** from `.claude/commands/banner.md` with concrete decisions, including the new TYPOGRAPHY LADDER, BACKGROUND DEPTH, PRODUCT PROOF, and CTA finishing blocks
+2. **Fill the § Visual Prompt Template** from `.claude/commands/banner-higgsfield.md` with concrete decisions, including the new TYPOGRAPHY LADDER, BACKGROUND DEPTH, PRODUCT PROOF, and CTA finishing blocks
 3. **Self-check against the Visual Reference Library** — mentally compare the filled prompt to the register's premium anchor. If it reads closer to the generic anchor, return to step 1 and tighten.
 4. **Verify length ≤ 2,800 chars** after filling. If over, tighten — drop redundant adjectives, merge sentences. Never drop content that names a specific subject, position, color, line of copy, the typography ladder, the background depth ornament spec, or the CTA finishing spec.
 
@@ -200,7 +200,7 @@ The loop runs as many turns as the user wants — there is no cap.
 - **No tool calls to image models.** No `generate_image`, no `job_display`, no `models_explore`. This command does not touch Higgsfield.
 - **No Figma operations.** No `use_figma`, no `upload_assets`, no `get_metadata`, no `get_design_context`. Do not even check the Figma file.
 - **No external HTTP.** No `curl`, no `WebFetch`, no network calls.
-- **Prompt length ≤ 2,800 chars** per /banner v1.7's constraint. Verify after filling.
+- **Prompt length ≤ 2,800 chars** per /banner-higgsfield v1.7's constraint. Verify after filling.
 - **Verbatim copy.** HERO and CTA pass through unchanged into the visual prompt — no edits, no translations, no improvements.
 - **Framework stays internal.** Never paste the Design Framework, Composition Guide, or DO-NOT-RENDER list into the prompt output. Only the filled Visual Prompt Template appears in the fenced copy-block.
 - **Silent designer for reasoning.** The 9-decision checklist work happens internally. The user sees the named "Approach" line, the prompt, and the 5 alternatives — not the brief.

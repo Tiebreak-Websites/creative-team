@@ -16,3 +16,7 @@ Thumbs.db
 
 # Node (if used later)
 node_modules/
+
+# Python bytecode (banner-openai script imports prompts.py)
+__pycache__/
+*.pyc
