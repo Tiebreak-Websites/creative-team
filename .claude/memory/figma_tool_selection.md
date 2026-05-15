@@ -1,6 +1,6 @@
 ---
 name: Figma MCP tool selection guide
-description: Decision tree for which Figma MCP tool to use across all team commands (/qa, /banner, /banner2, /banner-prompt, /translate-figma). Two MCPs are available — Framelink (read-only, structured JSON, fast) and the official Figma MCP (read+write, code+screenshots).
+description: Decision tree for which Figma MCP tool to use across all team commands (/qa, /banner-higgsfield, /banner-openai, /banner-prompt, /translate-figma). Two MCPs are available — Framelink (read-only, structured JSON, fast) and the official Figma MCP (read+write, code+screenshots).
 type: reference
 ---
 
@@ -19,8 +19,8 @@ Two Figma MCPs are connected in this project:
 
 | You want… | Use this tool | Why |
 |---|---|---|
-| **Structured node JSON** (layout, fills, text, children) | `mcp__framelink-figma__get_figma_data` | Cleanest output. No code wrapper to strip. Ideal for `/qa` parity checks, `/translate-figma` text enumeration, `/banner2` Creative Card composition. |
-| **A rendered PNG screenshot of a node** | `mcp__a17e5c91-…__get_screenshot` | Framelink doesn't return rendered images. For brand-continuity visual reads (`/banner`, `/banner2` LP context), this is the cheapest source. |
+| **Structured node JSON** (layout, fills, text, children) | `mcp__framelink-figma__get_figma_data` | Cleanest output. No code wrapper to strip. Ideal for `/qa` parity checks, `/translate-figma` text enumeration, `/banner-openai` Creative Card composition. |
+| **A rendered PNG screenshot of a node** | `mcp__a17e5c91-…__get_screenshot` | Framelink doesn't return rendered images. For brand-continuity visual reads (`/banner-higgsfield`, `/banner-openai` LP context), this is the cheapest source. |
 | **React + Tailwind code preview** | `mcp__a17e5c91-…__get_design_context` | Only useful when implementing the design in code. Heavier than `get_figma_data` for everything else. |
 | **Top-level page structure / IDs only** | `mcp__a17e5c91-…__get_metadata` (XML) or `mcp__framelink-figma__get_figma_data` | XML metadata is lighter when you only need IDs and names. JSON is better when you'll inspect properties next. |
 | **Download multiple image assets** (PNG/SVG/GIF) | `mcp__framelink-figma__download_figma_images` | Bulk fetch by `imageRef` to local disk. Better than N separate `get_screenshot` calls. |
@@ -86,8 +86,8 @@ mcp__a17e5c91-…__use_figma({
 | Command | Primary Figma reads | Recommended tool |
 |---|---|---|
 | `/qa` | parity, text overflow, image localization | `get_figma_data` (structured JSON). Python scripts in `projects/qa/scripts/` still authoritative for deterministic checks. |
-| `/banner` | LP hero visual style | `get_screenshot` (brand-continuity is visual). Optional structure read via `get_figma_data`. |
-| `/banner2` | LP hero visual style + node sanity | `get_screenshot` for visual; `get_figma_data` for structure. v1.5 default flow can do both in TURN 1. |
+| `/banner-higgsfield` | LP hero visual style | `get_screenshot` (brand-continuity is visual). Optional structure read via `get_figma_data`. |
+| `/banner-openai` | LP hero visual style + node sanity | `get_screenshot` for visual; `get_figma_data` for structure. v1.5 default flow can do both in TURN 1. |
 | `/banner-prompt` | optional LP read | `get_screenshot` if visual context wanted; otherwise skip Figma entirely. |
 | `/translate-figma` | enumerate all text nodes across 3 breakpoints | `get_figma_data` (clean enumeration). Writes via `use_figma`. |
 

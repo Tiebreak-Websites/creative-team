@@ -19,9 +19,9 @@ The repo ships a project-level [`.mcp.json`](.mcp.json) so every team member pic
 
 | MCP | Mode | What it adds | Required env |
 |---|---|---|---|
-| **framelink-figma** ([GLips/Figma-Context-MCP](https://github.com/GLips/Figma-Context-MCP)) | read-only | Clean structured JSON view of any Figma node via Figma REST. Faster + smaller than the default `get_design_context` for design-context lookups. Useful for `/qa`, `/translate-figma`, `/banner2` brief composition. | `FIGMA_API_KEY` (Figma personal access token — read scope is enough) |
-| Official Figma MCP (`a17e5c91-…`) | read+write | Built-in to Claude Code at the user level. Bidirectional writes via `use_figma`, screenshots, asset uploads. Already used by `/translate-figma`, `/banner`, `/banner2`. | OAuth handled by Figma desktop app |
-| OpenAI image MCP (`7e69985f-…`) | read+write | Built-in via Higgsfield. Backs `/banner`. Not used by `/banner2` (which calls OpenAI REST directly). | (Higgsfield MCP setup) |
+| **framelink-figma** ([GLips/Figma-Context-MCP](https://github.com/GLips/Figma-Context-MCP)) | read-only | Clean structured JSON view of any Figma node via Figma REST. Faster + smaller than the default `get_design_context` for design-context lookups. Useful for `/qa`, `/translate-figma`, `/banner-openai` brief composition. | `FIGMA_API_KEY` (Figma personal access token — read scope is enough) |
+| Official Figma MCP (`a17e5c91-…`) | read+write | Built-in to Claude Code at the user level. Bidirectional writes via `use_figma`, screenshots, asset uploads. Already used by `/translate-figma`, `/banner-higgsfield`, `/banner-openai`. | OAuth handled by Figma desktop app |
+| OpenAI image MCP (`7e69985f-…`) | read+write | Built-in via Higgsfield. Backs `/banner-higgsfield`. Not used by `/banner-openai` (which calls OpenAI REST directly). | (Higgsfield MCP setup) |
 
 **Not installed (intentionally):**
 - `grab/cursor-talk-to-figma-mcp` — Cursor-only per its own docs. Requires Bun runtime + a separate WebSocket server + a Figma plugin install. The official Figma MCP already gives us bidirectional writes; adding Grab would duplicate capability while tripling moving parts.
@@ -157,12 +157,12 @@ Audit a Figma LP for translation parity, image localization, overflow, broken pl
 </details>
 
 <details>
-<summary><strong>/banner</strong> v2.7 — Claude writes a short brief, Higgsfield draws the picture</summary>
+<summary><strong>/banner-higgsfield</strong> v2.7 — Claude writes a short brief, Higgsfield draws the picture</summary>
 
 Render one or more banner concepts with **Higgsfield GPT Image 2** and paint them into a Figma file at exact pixel sizes. **You** pick the hero frame in Figma first (so the URL carries the node-id), then paste the URL + Title(s) + CTA. Claude reads only that node for LP context, asks at most 4 short clickable questions per concept, writes a **short creative brief** (not a photoshoot direction), lets Higgsfield create the picture, and paints. Runs silently — only critical issues surface.
 
 ```
-/banner <figma-url-with-node-id>
+/banner-higgsfield <figma-url-with-node-id>
 Title: <full title text verbatim>           ← one or more (each = one concept)
 Title: <second concept's title>             ← optional additional concepts
 CTA: <button text verbatim>                  ← optional; Claude suggests if missing
@@ -172,7 +172,7 @@ CTA: <button text verbatim>                  ← optional; Claude suggests if mi
 **Example — single concept**
 
 ```
-/banner https://figma.com/design/<fileKey>/...?node-id=38-1040
+/banner-higgsfield https://figma.com/design/<fileKey>/...?node-id=38-1040
 Title: เงินฝากครั้งแรกของคุณจะเพิ่มเป็นสองเท่า โบนัส 100%
 CTA: เริ่มต้นลงทุนกับ Academy
 ```
@@ -180,7 +180,7 @@ CTA: เริ่มต้นลงทุนกับ Academy
 **Example — two concepts in one run (parallel masters + recomps)**
 
 ```
-/banner https://figma.com/design/<fileKey>/...?node-id=1-456
+/banner-higgsfield https://figma.com/design/<fileKey>/...?node-id=1-456
 Title: +171% 2024. +39% 2025. Investerar du?
 Title: 43 analytiker säger Stark Köp. AI-handeln är inte över.
 ```
@@ -199,7 +199,7 @@ Title: 43 analytiker säger Stark Köp. AI-handeln är inte över.
 
 **Strict requirements**
 
-- Figma URL must contain `node-id=X-Y` — pre-select the hero frame in Figma before copying the URL. If missing, `/banner` fails fast with a clear instruction.
+- Figma URL must contain `node-id=X-Y` — pre-select the hero frame in Figma before copying the URL. If missing, `/banner-higgsfield` fails fast with a clear instruction.
 - `Title:` is required (full headline text verbatim). Multiple `Title:` lines = multiple concepts (cap 10 per run). Customize mode gets click-heavy beyond 5 concepts — Auto mode is recommended for high N.
 - For cloud Claude Code workspaces, allowlist both `d8j0ntlcm91z4.cloudfront.net` and `mcp.figma.com` — pre-flight checks both and fails fast if blocked.
 
@@ -232,40 +232,39 @@ v2.6 fixed the visual direction (campaign poster, not editorial photo) but Claud
 - Figma MCP connector configured (read + write)
 - Cloud workspaces: allowlist `d8j0ntlcm91z4.cloudfront.net` and `mcp.figma.com`
 
-[Full spec →](.claude/commands/banner.md)
+[Full spec →](.claude/commands/banner-higgsfield.md)
 
 </details>
 
 <details>
-<summary><strong>/banner2</strong> v1.5 — gpt-image-2 default with full briefing quality, ~2 min for a 3×3 run, ~$1.20</summary>
+<summary><strong>/banner-openai</strong> v1.7 — Python runtime + structured prompts + LP cache + moderation pre-flight + resume, ~75–150s for a 3×3 run, ~$0.80</summary>
 
-Renders banner concepts with **OpenAI gpt-image-2** (default) or **gpt-image-1-mini** (`--mini` for previews). Loads the full design framework + reads LP context + composes Creative Cards + runs silent cliché QA every run — same briefing depth as `/banner`. Paints into Figma via single PS ThreadJob.
+Renders banner concepts with **OpenAI gpt-image-2** (default) or **gpt-image-1-mini** (`--mini` for previews). Loads the full design framework + reads LP context (cached, TTL 24h) + composes structured Creative Cards + runs silent cliché QA every run — same briefing depth as `/banner-higgsfield`. Paints into Figma via a Python pipeline (stdlib + ThreadPoolExecutor) with built-in 429 retry, pre-flight moderation, and `--resume` after crashes.
 
 Three modes:
-- **fast (default)** — gpt-image-2, no polls, full framework + LP + Creative Card + auto-QA. **~2 min for a 3×3 run, ~$1.20.**
-- **`--mini`** — gpt-image-1-mini for previews + iteration. ~50s, ~$0.85.
+- **fast (default)** — gpt-image-2, no polls, full framework + LP cache + Creative Card + auto-QA. **~75–150s for a 3×3 run, ~$0.80.**
+- **`--mini`** — gpt-image-1-mini for previews + iteration. ~50s, ~$0.50.
 - **`--strict`** — adds blocking polls + MVP→designer pause→edit-chain. ~6 min.
 
-Reads key from `$env:OPENAI_API_KEY` or a gitignored `.env`.
+Reads key from `$env:OPENAI_API_KEY` or any of `./.env`, `../.env`, `../../.env`, `../../../.env`, `$HOME/.env` (first hit wins, ordered).
 
-**v1.5 deltas vs v1.4 — quality recovery (v1.4 over-optimized; output dropped vs `/banner`):**
-- **Default model swapped back to `gpt-image-2`** (was `gpt-image-1-mini`). Mini is fine for typography-led posters but visibly weaker on complex compositions. `--mini` is now the explicit speed flag.
-- **Framework file loaded every run** (was `--strict` only). The archetypes / layout locks / localization atmosphere allowlists / typography rules / RTL composition / hard guardrails all reach the prompt. This was the biggest single quality lever.
-- **LP context read by default** (was `--lp` opt-in). The Figma screenshot provides brand-palette continuity — without it, every run drifted to generic visuals.
-- **Phase 1.0 Creative Card** silent per concept. 9-line structured reasoning (archetype + register + palette + layout lock + avoid-cliché) before composing the prompt. No user polls.
-- **Typography hard rule auto-injected** for any title with accented characters (ã, ç, ô, é, etc.) — stops "caminho" → "caminh?" class glitches.
-- **Localization atmosphere allowlist auto-injected** by detected language (pt-BR → São Paulo daylight + terracotta; ja → Tokyo minimalism; etc.). Was implicit in v1.4, now explicit.
-- **Silent cliché QA + 1 auto-redo before paint.** Catches dark-office regressions, split-panels, typography glitches before the run ends.
-- **Architecture wins from v1.4 kept:** pre-fetched upload URLs, single PS ThreadJob orchestrates gen + stream-paint, no dual-write.
+**v1.7 deltas vs v1.6 — post-runtime cleanup:**
+- **Prompt assembly moved to [`.claude/scripts/banner-openai/prompts.py`](.claude/scripts/banner-openai/prompts.py).** v1.6 built ~14KB of per-run prompt strings inside Claude's context every time — untestable + token-heavy. v1.7 takes a structured concept dict and emits the 6-section template + all 4 auto-injections (localization, typography, RTL, layout) deterministically. Saves ~$0.30/run in Claude tokens, prompt size 1100 → 870c (under framework's 900-char hard limit), unit-testable.
+- **LP screenshot cache** at [`.claude/memory/lp_cache/`](.claude/memory/lp_cache/). Repeat campaigns on the same LP skip the screenshot fetch — saves ~5s + ~$0.10 per re-run. TTL 24h, text-only summaries (~200B/file, safe to commit).
+- **Pre-flight moderation** scans user input (title + hook + visual + avoid) for forbidden keywords (politicians, celebrities, banned visual concepts) BEFORE submitting to OpenAI. Saves ~30s + ~$0.04 per blocked job vs. waiting for OpenAI's `moderation_blocked`. Override with `--no-moderation` if user has explicit authorization for a specific person.
+- **`--resume` mode** with incremental `results.json` writes (atomic rename via `.tmp`). If a run is interrupted at job 8/15, restart with `--resume` and only the failed/missing 7 frames re-process. Mid-run kills become recoverable.
+- **Manifest validation** — runner asserts every `(concept, size)` in `urls.json` resolves to a concept in `manifest.concepts` and a size in `LAYOUT_LOCKS`. Catches the silent paint-mismatch bug where `urls.json` and `manifest.json` could drift.
+- **Carries forward from v1.6:** Python ThreadPoolExecutor, concurrency 6, built-in 429 retry exp backoff (8/16/32/64s), live per-job logging, page-root nodeId rejection, drop of `get_metadata` from Phase 0, single key resolver, reusable script in repo.
 
 **Cost per run (3 concepts × 3 sizes, pt-BR):**
 
-| Mode | Wall clock | OpenAI | Claude | **Total** | $/banner | vs `/banner` quality |
-|---|---|---|---|---|---|---|
-| v1.1 (original) | ~40 min | ~$0.85 | $5-15 | $6-16 | ~$1.50+ | parity |
-| v1.4 fast (mini, no framework) | ~30s | ~$0.25 | ~$0.40 | ~$0.65 | ~$0.07 | gap |
-| **v1.5 fast (gpt-image-2)** | **~2 min** | **~$0.55** | **~$0.65** | **~$1.20** | **~$0.13** | **parity** |
-| v1.5 `--mini` | ~50s | ~$0.30 | ~$0.55 | ~$0.85 | ~$0.10 | preview-grade |
+| Mode | Wall clock | OpenAI | Claude | **Total** | $/banner-higgsfield | vs `/banner-higgsfield` quality | Reliability |
+|---|---|---|---|---|---|---|---|
+| v1.5 fast (PS ThreadJob) | ~2 min (or ∞ on hang) | ~$0.55 | ~$0.65 | ~$1.20 | ~$0.13 | parity | broke on long runs |
+| v1.6 fast (Python, conc=6) | ~75–150s | ~$0.55 | ~$0.55 | ~$1.10 | ~$0.12 | parity | production-stable |
+| **v1.7 fast (cold cache)** | **~75–150s** | **~$0.55** | **~$0.25** | **~$0.80** | **~$0.09** | **parity** | **production-stable + resumable** |
+| **v1.7 fast (cache hit)** | **~70–145s** | **~$0.55** | **~$0.15** | **~$0.70** | **~$0.08** | **parity** | **production-stable + resumable** |
+| v1.7 `--mini` | ~50s | ~$0.30 | ~$0.20 | ~$0.50 | ~$0.06 | preview-grade | ok |
 
 **When to use which:**
 - **Default** — production deliverables, hero campaigns, client work
@@ -273,7 +272,7 @@ Reads key from `$env:OPENAI_API_KEY` or a gitignored `.env`.
 - **`--strict`** — brand-strict deliverables where you want human gates between MVP and recomps
 
 ```
-/banner2 <figma-url-with-node-id>
+/banner-openai <figma-url-with-node-id>
 Title: <full title text verbatim>           ← one or more (each = one concept)
 Title: <second concept's title>             ← optional additional concepts
 CTA: <button text verbatim>                  ← optional; Claude suggests if missing
@@ -283,12 +282,12 @@ CTA: <button text verbatim>                  ← optional; Claude suggests if mi
 **Example**
 
 ```
-/banner2 https://figma.com/design/<fileKey>/...?node-id=1-456
+/banner-openai https://figma.com/design/<fileKey>/...?node-id=1-456
 Title: Peluang keemasan untuk berdagang - Jangan lepaskan!
 Title: Adakah anda bersedia untuk Demam Emas dagangan? Mulakan sekarang!
 ```
 
-**What's the same vs `/banner`**
+**What's the same vs `/banner-higgsfield`**
 
 - Claude/image-model responsibility split (Claude = BRIEF, model = PICTURE)
 - 6-section Visual Prompt template (450–750 chars preferred, ≤900 hard)
@@ -301,37 +300,41 @@ Title: Adakah anda bersedia untuk Demam Emas dagangan? Mulakan sekarang!
 
 **What's different**
 
-| Concern | `/banner` (Higgsfield) | `/banner2` (OpenAI) |
+| Concern | `/banner-higgsfield` (Higgsfield) | `/banner-openai` (OpenAI) |
 | --- | --- | --- |
 | MVP endpoint | `generate_image` MCP, `gpt_image_2` | `POST /v1/images/generations` with `gpt-image-2` |
 | Recomp endpoint | Same MCP tool, master via `medias[]` | `POST /v1/images/edits` (multipart), master via `image[]=@<path>` |
 | Polling | Async, t+60s poll → 30s cadence, hard cap t+30min | **Synchronous** — request blocks until done (typically 20–90s). HTTP timeout 300s. |
 | Auth | MCP-configured | `OPENAI_API_KEY` env var (or local `.env`). Key never logged. |
-| Concurrency | 8 concurrent (Ultra Monthly) | v1.3 fast mode: all N×M in one ThreadJob (default ThrottleLimit 12). v1.3 strict: 9 per chunk. |
-| Available sizes | Any aspect at 1k | Fixed: `1024x1024`, `1024x1536`, `1536x1024`. Mapped per target; FILL handles residual crop (typically 10–22% — see /banner2 § Aspect map). |
+| Concurrency | 8 concurrent (Ultra Monthly) | v1.7: Python ThreadPoolExecutor, default `max_workers=6`, built-in 429 retry (exp backoff 8/16/32/64s), `--resume` for crash recovery. |
+| Available sizes | Any aspect at 1k | Fixed: `1024x1024`, `1024x1536`, `1536x1024`. Mapped per target; FILL handles residual crop (typically 10–22% — see /banner-openai § Aspect map). |
 | Egress allowlist | `d8j0ntlcm91z4.cloudfront.net` + `mcp.figma.com` | `api.openai.com` + `mcp.figma.com` |
-| Frame name prefix | `Banner — …` | `Banner2 — …` (so /banner and /banner2 grids never collide on the same Figma page) |
+| Frame name prefix | `Banner-Higgsfield — …` | `Banner-OpenAI — …` (so /banner-higgsfield and /banner-openai grids never collide on the same Figma page) |
 
 **Setup (one-time)**
 
 ```bash
-# Option 1 — PowerShell session var (recommended for ad-hoc use)
-$env:OPENAI_API_KEY = "sk-..."
-
-# Option 2 — .env file in repo root (already gitignored)
+# Option 1 — .env file in repo root (already gitignored, recommended for the team)
 echo "OPENAI_API_KEY=sk-..." >> .env
+
+# Option 2 — PowerShell session var (ad-hoc)
+$env:OPENAI_API_KEY = "sk-..."
 ```
+
+The v1.6 resolver searches in order: `$env:OPENAI_API_KEY` → `./.env` → `../.env` → `../../.env` → `../../../.env` → `$HOME/.env`. First hit wins.
 
 **Requires**
 - An OpenAI org with `gpt-image-2` access
 - `OPENAI_API_KEY` set via env var or `.env` (never committed)
+- **Python 3.x on PATH** — v1.7 runs the Python pipeline at [`.claude/scripts/banner-openai/run.py`](.claude/scripts/banner-openai/run.py) + uses the prompt module at [`.claude/scripts/banner-openai/prompts.py`](.claude/scripts/banner-openai/prompts.py) (stdlib only, no `pip install`)
 - Figma MCP connector configured (read + write)
 - Cloud workspaces: allowlist `api.openai.com` and `mcp.figma.com`
+- LP cache lives at [`.claude/memory/lp_cache/`](.claude/memory/lp_cache/) — text-only summaries with 24h TTL, safe to commit and share across team
 
 **Security**
 - The key is read into a single shell variable / curl `-H` header at run time; it is never printed in tool output, never echoed back to the user, and never written to a committed file. If you ever paste a key directly in chat (it's text — it gets persisted), rotate it at https://platform.openai.com/api-keys before continuing.
 
-[Full spec →](.claude/commands/banner2.md)
+[Full spec →](.claude/commands/banner-openai.md)
 
 </details>
 
@@ -376,7 +379,7 @@ Hand Claude a Figma URL + a comma-separated list of locales. It walks the deskto
 <details>
 <summary><strong>/banner-prompt</strong> v1.2 — banner prompts only (no rendering, no Figma)</summary>
 
-Same creative reasoning as `/banner` — **without** firing Higgsfield or touching Figma. Pure prompt output you can copy-paste anywhere, plus 5 numbered alternative approaches you can switch between by replying with a single digit.
+Same creative reasoning as `/banner-higgsfield` — **without** firing Higgsfield or touching Figma. Pure prompt output you can copy-paste anywhere, plus 5 numbered alternative approaches you can switch between by replying with a single digit.
 
 ```
 /banner-prompt
@@ -396,7 +399,7 @@ cta: <verbatim CTA copy>   (optional in this mode)
 - Iterate cheaply (~$0) across multiple creative directions
 - Hand the prompt to a different image tool or vendor
 
-Every variant respects the same framework as `/banner` — cultural safety, RTL handling, verbatim copy, hex-coded palettes, money-element priority, register classification, CTA alignment.
+Every variant respects the same framework as `/banner-higgsfield` — cultural safety, RTL handling, verbatim copy, hex-coded palettes, money-element priority, register classification, CTA alignment.
 
 [Full spec →](.claude/commands/banner-prompt.md)
 

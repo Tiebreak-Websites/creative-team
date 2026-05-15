@@ -1,12 +1,12 @@
 ---
-name: Banner design framework (shared by /banner and /banner2)
+name: Banner design framework (shared by /banner-higgsfield and /banner-openai)
 description: Design principles, aspect-ratio layout locks, archetypes, localization allowlists, RTL rules, typography, hard guardrails, and prompt templates. Loaded when composing a banner brief — not on every turn.
 type: reference
 ---
 
 # Banner Design Framework
 
-Shared reference for `/banner` (Higgsfield) and `/banner2` (OpenAI gpt-image-2). The command files stay thin; this file carries the design intelligence.
+Shared reference for `/banner-higgsfield` (Higgsfield) and `/banner-openai` (OpenAI gpt-image-2). The command files stay thin; this file carries the design intelligence.
 
 ---
 
