@@ -1,10 +1,10 @@
 ---
-description: Render banner concepts with OpenAI gpt-image-2 (default) or gpt-image-1-mini (--mini) and paint them into Figma. MVP-first — generates a 1200×1200 master per concept, then recomposes (not regenerates) into the other sizes via /v1/images/edits. /banner-openai = interactive flow with polls + designer pause. /banner-openai --fast = ship-only, no polls, no pause, requires sizes. Push notification on done.
+description: Render banner concepts with OpenAI gpt-image-2 (default) or gpt-image-1-mini (--mini) and paint them into Figma. v2.0 — Claude is the creative director per concept (writes a free-prose creative brief), Python layer carries only system guardrails (layout, button placement, hard negatives, typography rule). MVP-first — 1200×1200 master per concept, then recompose into other sizes via /v1/images/edits. /banner-openai = interactive flow with polls + designer pause. /banner-openai --fast = ship-only, no polls, no pause, requires sizes. Push notification on done.
 ---
 
-# /banner-openai — OpenAI gpt-image-2 → Figma v1.9
+# /banner-openai — OpenAI gpt-image-2 → Figma v2.0
 
-Two flows, one runner. **MVP-first** in both: the 1:1 master is generated first, then every other size is a **recomposition** of that master via `/v1/images/edits` (not a fresh generation). No cross-aspect divergence.
+Two flows, one runner. **MVP-first** in both: the 1:1 master is generated first, then every other size is a **recomposition** of that master via `/v1/images/edits`. **Claude is the creative director** per concept — writes a free-prose creative brief; the Python layer only stamps the universal guardrails (premise, hard negatives, aspect-locked layout + button placement, verbatim title, typography rule, RTL rule).
 
 | Command | Polls | Designer pause | Sizes | Notify | Use when |
 |---|---|---|---|---|---|
@@ -15,7 +15,56 @@ Two flows, one runner. **MVP-first** in both: the 1:1 master is generated first,
 
 **Reasoning style — strict.** Fast: 1-2 status lines + notification. Casual: one short line per phase + notification + total wall clock. Never narrate the assembled brief. Never show the prompt. The PNG painted into Figma is the deliverable.
 
-**Why MVP-first.** Mirrors `/banner-higgsfield` v2.7. A fresh generation per size produces 3 slightly different barrels / splashes / skylines — same concept, different compositions. Recomposing from the MVP guarantees the visual elements are *the same*, only the layout changes per aspect. Lower variance, better paid-social consistency.
+---
+
+## Core ruleset (v2.0)
+
+1. **Copy is sacred.** Banner text and CTA text are rendered **verbatim**. Claude never paraphrases, never translates, never abbreviates.
+2. **No `CTA:` line → no button.** The literal keyword `CTA:` on its own line is the only trigger for a rendered button.
+3. **Hook is a 2–4 word fragment** pulled verbatim from the banner text. Claude picks which fragment, and writes how it's treated.
+4. **Hook rotates per concept.** Across N concepts of the same banner text, Claude rotates the hook through different phrases in the copy.
+5. **Button color is contrast-first.** Claude picks from the approved 10-pair palette (below) — must contrast strongly against the chosen background, concept fit as tiebreaker.
+6. **Button placement is aspect-locked** (not Claude's call) — see the per-size table below. RTL auto-mirrors.
+7. **Variance is adaptive.** For N > 1, Claude reads the banner text + LP context and proposes a distribution of visual directions (subject / people / brand-asset / typographic / etc.).
+8. **People are photo-real but generic.** Face partially obscured (back of head, profile, over-the-shoulder, hand gesture). Never an identifiable real person.
+9. **Backgrounds are thematic for every concept** (including typographic) — tied to the copy theme.
+10. **Brand-asset hygiene applies to every concept.** If a brand is named in the copy, render it as text only — never the logo, wordmark, droplet/glyph, branded packaging, branded oil drum, branded fuel pump, or branded signage. Recognizable real-world architecture (Petronas Towers, Burj Khalifa, Eiffel Tower, etc.) is forbidden in all concepts — use abstract silhouettes only. No invented infographic icon rows or feature-grid icons unless the copy explicitly calls for them.
+11. **Palette is Claude's call per concept.** LP cache is reference only — Claude can ignore or honor it freely.
+12. **Cap of 5 concepts** per run (genuine differentiation gets hard beyond 5).
+13. **Visual hierarchy is system-enforced.** With CTA: hook ~30–40% canvas height (prominent, not consuming), body title ~6–8% (legible support), button **LARGE at ~14–18%** (action anchor, command-presence, very generous internal padding). Without CTA: hook bumps to ~40–50%; body + thematic visual share the rest.
+14. **CTA text is normalized at runtime.** A single trailing period on the CTA text is stripped automatically (`"Pelajari cara mengikut." → "Pelajari cara mengikut"`) — buttons don't carry sentence-end punctuation. Other punctuation (commas, !, ?) is preserved verbatim.
+
+---
+
+## Approved CTA button colors
+
+Claude picks one combo per concept that has a CTA. Defined in [`prompts.py`](../scripts/banner-openai/prompts.py) and validated at runtime.
+
+| BG | Text | Notes |
+|---|---|---|
+| `#2563EB` | `#FFFFFF` | blue |
+| `#F97316` | `#FFFFFF` | orange |
+| `#16A34A` | `#FFFFFF` | green |
+| `#DC2626` | `#FFFFFF` | red |
+| `#7C3AED` | `#FFFFFF` | violet |
+| `#FACC15` | `#111111` | yellow (dark text) |
+| `#14B8A6` | `#FFFFFF` | teal |
+| `#BE123C` | `#FFFFFF` | rose |
+
+Black (`#111827`) and white (`#FFFFFF`) button backgrounds are deliberately excluded — buttons must read as colored action elements, not chromatic neutrals that blend into the design.
+
+## Aspect-locked button placement
+
+| Size | Button placement |
+|---|---|
+| `1200x1200`, `1080x1080` | bottom-left, aligned with copy block left edge |
+| `1200x628` | bottom-left next to copy block |
+| `1080x1920` | bottom-center inside mobile bottom safe zone |
+| `1080x1350`, `960x1200` | bottom-left, aligned with copy block left edge |
+| `1920x1080` | left third, vertically below copy block |
+| `1200x960` | bottom-left next to copy block |
+
+RTL locales (ar/he/ur/fa/ps) auto-mirror these placements (e.g. bottom-left → bottom-right).
 
 ---
 
@@ -23,22 +72,25 @@ Two flows, one runner. **MVP-first** in both: the 1:1 master is generated first,
 
 ```
 /banner-openai [--fast] [--mini] [other flags] <figma-url-with-node-id>
-Title: <full title text verbatim>           ← one or more (each = one concept, cap 10)
-CTA: <button text verbatim>                 ← optional
+Banner text: <full verbatim banner text — may be multiple sentences>
+CTA: <button text verbatim>                 ← optional; no CTA line → no button
 Sizes: 1200x1200, 1200x628, 1080x1920       ← optional in casual / required in --fast
 ```
 
-`Sizes:` always includes `1200x1200` as the MVP master — auto-added if the user omitted it. If the user passes only `1200x1200`, the run skips Phase 5b (recomp) entirely.
+Legacy `Title:` is still accepted as an alias for `Banner text:` (single concept). Multiple `Banner text:` blocks not supported in v2.0 — N concepts come from the concept-count poll in Phase 2.
+
+`Sizes:` always includes `1200x1200` as the MVP master — auto-added if omitted. If the user passes only `1200x1200`, the run skips Phase 5b (recomp) entirely.
 
 ### Fail-fast errors (one short line, then stop)
 
 - No `node-id` → `Pick the hero frame in Figma and re-paste the URL.`
 - `node-id=0:1` (page root) → `That's the page root, not a hero. Click the LP frame and re-paste.`
 - Hero bounds < 800×400 px → `Selected node looks like a sub-element. Pick the hero frame and re-paste.`
-- No `Title:` → `Need Title: <text> on its own line.`
+- No `Banner text:` → `Need Banner text: <text> on its own line.`
 - `--fast` with no sizes → `--fast requires Sizes: W1xH1, W2xH2 (no defaults in fast mode).`
 - `OPENAI_API_KEY` missing → `OPENAI_API_KEY not found. Add to .env and re-run.`
 - `python --version` fails → `Need Python 3.x on PATH.`
+- Concept count > 5 → `Cap is 5 concepts per run — beyond that, genuine differentiation degrades.`
 
 ---
 
@@ -47,55 +99,89 @@ Sizes: 1200x1200, 1200x628, 1080x1920       ← optional in casual / required in
 One Claude turn. Emit nothing in fast; emit `Phase 1: setup` in casual.
 
 1. Resolve `OPENAI_API_KEY` via ordered search: `$env:OPENAI_API_KEY` → `./.env` → `../.env` → `../../.env` → `../../../.env` → `$HOME/.env`. Never echo.
-2. Read `.claude/memory/banner_design_framework.md` once.
+2. Read `.claude/memory/banner_design_framework.md` once (reference only — used by Claude when writing the creative brief in Phase 2).
 3. **Hero bounds sanity check** — reject sub-elements (W<800 or H<400 px).
 4. **LP context, cache-first** at `.claude/memory/lp_cache/{fileKey}__{nodeId}.json`:
-   - Cache hit + fresh → load `lp_visual_style` + `palette_hex`, skip the screenshot fetch.
+   - Cache hit + fresh → load `lp_visual_style` + `palette_hex` as **reference** for Claude.
    - Cache miss / expired → `get_screenshot(fileKey, nodeId, maxDimension=1200)`, retry 2s+4s on `session expired`, fall back to neutral defaults after 2 retries. Write cache on fresh fetch.
    - `--no-cache` bypasses both read and write.
-5. Language detect from Title + CTA. RTL flag for `ar / he / ur / fa / ps`.
-6. Register classify (`urgency / curiosity / aspiration / provocation / trust / empowerment / identity`).
+   - **Note v2.0:** LP cache is reference only — Claude reads it when composing the creative brief and may honor or ignore it per concept. It is NOT auto-injected into the prompt anymore.
+5. Language detect from banner text. Drives "local people" + "local atmosphere" choices in Phase 2.
+6. RTL flag for `ar / he / ur / fa / ps`.
 
 ---
 
-## Phase 2 — Brief
+## Phase 2 — Brief (Claude as creative director)
 
-**Fast mode:** No polls. Compose the structured concept dict from inputs + Phase 1 defaults. Skip to Phase 3.
+**Fast mode:** No polls. Claude composes the concept(s) silently using the rules below. Skip to Phase 3.
 
 **Casual mode:** Two `AskUserQuestion` calls. Emit `Phase 2: asking` then `Phase 2: brief locked`.
 
-### Casual poll set (first AskUserQuestion call, up to 4 questions):
+### Casual poll 1 — operational (up to 4 questions):
 
-1. **Sizes** *(skip if user passed `Sizes:` or `--sizes=`)* — multi-select from `1200x1200`, `1200x628`, `1080x1920`, `1080x1350`, `1920x1080`. Default recommendation marked. `1200x1200` always included as MVP master.
-2. **Concept count** *(skip if user passed ≥ 2 Titles)* — `Render 1 concept` vs `Generate 2-3 variants of the same Title`.
+1. **Sizes** *(skip if user passed `Sizes:` or `--sizes=`)* — multi-select from `1200x1200`, `1200x628`, `1080x1920`, `1080x1350`, `1920x1080`. `1200x1200` always included as MVP master.
+2. **Concept count** — `1` / `2` / `3` / `5` (cap 5).
 3. **Model** *(skip if user passed `--mini`)* — `gpt-image-2 (quality)` vs `gpt-image-1-mini (faster preview)`.
 
-### Second poll — Brief approval:
+### Composing N concept dicts (Claude's job)
 
-After composing the structured concept(s), show one summary line per concept:
+For each concept, Claude writes a hybrid structured + prose dict. **Hook rotates across concepts**, **palette is Claude's call per concept**, **direction is adaptive** to the copy.
 
-```
-c1: sv · urgency · hook "galet höga" · palette #0E0E10/#F37021/#FFFFFF · barrel + Stockholm skyline
-```
+**Variance distribution (Claude proposes — adaptive, not hardcoded).** For N concepts, Claude reads the banner text and LP context, then picks N visual directions that fit. Example for `Banner text: Oil prices fell. The ringgit moved. PETRONAS earnings shifted. CTA: Learn to connect those dots.` at N=5:
 
-Ask: `Render / Adjust direction / Stop`. `Adjust direction` cap = 2 loops.
+- 2 subject-driven (oil barrel / refinery silhouette / commodity atmosphere)
+- 2 people-driven (English-language locale, photo-real partial — face obscured)
+- 1 brand-asset (PETRONAS-adjacent color + generic product cue — no logo)
 
-### Structured concept dict (output of Phase 2, written to manifest.json in Phase 3):
+Distribution is **proposed in the brief approval poll**, not hardcoded.
+
+**Hook rotation across N concepts.** Pull different 2–4 word fragments from the banner text per concept. For the example above:
+
+- c1: hook `"OIL PRICES FELL"` (typographic, charcoal + saturated orange)
+- c2: hook `"THE RINGGIT MOVED"` (subject, refinery atmosphere)
+- c3: hook `"PETRONAS EARNINGS SHIFTED"` (brand-asset, brand-adjacent green-teal)
+- c4: hook `"CONNECT THE DOTS"` (people, photo-real partial, Asian financial district atmosphere)
+- c5: hook `"OIL PRICES FELL"` (people, photo-real partial, trader gesture)
+
+**Creative brief paragraph (~250–400c per concept).** Claude writes prose covering: visual direction, hook treatment (color / weight / placement detail), palette, atmosphere / surface, mood. Free-form — no template, no slots.
+
+**Brief-authoring rules — what NOT to write into the brief:**
+- Never name a recognizable real-world building. Use generic descriptors: `"twin-tower skyline silhouette"` not `"Petronas Towers"`; `"Gulf marina skyline"` not `"Burj Al Arab"`; `"European cathedral spires"` not `"Notre-Dame"`.
+- Never request the brand's logo, droplet, glyph, wordmark, or branded packaging/signage in the brief — even when the brand is named in the copy. Brand-adjacent color is fine; brand visual mark is not.
+- Never request decorative icon rows, infographic icon sets, or feature-grid icons unless the copy explicitly calls for them.
+- Never enumerate the subject's exact features (age, hair, exact wardrobe, expression) for people-driven concepts — partial-obscured / over-the-shoulder framing only.
+
+**Button combo.** Picked contrast-first against the background Claude proposed. Tiebreaker = concept-fit (urgency → red, growth → green, attention → yellow/orange, premium → black/white).
+
+### Concept dict (v2.0 — written to manifest.json in Phase 3):
 
 ```json
 {
-  "title": "...",                    // verbatim, required
-  "locale": "sv",                    // language tag
-  "register": "urgency",             // mood
-  "hook_phrase": "galet höga",       // oversized type-hero phrase
-  "lp_visual_style": "...",          // one line from Phase 1.4
-  "palette_hex": ["#...","#...","#..."],
-  "concept_visual": "...",           // one-line per-concept visual hook
-  "avoid": "..."                     // negative-instruction field, excluded from moderation scan
+  "title": "Oil prices fell. The ringgit moved. PETRONAS earnings shifted.",
+  "locale": "en",
+  "hook_phrase": "OIL PRICES FELL",
+  "creative_brief": "Type-hero poster. Hook in saturated #F97316 filled letters, condensed display weight, anchored upper-left against a deep charcoal matte gradient. Faint refinery silhouette in navy at the lower edge as thematic anchor. Editorial confident, not loud.",
+  "cta": "Learn to connect those dots",
+  "button_combo": ["#F97316", "#FFFFFF"]
 }
 ```
 
-Auto-injections live in [`prompts.py`](../scripts/banner-openai/prompts.py) (localization, typography rule, RTL, layout lock, forbidden defaults) — Claude does not compose them.
+`cta` + `button_combo` are paired — both present or both absent. `hook_phrase` must be a verbatim case-insensitive substring of `title` (validated by [`prompts.py`](../scripts/banner-openai/prompts.py) at runtime).
+
+### Casual poll 2 — brief approval:
+
+Show one summary line per concept + the proposed distribution:
+
+```
+Distribution: 2 typographic · 2 people · 1 brand-asset
+c1: typographic · hook "OIL PRICES FELL" · #F97316/#FFFFFF button · charcoal + orange
+c2: subject (refinery) · hook "THE RINGGIT MOVED" · #16A34A/#FFFFFF button · navy + teal
+c3: brand-asset · hook "PETRONAS EARNINGS SHIFTED" · #14B8A6/#FFFFFF button · brand-adjacent
+c4: people · hook "CONNECT THE DOTS" · #2563EB/#FFFFFF button · daylight finance district
+c5: people · hook "OIL PRICES FELL" · #DC2626/#FFFFFF button · trader gesture, warm
+```
+
+Ask: `Render / Adjust direction / Stop`. `Adjust direction` cap = 2 loops.
 
 ---
 
@@ -106,7 +192,7 @@ One Claude turn. Emit `Phase 3: creating N×M frames` in casual; silent in fast.
 1. Single `use_figma` JS call: create all N×M frames sized exactly W×H, named `Banner-OpenAI — {concept} — {W}x{H} — {runStamp}`, placed in a row-per-concept × column-per-size grid offset right of the hero. **Note** the 1200×1200 frame `nodeId` for each concept — that's where the MVP gets painted in Phase 4.
 2. Parallel `upload_assets(fileKey, nodeId=<frame_id>, count=1, scaleMode=FILL)` for every frame → one `submitUrl` per frame.
 3. Write to the **Windows-side TEMP path** (`$env:TEMP\banner-openai\` or via `cygpath -w`):
-   - `manifest.json` — `{ "concepts": { key: <structured concept dict> } }` — written ONCE, reused by both runner invocations.
+   - `manifest.json` — `{ "concepts": { key: <concept dict> } }` — written ONCE, reused by both runner invocations.
    - **No `urls.json` yet** — Phase 4 and Phase 5b each write their own scoped `urls.json`.
 
 Size → openaiSize map (the runner accepts only the 3 OpenAI-supported sizes):
@@ -148,7 +234,7 @@ Emit `Phase 5a: review`. One `AskUserQuestion`:
 - **1 concept:** `Looks good / Redo MVP (different direction) / Stop here (skip other sizes)`.
 - **Multiple concepts:** cap top-level options at 4 (`All look good`, `Redo any`, `Stop here`, one most-likely concept). On `Redo any` → follow-up question lists concepts to choose from.
 
-On `Redo Cn`: compose a corrective concept dict (different archetype, not just different props), re-run Phase 4 for that concept only (`--resume` keeps the others), return to 5a.
+On `Redo Cn`: compose a corrective concept dict (different visual direction, different hook fragment if helpful), re-run Phase 4 for that concept only (`--resume` keeps the others), return to 5a.
 
 On `Stop here`: exit. The MVPs already painted in 1:1 frames are the deliverable.
 
@@ -179,7 +265,7 @@ Emit `Phase 5b: recomposing` in casual; silent in fast. Skip if the user request
      --concurrency 6 --resume \
      --model gpt-image-2
    ```
-3. Per-job, the runner detects `mode: "edit"` and calls `post_images_edits()` — multipart POST to `/v1/images/edits` with the master PNG bytes as `image[]` and the recomp prompt from `prompts.build_recomp_prompt(concept, master_size, target_size)` (mirrors framework's § Recomposition Prompt Template, ~800-1100c, hard cap 1200c).
+3. Per-job, the runner detects `mode: "edit"` and calls `post_images_edits()` — multipart POST to `/v1/images/edits` with the master PNG bytes as `image[]` and the recomp prompt from `prompts.build_recomp_prompt(concept, master_size, target_size)`. Recomp preserves title + hook + CTA + button combo + palette, only the layout and button placement change per aspect.
 4. Each successful edit is painted into its frame via the Phase 3 `submitUrl`.
 
 Recomp HTTP errors surface as `edit_http_error` / `edit_failed`; missing master PNG surfaces as `master_missing`. Same exp-backoff retry as gen.
@@ -219,15 +305,13 @@ If any frame is not `ok`, append a one-line per-failure note (status + concept +
 - `--no-moderation` — skip pre-flight forbidden-keyword check
 - `--concurrency=N` — override runner concurrency (default 6)
 
-Removed in v1.9 (carried from v1.8): `--strict`, `--customize`, `--edit-chain` (now default), `--no-qa`, `--no-lp`.
+Removed in v2.0: `--strict`, `--customize`, `--edit-chain` (default), `--no-qa`, `--no-lp`. The `register` classification, the per-archetype surface table, the auto-injected localization atmosphere, and the 60/30/10 palette allocation rule are all gone — Claude composes those into the creative brief when the concept needs them.
 
 ---
 
 ## Moderation
 
-Substring scan, case-insensitive, on `title + hook_phrase + concept_visual + lp_visual_style` only. Blocks: politicians, brand-risky real persons, banned visual concepts. Bypass with `--no-moderation`.
-
-**The `avoid` field is excluded from the scan** — it is a list of negative instructions; including it triggers false positives. Forbidden keywords in `avoid` are still enforced via the auto-injected "no flags, no real person, no fake UI" guardrail in the gen + recomp prompts.
+Substring scan, case-insensitive, on `title + hook_phrase + creative_brief + cta`. Blocks: politicians, brand-risky real persons, banned visual concepts. Bypass with `--no-moderation`.
 
 ---
 
@@ -236,16 +320,19 @@ Substring scan, case-insensitive, on `title + hook_phrase + concept_visual + lp_
 - Default model `gpt-image-2`; `--mini` swaps to `gpt-image-1-mini`. Quality `medium` (never `high`). Output PNG.
 - OpenAI sizes restricted to `1024x1024 / 1024x1536 / 1536x1024`.
 - **MVP always 1200×1200** (1:1). All non-1:1 sizes recompose from it via `/v1/images/edits`.
+- **Concept cap = 5.** Beyond that, genuine differentiation degrades.
+- **Copy verbatim** — never paraphrase the banner text or CTA, never split across panels.
+- **Hook = verbatim substring of banner text** — validated at runtime by `prompts.validate_manifest`.
+- **Button combo from approved 10-pair palette only** — validated at runtime.
 - Pipeline = exactly 5 Claude turns (setup · brief · frames+URLs · MVP gen+paint · recomp gen+paint+notify). In casual, Phase 5a inserts an `AskUserQuestion` turn between MVP paint and recomp.
-- Concurrency 6. Figma upload URLs expire after 10 min — current wall clocks stay under that even for ~50-banner runs.
-- Verbatim Title + CTA — never paraphrase, never split across panels.
+- Concurrency 6. Figma upload URLs expire after 10 min — current wall clocks stay under that even for ~25-banner runs.
 - `OPENAI_API_KEY` never echoed, never committed, never written to any logged command.
 - Python 3.x stdlib only.
 - No autonomous commits.
 
 ---
 
-## Wall clock (3 concepts × 3 sizes, sv, cache-hit)
+## Wall clock (3 concepts × 3 sizes, en, cache-hit)
 
 | Mode | MVP gen | Designer pause | Recomp gen | Total |
 |---|---|---|---|---|

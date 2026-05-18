@@ -1,77 +1,151 @@
-"""Prompt assembly + moderation pre-flight for /banner-openai v1.7.
+"""Prompt assembly + moderation pre-flight for /banner-openai v2.0.
 
 Pure functions. No I/O, no side effects. Imported by run.py.
 
-Moves the 6-section Visual Prompt Template (and the four mandatory
-auto-injections - localization atmosphere, typography rule, RTL composition,
-forbidden defaults) out of Claude's per-run reasoning and into reproducible
-Python. Saves ~$0.30/run in Claude tokens, makes prompt logic unit-testable,
-and keeps the same structure as the framework spec at
-.claude/memory/banner_design_framework.md.
+v2.0 model: the Python layer carries only the *system guardrails* (premise,
+hard negatives, aspect-locked layout + button placement, verbatim title,
+typography rule, RTL rule). The *creative direction* is composed by Claude
+in Phase 2 as a free prose paragraph per concept and arrives in the manifest
+as `creative_brief`. No archetype enums, no per-archetype surface table, no
+palette-weight allocation, no auto-injected locale atmosphere — those are
+Claude's job to write into the brief when the concept calls for them.
+
+Concept dict shape (manifest.json `concepts.<key>`):
+    {
+        "title":          "<verbatim banner_text block, never paraphrased>",
+        "locale":         "en" | "sv" | "pt-BR" | "ar" | ...,
+        "hook_phrase":    "<2-4 word fragment pulled verbatim from title>",
+        "creative_brief": "<~250-400c prose: visual direction, treatment, "
+                          " palette, atmosphere, surface, mood>",
+        "cta":            "<verbatim CTA text>",        # optional
+        "button_combo":   ["#BG_HEX", "#TEXT_HEX"],     # required iff cta present
+    }
 """
 
 from typing import Optional
 
 # ---------------------------------------------------------------------------
-# Localization atmosphere allowlists (mirrors framework Localization section)
+# Approved CTA button color pairs (bg_hex, text_hex). Claude must pick one
+# of these per concept that has a CTA, contrast-first against the banner
+# background, concept-fit as tiebreaker.
 # ---------------------------------------------------------------------------
-LOCALIZATION_ATMOS = {
-    "en":      "Clean editorial premium, navy + ivory + accent.",
-    "pt-BR":   "Vibrant but composed, navy + warm gold or signal green accent.",
-    "pt-PT":   "Restrained European editorial, navy + ivory + muted accent.",
-    "es-LATAM":"Sao Paulo / Mexico City warm daylight, terracotta + sun-saturated colors.",
-    "es-ES":   "Restrained European editorial, navy + ivory + muted accent.",
-    "sv":      "Faint Stockholm cool-daylight skyline in deep navy.",
-    "de":      "Berlin / Zurich skyline silhouette, engineering-precision structure, neutral grey + accent.",
-    "tr":      "Istanbul skyline silhouette, warm daylight, navy + amber accent.",
-    "th":      "Bangkok temple gold-tone + soft warm light, saturated jewel-tone palette.",
-    "ja":      "Tokyo / Kyoto refined minimalism, ink-and-gold or refined neon palette.",
-    "zh":      "Dense city neon abstracted into color flow, glass-tower silhouette, tech gradient.",
-    "ms":      "Kuala Lumpur skyline, warm tropical light, deep black + rich gold + ivory.",
-    "id":      "Jakarta skyline, warm tropical daylight, terracotta + saffron + ivory.",
-    "ar":      "Gulf skyline silhouette, marble-texture gradient + restrained gold-line ornament.",
-    "he":      "Levantine warm sandstone + deep blue palette, restrained ornament.",
-    "ur":      "South-Asian metropolitan, deep teal + warm amber palette.",
-    "fa":      "Persian deep turquoise + warm sand + gold-line ornament.",
-    "ps":      "South-Asian metropolitan, deep teal + warm amber palette.",
+BUTTON_COMBOS = [
+    ("#2563EB", "#FFFFFF"),  # blue
+    ("#F97316", "#FFFFFF"),  # orange
+    ("#16A34A", "#FFFFFF"),  # green
+    ("#DC2626", "#FFFFFF"),  # red
+    ("#7C3AED", "#FFFFFF"),  # violet
+    ("#FACC15", "#111111"),  # yellow (dark text)
+    ("#14B8A6", "#FFFFFF"),  # teal
+    ("#BE123C", "#FFFFFF"),  # rose
+]
+# Black (#111827) and white (#FFFFFF) backgrounds removed — buttons must read
+# as colored action elements, not chromatic neutrals that blend into the design.
+_APPROVED_BG_HEXES = {bg.upper() for bg, _ in BUTTON_COMBOS}
+
+# ---------------------------------------------------------------------------
+# Aspect-locked layout (base) + button placement (only when CTA present)
+# ---------------------------------------------------------------------------
+LAYOUT_BASE = {
+    "1200x1200": "Layout 1:1: hook type-hero anchored upper-left (top 35-45% of canvas); body title at center-left directly below the hook; thematic visual atmosphere fills the right half. Breathing room between text and visual.",
+    "1080x1080": "Layout 1:1: hook type-hero anchored upper-left (top 35-45% of canvas); body title at center-left directly below the hook; thematic visual atmosphere fills the right half. Breathing room between text and visual.",
+    "1200x628":  "Layout 1200x628 wide: hook + body title block left 45%; thematic visual right 55%; horizontal composition; 12% safe top+bottom.",
+    "1080x1920": "Layout 9:16 tall: hook top 22-32%; body title directly below hook; thematic visual center-to-lower 40-55%; mobile safe top 8% + bottom 12%; 10% safe left+right.",
+    "1080x1350": "Layout 4:5 portrait: hook upper third; body title directly below hook; thematic visual center-to-lower; editorial poster composition; 10% safe left+right.",
+    "960x1200":  "Layout 4:5 portrait: hook upper third; body title directly below hook; thematic visual center-to-lower; editorial poster composition; 10% safe left+right.",
+    "1920x1080": "Layout 16:9 landscape: hook + body title block left 40%; thematic visual right 60%; cinematic wide composition.",
+    "1200x960":  "Layout 5:4 mild-wide: hook + body title block left 45%; thematic visual right 55%; horizontal composition.",
+}
+
+BUTTON_PLACEMENT = {
+    "1200x1200": "bottom-left, aligned with the copy block left edge",
+    "1080x1080": "bottom-left, aligned with the copy block left edge",
+    "1200x628":  "bottom-left next to the copy block",
+    "1080x1920": "bottom-center inside the mobile bottom safe zone",
+    "1080x1350": "bottom-left, aligned with the copy block left edge",
+    "960x1200":  "bottom-left, aligned with the copy block left edge",
+    "1920x1080": "left third, vertically below the copy block",
+    "1200x960":  "bottom-left next to the copy block",
+}
+
+LAYOUT_FAMILY = {
+    "1200x1200": "SQUARE",
+    "1080x1080": "SQUARE",
+    "1200x628":  "WIDE",
+    "1920x1080": "LANDSCAPE",
+    "1200x960":  "MILD WIDE",
+    "1080x1920": "TALL",
+    "1080x1350": "PORTRAIT",
+    "960x1200":  "PORTRAIT",
 }
 
 # ---------------------------------------------------------------------------
-# Aspect-Ratio Layout Locks (one tight line per supported size)
+# System layer — fixed across every prompt
 # ---------------------------------------------------------------------------
-_SQUARE  = "Layout 1:1: title block center-left, oversized highlight dominates; visual support lower-right; clean copy zone."
-_WIDE    = "Layout 1200x628 wide: title + oversized highlight left 45%; visual right 55%; horizontal composition; 12% safe top+bottom."
-_TALL    = "Layout 9:16 tall: title top 25-30% with oversized highlight; visual center 40-50%; mobile safe top 8% + bottom 12%; 10% safe left+right."
-_PORTRAIT= "Layout 4:5 portrait: title upper third; visual center; premium editorial poster, campaign-designed; 10% safe left+right."
-_LANDSCAPE="Layout 16:9 landscape: title left 40%; large visual atmosphere right; cinematic campaign, not a photo with text."
-_MILDWIDE = "Layout 5:4 mild-wide: title + highlight left 45%; visual right 55%; horizontal composition."
+SYSTEM_HEADER = (
+    "Designed graphic ad — a finished paid-social poster. "
+    "NOT a photograph of an office, NOT an illustration of furniture, NOT a slide."
+)
 
-LAYOUT_LOCKS = {
-    "1200x1200": _SQUARE,
-    "1080x1080": _SQUARE,
-    "1200x628":  _WIDE,
-    "1080x1920": _TALL,
-    "1080x1350": _PORTRAIT,
-    "960x1200":  _PORTRAIT,
-    "1920x1080": _LANDSCAPE,
-    "1200x960":  _MILDWIDE,
-}
+HARD_NEGATIVES = (
+    "Forbidden: dark office scene, desk with laptop, hands on keyboard, classroom, "
+    "headshot, split-panel composition, real-person likeness, fake UI text or "
+    "invented numbers inside screens or charts, flags, partisan colors, "
+    "real company logos, real brand wordmarks, branded product packaging or signage "
+    "(e.g. branded oil drums, branded fuel pumps, branded buildings), "
+    "recognizable real-world architecture (e.g. Petronas Towers, Burj Khalifa, "
+    "Eiffel Tower, Empire State, Sydney Opera House) — use abstract silhouettes only, "
+    "invented decorative icon rows, infographic icon sets, or feature-grid icons."
+)
 
-# ---------------------------------------------------------------------------
-# Register cues (mirrors framework Register table)
-# ---------------------------------------------------------------------------
-REGISTER_MOOD_PHRASES = {
-    "aspiration":  "aspiration mood",
-    "urgency":     "urgency mood",
-    "provocation": "provocation mood",
-    "trust":       "trust mood",
-    "curiosity":   "curiosity mood",
-    "empowerment": "empowerment mood",
-    "identity":    "identity mood",
-}
+BRAND_DEFENCE_LINE = (
+    "Brand-asset hygiene: if a brand name appears in the Title text, render it as plain "
+    "typography only. DO NOT render the brand's logo, wordmark, droplet/glyph, "
+    "branded packaging, branded oil drum, branded fuel pump, branded signage, or any "
+    "other branded visual mark. The brand name lives in the text, not as a graphic."
+)
 
-# Accented chars that have triggered gpt-image-2 letter-truncation glitches
-_ACCENTED_CHARS = set("ãçôéíñüäöåøàèùâêîûÿÄÖÅŞĞÇÖÜİŁŻŹĆŃŚŚŁ")
+TYPOGRAPHY_RULE = (
+    "Render every word fully and legibly with all characters intact — no accents "
+    "stripped, no letters substituted, no truncation. Punctuation sits clearly "
+    "AFTER the final letter, never overlapping it."
+)
+
+RTL_RULE = (
+    "RTL composition: mirror visual hierarchy; hook and copy block enter from the right. "
+    "Numerals stay LTR even inside an RTL block. Question mark is U+061F when applicable."
+)
+
+
+def hierarchy_rule(has_cta: bool) -> str:
+    """Per-canvas hierarchy weights. Diverges by CTA presence."""
+    if has_cta:
+        return (
+            "Visual hierarchy: hook prominent at ~30-40% canvas height (confident, "
+            "not consuming the canvas). Body title legible at ~6-8% canvas height "
+            "(readable support, not crowding). CTA button LARGE at ~14-18% canvas "
+            "height with very generous internal padding (button text never cramped — "
+            "vertical breathing room ~30-40% of label height on each side). "
+            "Command-presence sized. The action anchor — impossible to miss. "
+            "Breathing room between all elements."
+        )
+    return (
+        "Visual hierarchy: hook is the primary visual anchor at ~40-50% canvas height "
+        "(prominent, not consuming). Body title legible at ~6-8% canvas height "
+        "(readable support). Thematic visual atmosphere supports — together with the hook, "
+        "the two most important elements. Breathing room around all elements."
+    )
+
+
+def normalize_cta(cta: str) -> str:
+    """Strip a single trailing period from CTA text. Buttons rarely carry
+    sentence-end punctuation; a trailing dot reads as a typo on a CTA pill.
+    """
+    cta = cta.strip()
+    if cta.endswith("."):
+        cta = cta[:-1].rstrip()
+    return cta
+
 _RTL_LOCALES = {"ar", "he", "ur", "fa", "ps"}
 
 # ---------------------------------------------------------------------------
@@ -99,201 +173,187 @@ FORBIDDEN_KEYWORDS = {
 }
 
 
-def has_accented_chars(text: str) -> bool:
-    """True if text contains chars known to glitch gpt-image-2 typography."""
-    return any(c in _ACCENTED_CHARS for c in text)
-
-
-def needs_typography_rule(title: str) -> bool:
-    """Title triggers the auto-injected legibility/punctuation hard rule."""
-    return has_accented_chars(title) or "?" in title or "!" in title
-
-
+# ---------------------------------------------------------------------------
+# Public helpers
+# ---------------------------------------------------------------------------
 def is_rtl(locale: str) -> bool:
     """True if the locale renders RTL (Arabic, Hebrew, Urdu, Farsi, Pashto)."""
-    return locale.lower() in _RTL_LOCALES
+    return locale.lower().split("-")[0] in _RTL_LOCALES
 
 
-def localization_line(locale: str) -> str:
-    """Return the one-line atmosphere allowlist for a locale, or default."""
-    return LOCALIZATION_ATMOS.get(locale, LOCALIZATION_ATMOS["en"])
-
-
-def layout_lock(size: str) -> str:
-    """Return the per-aspect-ratio layout lock line."""
-    if size not in LAYOUT_LOCKS:
+def layout_lock(size: str, has_cta: bool) -> str:
+    """Return the per-aspect layout lock, including button placement when CTA present."""
+    if size not in LAYOUT_BASE:
         raise ValueError(
-            f"Unsupported size: {size}. "
-            f"Supported: {sorted(LAYOUT_LOCKS.keys())}"
+            f"Unsupported size: {size}. Supported: {sorted(LAYOUT_BASE.keys())}"
         )
-    return LAYOUT_LOCKS[size]
+    base = LAYOUT_BASE[size]
+    if has_cta:
+        return f"{base} CTA button placed {BUTTON_PLACEMENT[size]}."
+    return base
 
 
-def register_mood(register: str) -> str:
-    """Map a register key to its mood phrase, default 'curiosity mood'."""
-    return REGISTER_MOOD_PHRASES.get(register.lower(), "curiosity mood")
+def _validate_button_combo(combo) -> Optional[str]:
+    """Return an error string if combo is not in the approved set, else None."""
+    if not isinstance(combo, (list, tuple)) or len(combo) != 2:
+        return "button_combo must be a 2-element list [bg_hex, text_hex]"
+    bg, _text = combo[0], combo[1]
+    if not isinstance(bg, str) or bg.upper() not in _APPROVED_BG_HEXES:
+        return f"button_combo bg '{bg}' is not in approved BUTTON_COMBOS"
+    return None
 
 
 def build_prompt(concept: dict, size: str) -> str:
-    """Compose the 6-section Visual Prompt Template for one (concept, size).
+    """Compose the OpenAI generation prompt for one (concept, size).
 
-    `concept` shape (all optional unless marked required):
-      - title           (required, str)            verbatim Title
-      - locale          (str, default 'en')        e.g. 'sv', 'pt-BR'
-      - register        (str, default 'curiosity') e.g. 'empowerment'
-      - hook_phrase     (str, default '')          phrase to oversize as type-hero
-      - lp_visual_style (str, default brand-neutral) one-line LP description
-      - palette_hex     (list[str], default [])    locked palette
-      - concept_visual  (str, default '')          one-line per-concept visual hook
-      - avoid           (str, default safe list)   per-concept cliche avoidance
+    System layer first (premise + hard negatives + layout + verbatim title +
+    hook directive), then Claude's creative_brief paragraph, then optional
+    CTA button line, then conditional typography/RTL rules.
 
-    Returns: a prompt string, ~750-900 chars typical, ready for OpenAI gen.
-    Uses ASCII-only punctuation in template glue; user title passed through verbatim.
+    Required concept fields: title, hook_phrase, creative_brief.
+    Optional: locale (default 'en'), cta + button_combo (paired).
     """
-    title = concept["title"]
-    locale = concept.get("locale", "en")
-    register = concept.get("register", "curiosity")
-    hook = (concept.get("hook_phrase") or "").strip()
-    lp_style = (concept.get("lp_visual_style") or "premium on-brand palette").strip()
-    palette = concept.get("palette_hex") or []
-    visual = (concept.get("concept_visual") or "polished campaign composition with clean copy zone").strip()
-    avoid = (concept.get("avoid") or
-             "dark office, desk, laptop, hands on keyboard, classroom, hard split-panel, generic stock photo").strip()
+    title = concept.get("title")
+    if not title:
+        raise ValueError("concept.title is required")
+    hook = concept.get("hook_phrase")
+    if not hook:
+        raise ValueError("concept.hook_phrase is required")
+    brief = concept.get("creative_brief")
+    if not brief:
+        raise ValueError("concept.creative_brief is required")
+    locale = (concept.get("locale") or "en").strip()
+    cta = (concept.get("cta") or "").strip()
+    button_combo = concept.get("button_combo") or []
 
-    palette_str = " + ".join(palette) if palette else "on-brand"
-    locale_atmos = localization_line(locale)
-    layout = layout_lock(size)
-    mood = register_mood(register)
+    has_cta = bool(cta)
+    if has_cta:
+        err = _validate_button_combo(button_combo)
+        if err:
+            raise ValueError(err)
 
     sections = [
-        f"Premium {locale} paid-social campaign poster, {mood}. NOT an editorial office photo.",
-        f"Palette LOCKED: {palette_str}. LP: {lp_style}. {locale_atmos}",
+        SYSTEM_HEADER,
+        HARD_NEGATIVES,
+        layout_lock(size, has_cta=has_cta),
+        hierarchy_rule(has_cta=has_cta),
+        f'Title (verbatim, render exactly as written): "{title}"',
+        f'Hook: "{hook}" — pulled verbatim from the Title above. This fragment is '
+        "the visual hero of the composition. Claude has chosen the treatment in "
+        "the creative direction below.",
+        BRAND_DEFENCE_LINE,
+        "Creative direction: " + brief.strip(),
     ]
-    if hook:
-        sections.append(
-            f'Hero: "{hook}" oversized highlight typography. '
-            f"Visual: {visual}. Curved gradient panels, polished campaign lighting."
-        )
-    else:
-        sections.append(
-            f"Visual: {visual}. Curved gradient panels, polished campaign lighting."
-        )
-    sections.append(layout)
-    sections.append(f'Title verbatim: "{title}"')
 
-    if hook:
+    if has_cta:
+        bg_hex, text_hex = button_combo[0], button_combo[1]
+        placement = BUTTON_PLACEMENT[size]
+        cta_label = normalize_cta(cta)
         sections.append(
-            f'Readable text only: this Title (the "{hook}" oversized). '
-            "No CTA, logos, fake UI, invented numbers, flags, faces, real person."
+            f'CTA button: "{cta_label}" — LARGE, command-presence pill button, '
+            f"{bg_hex} fill with {text_hex} text, placed {placement}. "
+            "Button height ~14-18% of canvas with very generous internal padding "
+            "(button text never cramped — vertical breathing room ~30-40% of label "
+            "height on each side, horizontal padding ~60-80% of cap-height each side). "
+            "High visual weight, the action anchor — impossible to miss. "
+            "Render the button text verbatim, no paraphrase. "
+            "No trailing punctuation on the button label."
         )
-    else:
-        sections.append(
-            "Readable text only: this Title. "
-            "No CTA, logos, fake UI, invented numbers, flags, faces, real person."
-        )
-    sections.append(f"Avoid: {avoid}.")
 
-    if needs_typography_rule(title):
-        sections.append(
-            "Render every word fully and legibly with all accents intact. "
-            "Punctuation sits clearly AFTER the final letter - never overlap or cut letters."
-        )
+    if locale.lower() != "en":
+        sections.append(TYPOGRAPHY_RULE)
     if is_rtl(locale):
-        sections.append("RTL composition: mirror visual hierarchy, title enters from right.")
+        sections.append(RTL_RULE)
 
-    return "\n".join(sections)
-
-
-# ---------------------------------------------------------------------------
-# Layout-family labels for the Recomposition prompt header
-# ---------------------------------------------------------------------------
-LAYOUT_FAMILY = {
-    "1200x1200": "SQUARE",
-    "1080x1080": "SQUARE",
-    "1200x628":  "WIDE",
-    "1920x1080": "LANDSCAPE",
-    "1200x960":  "MILD WIDE",
-    "1080x1920": "TALL",
-    "1080x1350": "PORTRAIT",
-    "960x1200":  "PORTRAIT",
-}
+    return "\n\n".join(sections)
 
 
 def build_recomp_prompt(concept: dict, master_size: str, target_size: str) -> str:
-    """Compose a recomposition prompt for the /v1/images/edits endpoint.
+    """Compose a recomposition prompt for /v1/images/edits.
 
-    Sent with the MVP (master) image as the input image. The model is told to
-    REDESIGN the layout for the new aspect, NOT to generate a fresh image. Same
-    campaign, same text, same colors, same typography - just repositioned.
-
-    Mirrors framework's § Recomposition Prompt Template (.claude/memory/
-    banner_design_framework.md). Target ~800-1100c, hard cap 1200c.
+    Sent with the MVP master image attached. Preserves the title, hook, button,
+    palette, and visual direction from the master — only the layout and button
+    placement change for the new aspect.
     """
     if target_size == master_size:
-        raise ValueError(f"recomp target {target_size} == master {master_size}; recomp must change aspect")
-    if target_size not in LAYOUT_LOCKS:
-        raise ValueError(f"recomp target {target_size} not in LAYOUT_LOCKS")
+        raise ValueError(
+            f"recomp target {target_size} == master {master_size}; recomp must change aspect"
+        )
+    if target_size not in LAYOUT_BASE:
+        raise ValueError(f"recomp target {target_size} not in LAYOUT_BASE")
 
-    title = concept["title"]
-    locale = concept.get("locale", "en")
-    hook = (concept.get("hook_phrase") or "").strip()
-    palette = concept.get("palette_hex") or []
-    visual = (concept.get("concept_visual") or "").strip()
+    title = concept.get("title")
+    if not title:
+        raise ValueError("concept.title is required")
+    hook = concept.get("hook_phrase")
+    if not hook:
+        raise ValueError("concept.hook_phrase is required")
+    locale = (concept.get("locale") or "en").strip()
+    cta = (concept.get("cta") or "").strip()
+    button_combo = concept.get("button_combo") or []
+    has_cta = bool(cta)
+    if has_cta:
+        err = _validate_button_combo(button_combo)
+        if err:
+            raise ValueError(err)
 
-    palette_str = " + ".join(palette) if palette else "from master"
     family = LAYOUT_FAMILY.get(target_size, "TARGET")
-    layout = layout_lock(target_size)
+
+    preserve = [
+        f'- Title (verbatim from master): "{title}"',
+        f'- Hook fragment as the type-hero: "{hook}" (same color, weight, and treatment as the master)',
+    ]
+    if has_cta:
+        bg_hex, text_hex = button_combo[0], button_combo[1]
+        placement = BUTTON_PLACEMENT[target_size]
+        cta_label = normalize_cta(cta)
+        preserve.append(
+            f'- CTA button: "{cta_label}" — {bg_hex} fill with {text_hex} text, '
+            f"repositioned to {placement}. Button stays LARGE, ~14-18% of canvas height, "
+            f"with very generous internal padding. Command-presence sized. "
+            f"The action anchor — impossible to miss. No trailing punctuation on the label."
+        )
+    preserve.append("- Thematic background and visual elements from the master, repositioned for the new aspect")
+    preserve.append("- Palette from the master (no new colors introduced)")
 
     sections = [
         f"RECOMPOSE the attached master ({master_size}) into {target_size}. "
-        "Same campaign, same text, same colors, same typography. "
+        "Same campaign, same text, same hook, same colors, same visual direction. "
         "NOT a stretch, NOT a crop, NOT a fresh generation. "
-        "Layout is REDESIGNED for this aspect - never split-panel.",
-        f"NEW LAYOUT ({family}): {layout}",
-        "CAMPAIGN ELEMENT MANIFEST (preserve, reposition, do not remove):",
-        "- title hierarchy and verbatim text",
-        (f'- highlight treatment: "{hook}" stays the oversized type-hero'
-         if hook else "- highlight treatment from master"),
-        (f"- main visual metaphor: {visual}"
-         if visual else "- main visual metaphor from master"),
-        f"- color system: {palette_str}",
-        "- market atmosphere and graphic panel style from master",
-        f'TITLE (verbatim): "{title}".',
+        "Layout is REDESIGNED for this aspect — never split-panel.",
+
+        f"NEW LAYOUT ({family}): {layout_lock(target_size, has_cta=has_cta)}",
+
+        hierarchy_rule(has_cta=has_cta),
+
+        "PRESERVE (reposition, do not remove):\n" + "\n".join(preserve),
+
+        BRAND_DEFENCE_LINE,
+
         f"Constraints: exactly {target_size} px. No new content. No watermarks. "
-        "NO HARD SPLIT-PANEL. NO regression into dark office, desk, lamp, fake UI, real person, flag.",
+        "NO HARD SPLIT-PANEL. NO regression into dark office, desk, laptop, fake UI, "
+        "real person, flag, real company logo, real brand wordmark, branded packaging, "
+        "recognizable real-world architecture, invented icon rows.",
     ]
     if is_rtl(locale):
-        sections.append("RTL composition: keep mirrored direction, title block on right.")
-    if needs_typography_rule(title):
-        sections.append(
-            "Render every word fully and legibly with all accents intact. "
-            "Punctuation sits clearly AFTER the final letter - never overlap or cut letters."
-        )
-    return "\n".join(sections)
+        sections.append("RTL composition: keep mirrored direction; hook + copy block on the right.")
+    if locale.lower() != "en":
+        sections.append(TYPOGRAPHY_RULE)
+
+    return "\n\n".join(sections)
 
 
 def check_moderation(concept: dict) -> tuple[bool, Optional[str]]:
-    """Pre-flight: scan ONLY positive-instruction user fields for forbidden keywords.
+    """Pre-flight: scan user-authored fields for forbidden keywords.
 
-    Crucially does NOT scan the assembled prompt - the auto-injected
-    "no real person" / "no flag" guardrails would always trigger a false
-    positive against the FORBIDDEN_KEYWORDS list.
-
-    Scans: title, hook_phrase, concept_visual, lp_visual_style.
-
-    The `avoid` field is intentionally EXCLUDED - it is a negative-instruction
-    field ("do NOT show X"). Including it caused false positives where a user
-    writing `avoid: "us flag"` to keep flags OUT of the render would block the
-    render entirely.
-
-    Returns (allowed, reason_if_blocked). Case-insensitive substring match.
-    Saves ~30s + ~$0.04 per blocked job vs letting OpenAI return moderation_blocked.
+    Scans: title, hook_phrase, creative_brief, cta. Case-insensitive substring.
+    Returns (allowed, reason_if_blocked).
     """
     user_fields = [
         concept.get("title", ""),
         concept.get("hook_phrase", ""),
-        concept.get("concept_visual", ""),
-        concept.get("lp_visual_style", ""),
+        concept.get("creative_brief", ""),
+        concept.get("cta", ""),
     ]
     haystack = "\n".join(s for s in user_fields if s).lower()
     for kw in FORBIDDEN_KEYWORDS:
@@ -303,62 +363,122 @@ def check_moderation(concept: dict) -> tuple[bool, Optional[str]]:
 
 
 def validate_manifest(manifest: dict, urls: list) -> list:
-    """Cross-check that every (concept, size) in urls exists in manifest.
+    """Cross-check the manifest + urls before kicking off a run.
 
-    Returns a list of error messages (empty = ok).
-    Catches the silent paint-mismatch bug where urls.json and manifest.json drift.
+    Catches:
+    - missing required concept fields (title, hook_phrase, creative_brief)
+    - hook_phrase not a substring of title
+    - cta present without a valid button_combo
+    - urls referencing a concept or size that doesn't exist
     """
     errors = []
     if "concepts" not in manifest or not isinstance(manifest["concepts"], dict):
         errors.append("manifest missing 'concepts' dict")
         return errors
+
     concepts = manifest["concepts"]
+
+    for key, c in concepts.items():
+        if not isinstance(c, dict):
+            errors.append(f"concept '{key}' is not an object")
+            continue
+        for f in ("title", "hook_phrase", "creative_brief"):
+            if not c.get(f):
+                errors.append(f"concept '{key}' missing required field '{f}'")
+        title = c.get("title") or ""
+        hook = c.get("hook_phrase") or ""
+        if title and hook and hook.lower() not in title.lower():
+            errors.append(
+                f"concept '{key}' hook_phrase {hook!r} is not a substring of title "
+                f"(case-insensitive). Hook must be pulled verbatim from the title."
+            )
+        cta = (c.get("cta") or "").strip()
+        if cta:
+            err = _validate_button_combo(c.get("button_combo"))
+            if err:
+                errors.append(f"concept '{key}' cta present but {err}")
+
     for i, u in enumerate(urls):
         for field in ("concept", "size", "openaiSize", "submitUrl"):
             if field not in u:
                 errors.append(f"urls[{i}] missing field '{field}'")
         if "concept" in u and u["concept"] not in concepts:
             errors.append(f"urls[{i}] concept '{u['concept']}' not in manifest.concepts")
-        if "size" in u and u["size"] not in LAYOUT_LOCKS:
-            errors.append(f"urls[{i}] size '{u['size']}' not in supported LAYOUT_LOCKS")
+        if "size" in u and u["size"] not in LAYOUT_BASE:
+            errors.append(f"urls[{i}] size '{u['size']}' not in supported LAYOUT_BASE")
+
     return errors
 
 
-# Convenience: quick self-test when run directly.
+# ---------------------------------------------------------------------------
+# Self-test
+# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     sample_concept = {
-        "title": "Lär dig handla olja med personlig handledning!",
-        "locale": "sv",
-        "register": "empowerment",
-        "hook_phrase": "personlig handledning",
-        "lp_visual_style": "deep charcoal + vivid orange + glossy oil barrel",
-        "palette_hex": ["#0E0E10", "#F37021", "#FFFFFF"],
-        "concept_visual": "spotlight on glossy orange oil barrel + subtle rising tick-chart wave",
-        "avoid": "classroom, instructor portrait, headshot",
+        "title": "Oil prices fell. The ringgit moved. PETRONAS earnings shifted.",
+        "locale": "en",
+        "hook_phrase": "OIL PRICES FELL",
+        "creative_brief": (
+            "Type-hero poster. Hook in saturated #F97316 filled letters, "
+            "condensed display weight, anchored upper-left against a deep "
+            "charcoal matte gradient. Faint refinery silhouette in navy at "
+            "the lower edge as thematic anchor. Editorial confident, not loud."
+        ),
+        "cta": "Learn to connect those dots",
+        "button_combo": ["#F97316", "#FFFFFF"],
     }
+    print("=" * 70)
+    print("GEN PROMPTS")
+    print("=" * 70)
     for size in ("1200x1200", "1200x628", "1080x1920"):
         p = build_prompt(sample_concept, size)
-        print(f"--- {size} ({len(p)} chars) ---")
+        print(f"\n--- {size} ({len(p)} chars) ---")
         print(p)
-        print()
-    print(f"--- recomp tests ---")
+
+    print("\n" + "=" * 70)
+    print("RECOMP PROMPTS")
+    print("=" * 70)
     for size in ("1200x628", "1080x1920"):
         p = build_recomp_prompt(sample_concept, "1200x1200", size)
-        print(f"--- recomp 1200x1200 -> {size} ({len(p)} chars) ---")
+        print(f"\n--- recomp 1200x1200 -> {size} ({len(p)} chars) ---")
         print(p)
-        print()
 
-    print(f"--- moderation tests ---")
+    print("\n" + "=" * 70)
+    print("NO-CTA VARIANT")
+    print("=" * 70)
+    no_cta = {**sample_concept}
+    no_cta.pop("cta")
+    no_cta.pop("button_combo")
+    p = build_prompt(no_cta, "1200x1200")
+    print(f"\n--- 1200x1200 no-cta ({len(p)} chars) ---")
+    print(p)
+
+    print("\n" + "=" * 70)
+    print("VALIDATION TESTS")
+    print("=" * 70)
     cases = [
-        ({"title": "Lär dig handla olja"}, True),
-        ({"title": "Trump's economic plan"}, False),
-        ({"title": "Clean campaign", "concept_visual": "elon musk silhouette"}, False),
-        ({"title": "Stockholm investing", "hook_phrase": "real person"}, False),
-        ({"title": "Premium fund management", "lp_visual_style": "navy + gold"}, True),
-        # avoid is exempt from scan - keywords here must NOT block
-        ({"title": "Clean campaign", "avoid": "us flag, swastika, real person"}, True),
+        ("ok", {"concepts": {"c1": sample_concept}}, [{"concept": "c1", "size": "1200x1200", "openaiSize": "1024x1024", "submitUrl": "https://x"}]),
+        ("hook not in title", {"concepts": {"c1": {**sample_concept, "hook_phrase": "RIGGED MARKETS"}}}, []),
+        ("missing brief", {"concepts": {"c1": {**sample_concept, "creative_brief": ""}}}, []),
+        ("bad button combo", {"concepts": {"c1": {**sample_concept, "button_combo": ["#000000", "#FFFFFF"]}}}, []),
+        ("unknown size in urls", {"concepts": {"c1": sample_concept}}, [{"concept": "c1", "size": "1234x5678", "openaiSize": "1024x1024", "submitUrl": "x"}]),
     ]
-    for c, expected in cases:
+    for label, mani, urls in cases:
+        errs = validate_manifest(mani, urls)
+        print(f"\n[{label}] {len(errs)} error(s)")
+        for e in errs:
+            print(f"  - {e}")
+
+    print("\n" + "=" * 70)
+    print("MODERATION TESTS")
+    print("=" * 70)
+    mcases = [
+        ({"title": "Oil prices fell", "hook_phrase": "OIL PRICES", "creative_brief": "poster"}, True),
+        ({"title": "Trump's plan", "hook_phrase": "TRUMP", "creative_brief": "poster"}, False),
+        ({"title": "Premium fund", "hook_phrase": "PREMIUM", "creative_brief": "elon musk silhouette"}, False),
+        ({"title": "Stockholm", "hook_phrase": "real person", "creative_brief": "poster"}, False),
+    ]
+    for c, expected in mcases:
         ok, reason = check_moderation(c)
         status = "PASS" if ok == expected else "FAIL"
         print(f"  [{status}] expected={expected} got={ok} title={c.get('title')!r} reason={reason}")

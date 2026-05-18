@@ -237,9 +237,9 @@ v2.6 fixed the visual direction (campaign poster, not editorial photo) but Claud
 </details>
 
 <details>
-<summary><strong>/banner-openai</strong> v1.9 — MVP-first (1:1 master → recomp via /v1/images/edits) + interactive polls + designer pause + push notification, ~115-165s for a 3×3 run</summary>
+<summary><strong>/banner-openai</strong> v2.0 — Claude as creative director per concept (free-prose creative brief) + system-layer guardrails (layout, button placement, hard negatives) + MVP-first (1:1 master → recomp via /v1/images/edits) + push notification, ~115-165s for a 3×3 run</summary>
 
-Renders banner concepts with **OpenAI gpt-image-2** (default) or **gpt-image-1-mini** (`--mini`) and paints them into Figma. **MVP-first** — the 1200×1200 master is generated first, then every other size is a **recomposition** of that master via `POST /v1/images/edits` (multipart, master via `image[]`). Mirrors the higgsfield model — same campaign across all aspects, no cross-aspect drift.
+Renders banner concepts with **OpenAI gpt-image-2** (default) or **gpt-image-1-mini** (`--mini`) and paints them into Figma. **Claude is the creative director per concept** — writes a free-prose creative brief covering visual direction, hook treatment, palette, atmosphere, surface, mood. The Python layer carries only the universal guardrails: premise, hard negatives, aspect-locked layout + button placement, verbatim title, typography rule, RTL rule. **MVP-first** — 1200×1200 master per concept, then every other size is a **recomposition** of that master via `POST /v1/images/edits`.
 
 | Command | Polls | Designer pause | Sizes | Use when |
 |---|---|---|---|---|
@@ -250,23 +250,36 @@ Renders banner concepts with **OpenAI gpt-image-2** (default) or **gpt-image-1-m
 
 **Reasoning style is strict.** Fast = 1-2 status lines then a push notification. Casual = one short line per phase, then notification + total wall clock. The PNG painted into Figma is the deliverable — no narration of the brief, no QA report, no summary table.
 
-**v1.9 changes vs v1.8:**
-- **MVP-first orchestration** — Phase 4 generates only the 1200×1200 master per concept (one `/v1/images/generations` call). Phase 5b then recomposes each non-1:1 size from that master via `/v1/images/edits` — same campaign, same colors, same typography, just relaid out for the new aspect. Eliminates the v1.8 drift where three parallel free gens produced three slightly different barrels / splashes / skylines.
-- **Runner edits-endpoint support** — [`run.py`](.claude/scripts/banner-openai/run.py) now dispatches per-job on `mode: "gen" | "edit"`. Edits go through a new `post_images_edits()` helper that assembles multipart/form-data (stdlib only) with `image[]` pointing at the master PNG saved by the prior MVP run.
-- **New prompt builder** — [`prompts.py`](.claude/scripts/banner-openai/prompts.py) `build_recomp_prompt(concept, master_size, target_size)` composes the layout-redesign brief per the framework's § Recomposition Prompt Template (~800-1100c, hard cap 1200c).
-- **Designer pause in casual** — after the MVP paints, one `AskUserQuestion` to approve / redo / stop before recomp fires. Auto-skipped in `--fast`.
-- **2-batch runner invocation** — Claude runs the runner twice per casual flow (MVP, then recomp with `--resume`), letting `results.json` accumulate atomically and supporting mid-run resume after a kill.
-- **`avoid` excluded from moderation scan** — fixed in `prompts.py:check_moderation`. Was triggering false positives like `avoid: "us flag"` → blocked render. Negative-instruction fields are now exempt; the auto-injected "no flag, no real person, no fake UI" guardrail still applies in the prompt itself.
+**v2.0 changes vs v1.9:**
+- **Claude is creative director per concept.** The concept dict drops `register / lp_visual_style / palette_hex / concept_visual / avoid` and gains `hook_phrase` + `creative_brief` (free prose, ~250–400c). Two banners on the same copy can now render *visually different* instead of differing only by which slot value Claude picked.
+- **Copy is sacred.** Banner text + CTA text are rendered verbatim. No paraphrase, no translation, no abbreviation.
+- **`CTA:` keyword controls button rendering.** No `CTA:` line → no button. The literal keyword is the trigger.
+- **Hook = 2–4 word verbatim fragment** from the banner text, **rotated per concept** for N > 1. Validated at runtime by [`prompts.validate_manifest`](.claude/scripts/banner-openai/prompts.py) — hook must be a substring of title.
+- **Approved 10-pair button palette** (`#2563EB/#F97316/#16A34A/#DC2626/#7C3AED/#111827/#FACC15/#14B8A6/#BE123C/#FFFFFF`). Claude picks contrast-first against background, concept-fit as tiebreaker.
+- **Aspect-locked button placement** — `1:1` bottom-center, `1200x628` bottom-left next to copy, `9:16` bottom-center safe zone, `16:9` left-third, etc. Not Claude's call.
+- **Adaptive variance for N concepts.** Claude reads banner text + LP context and proposes a distribution (subject / people / brand-asset / typographic / etc.). Distribution surfaced in the brief approval poll.
+- **People rendering: photo-real but generic.** Face partially obscured (back of head, profile, over-the-shoulder, hand gesture). Real-person likeness still forbidden.
+- **Thematic backgrounds for every concept**, including typographic.
+- **Brand-specific concepts** use brand-adjacent color + generic product cue (no logo, no recognizable architecture).
+- **LP cache is reference only.** Read by Claude when composing the brief; no longer auto-injected into the prompt.
+- **Concept cap lowered from 10 to 5.** Beyond 5, genuine differentiation degrades.
+- **Brand-asset hygiene hardened (post-test fix).** `HARD_NEGATIVES` now blocks real company logos, real brand wordmarks, branded packaging (oil drums, fuel pumps, signage), and recognizable real-world architecture (Petronas Towers, Burj Khalifa, Eiffel Tower, etc.). A `BRAND_DEFENCE_LINE` is auto-injected into every prompt: "if a brand name appears in the Title text, render it as plain typography only — DO NOT render the brand's logo, wordmark, droplet/glyph, branded packaging, or branded signage." Phase 2 brief-authoring rules updated to forbid naming recognizable buildings in the creative brief.
+- **Visual hierarchy weights specified (post-test fix).** With CTA: hook ~30–40% canvas height, body title ~6–8%, button ~10–12% (action anchor, generous padding). Without CTA: hook bumps to ~40–50%. Injected as `HIERARCHY_RULE` after the layout lock.
+- **1:1 button placement moved from bottom-center to bottom-left** (aligned with copy block left edge, RTL-mirrored). Cleaner L-shape composition, button no longer disconnected from the copy stack. `LAYOUT_BASE` strings also softened — `dominates as type-hero` replaced with `type-hero anchored upper-left` so the hook stops consuming the whole canvas.
+- **CTA button rendering hardened.** Prompt now specifies "LARGE prominent pill button, height ~10–12% of canvas with generous internal padding (button text comfortable, never cramped), high visual weight — the action anchor, impossible to miss." Carries through to recomp.
+- **Button color palette trimmed to 8 (post-test fix).** Black (`#111827`) and white (`#FFFFFF`) backgrounds removed — buttons must read as colored action elements, not chromatic neutrals. Remaining: blue / orange / green / red / violet / yellow / teal / rose.
+- **Button size bumped to ~14–18% canvas height (post-test fix).** The previous ~10–12% target rendered as ~5–7% in practice — model under-delivered. New target with "command-presence sized, very generous internal padding" pushes the rendered button to a properly prominent action anchor.
+- **CTA text normalized at runtime (post-test fix).** A single trailing period on the CTA is stripped before the prompt is built (`"Pelajari cara mengikut." → "Pelajari cara mengikut"`). Buttons don't carry sentence-end punctuation. Other punctuation (commas, exclamation, question mark) preserved verbatim. Implemented as `prompts.normalize_cta()`.
 
-**v1.8 carries forward:**
-- Push notification on done · `--fast` strips polls + pause + requires sizes · phases flat 1-6 · QA / silent QA / Phase 8 summary deleted · hero bounds sanity check · Windows TEMP path portability.
+**v1.9 carries forward:**
+- MVP-first orchestration · `/v1/images/edits` recomp · runner mode dispatch on `gen` | `edit` · designer pause in casual · 2-batch runner with `--resume`.
 
-**v1.7 carries forward:**
-- Python ThreadPoolExecutor (conc 6), 429 exp backoff (8/16/32/64s, max 4), LP screenshot cache (24h TTL), structured concept manifest → `prompts.build_prompt()` assembly, moderation pre-flight, `--resume`, manifest validation, frame name prefix `Banner-OpenAI —`.
+**v1.7–v1.8 carries forward:**
+- Push notification on done · `--fast` strips polls + pause + requires sizes · phases flat 1-6 · hero bounds sanity check · Windows TEMP path portability · Python ThreadPoolExecutor (conc 6) · 429 exp backoff (8/16/32/64s, max 4) · LP screenshot cache (24h TTL) · moderation pre-flight · manifest validation · frame name prefix `Banner-OpenAI —`.
 
-**Removed flags:** `--strict`, `--customize`, `--edit-chain` (now default), `--no-qa`, `--no-lp`.
+**Removed flags:** `--strict`, `--customize`, `--edit-chain` (now default), `--no-qa`, `--no-lp`. **Removed in v2.0:** `register` classification, per-archetype surface table, auto-injected localization atmosphere, 60/30/10 palette allocation rule — Claude composes these into the creative brief when the concept needs them.
 
-**Wall clock + cost (3 concepts × 3 sizes, sv, LP cache hit):**
+**Wall clock + cost (3 concepts × 3 sizes, en, LP cache hit):**
 
 | Mode | MVP gen | Pause | Recomp gen (edits) | Total | $/run | $/banner |
 |---|---|---|---|---|---|---|
@@ -279,16 +292,19 @@ Renders banner concepts with **OpenAI gpt-image-2** (default) or **gpt-image-1-m
 
 ```
 /banner-openai [--fast] [--mini] [--sizes=W1xH1,W2xH2] <figma-url-with-node-id>
-Title: <full title text verbatim>           ← one or more (each = one concept, cap 10)
-CTA: <button text verbatim>                 ← optional
+Banner text: <full banner copy verbatim — may be multiple sentences>
+CTA: <button text verbatim>                 ← optional; omit for no button
 Sizes: 1200x1200, 1200x628, 1080x1920       ← optional in casual / required in --fast
 ```
+
+Legacy `Title:` is still accepted as an alias for `Banner text:`. Concept count comes from the Phase 2 poll, not multiple `Banner text:` blocks. Cap = 5.
 
 **Example**
 
 ```
 /banner-openai --fast https://figma.com/design/<fileKey>/...?node-id=2001-1697
-Title: Oljepriserna är galet höga just nu!
+Banner text: Oil prices fell. The ringgit moved. PETRONAS earnings shifted.
+CTA: Learn to connect those dots
 Sizes: 1200x1200, 1200x628, 1080x1920
 ```
 
