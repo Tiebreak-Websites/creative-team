@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digital Spearhead — SpaceX IPO: Every story has a side they do not show you.</title>
+  <meta name="description" content="The SpaceX IPO has two sides. See both — and learn how to position yourself either way the listing goes." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              blue: '#0091D9',
+              'blue-light': '#5BBAE6',
+              'blue-dark': '#0072B5',
+              'blue-deep': '#003D6E',
+              dark: '#21272A',
+              'dark-2': '#1a1f22',
+              light: '#F2F4F8',
+              beam: '#F0EBC8',
+              'beam-soft': '#E0DCB8',
+            },
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            display: ['Barlow Condensed', 'Inter', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+
+  <!-- Three.js importmap for the 3D moon -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <link rel="stylesheet" href="styles.css?v=11" />
+</head>
+<body class="bg-brand-dark text-white antialiased overflow-x-hidden">
+
+  <!-- NAV — centered logo + language switcher (right) -->
+  <nav id="nav" class="fixed top-0 left-0 right-0 z-50 transition-colors duration-300">
+    <div class="max-w-7xl mx-auto px-6 py-4 relative flex items-center justify-end">
+      <a href="#" class="logo flex items-center absolute left-1/2 -translate-x-1/2">
+        <img src="assets/Group%20430.svg" alt="Digital Spearhead" class="logo-img" />
+      </a>
+      <div class="lang-switcher" role="group" aria-label="Language">
+        <button type="button" class="lang-btn is-active" aria-current="true" data-lang="en">EN</button>
+        <button type="button" class="lang-btn is-soon" disabled aria-disabled="true" title="Coming soon" data-lang="pt">PT</button>
+        <button type="button" class="lang-btn is-soon" disabled aria-disabled="true" title="Coming soon" data-lang="es">ES</button>
+        <button type="button" class="lang-btn is-soon" disabled aria-disabled="true" title="Coming soon" data-lang="th">TH</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-28 pb-20">
+    <canvas id="starfield" class="absolute inset-0 w-full h-full"></canvas>
+    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[900px] bg-brand-blue/5 rounded-full blur-3xl pointer-events-none"></div>
+
+    <div class="relative z-10 max-w-5xl mx-auto px-6 text-center">
+      <h1 class="hero-headline font-display text-4xl sm:text-5xl lg:text-6xl font-bold leading-[1.1] tracking-tight max-w-4xl mx-auto text-white">
+        <span class="block">Every IPO story has a side</span>
+        <span class="block">they do not show you</span>
+      </h1>
+    </div>
+
+    <!-- MOON STAGE -->
+    <div id="moonStage" class="moon-stage is-bright relative w-full max-w-6xl mx-auto px-6 mt-4">
+      <!-- 3D MOON — rendered via Three.js into this container -->
+      <div id="moonContainer" class="moon-3d-container" aria-hidden="true"></div>
+      <div class="float-card card-1">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        </div>
+        <div class="card-body">
+          <span class="card-eyebrow bright-only">Bright side</span>
+          <span class="card-eyebrow dark-only">Dark side</span>
+          <span class="card-text bright-only">Global brand attention</span>
+          <span class="card-text dark-only">IPO timing is still uncertain</span>
+        </div>
+      </div>
+      <div class="float-card card-2">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12.5C2 9.46 4.46 7 7.5 7M2 17c0-5.52 4.48-10 10-10M5 19a2 2 0 1 1-4 0 2 2 0 0 1 4 0z"/><path d="M14 14l7 7M16 11l5 5M18 8l3 3"/></svg>
+        </div>
+        <div class="card-body">
+          <span class="card-eyebrow bright-only">Bright side</span>
+          <span class="card-eyebrow dark-only">Dark side</span>
+          <span class="card-text bright-only">Starlink adds revenue strength</span>
+          <span class="card-text dark-only">Valuation may already be stretched</span>
+        </div>
+      </div>
+      <div class="float-card card-3">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        </div>
+        <div class="card-body">
+          <span class="card-eyebrow bright-only">Bright side</span>
+          <span class="card-eyebrow dark-only">Dark side</span>
+          <span class="card-text bright-only">Investor demand could be strong</span>
+          <span class="card-text dark-only">Launch and execution risk remain</span>
+        </div>
+      </div>
+      <div class="float-card card-4">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
+        </div>
+        <div class="card-body">
+          <span class="card-eyebrow bright-only">Bright side</span>
+          <span class="card-eyebrow dark-only">Dark side</span>
+          <span class="card-text bright-only">Elon Musk drives market interest</span>
+          <span class="card-text dark-only">Heavy capital needs can pressure returns</span>
+        </div>
+      </div>
+      <div class="float-card card-5">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        </div>
+        <div class="card-body">
+          <span class="card-eyebrow bright-only">Bright side</span>
+          <span class="card-eyebrow dark-only">Dark side</span>
+          <span class="card-text bright-only">Space + AI + satellites = powerful story</span>
+          <span class="card-text dark-only">Post-IPO volatility could be sharp</span>
+        </div>
+      </div>
+
+      <!-- Pill toggle: Light side / Dark side -->
+      <div class="moon-toggle-wrap">
+        <div id="moonToggle" class="seg-toggle" role="tablist" aria-label="Choose side">
+          <button type="button" class="seg-btn active" data-side="bright" role="tab" aria-selected="true">Light side</button>
+          <button type="button" class="seg-btn" data-side="dark" role="tab" aria-selected="false">Dark side</button>
+          <div class="seg-thumb" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Below the moon copy -->
+    <div class="relative z-10 max-w-3xl mx-auto px-6 mt-4 text-center reveal">
+      <p class="text-lg sm:text-xl text-white/80 leading-relaxed font-medium">
+        Through online trading you can profit either way the IPO goes.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       01 — WHAT IS AN IPO?
+       ============================================================ -->
+  <section id="what-is" class="section-dark section-tech relative py-32 px-6 overflow-hidden">
+    <div class="grid-bg"></div>
+    <div class="max-w-7xl mx-auto relative">
+      <div class="reveal text-center mx-auto max-w-3xl">
+        <div class="section-focal"></div>
+        <h2 class="font-display text-4xl sm:text-5xl font-bold leading-tight text-white">What is an IPO?</h2>
+        <p class="mt-6 text-lg text-white/80 leading-relaxed">
+          An IPO is when a private company sells shares to the public for the first time. It can create hype, volatility, and new market opportunities — but also risk.
+        </p>
+      </div>
+
+      <!-- IPO JOURNEY — 4-step process diagram -->
+      <div class="ipo-journey reveal mt-16">
+        <div class="journey-step">
+          <span class="mono step-num">01</span>
+          <div class="step-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h1M9 13h1M9 17h1M14 9h1M14 13h1M14 17h1"/></svg>
+          </div>
+          <div class="step-label">Private Company</div>
+          <div class="mono step-detail">PRE-IPO</div>
+        </div>
+
+        <div class="journey-arrow">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div class="journey-step">
+          <span class="mono step-num">02</span>
+          <div class="step-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>
+          </div>
+          <div class="step-label">S-1 Filing</div>
+          <div class="mono step-detail">SEC REVIEW</div>
+        </div>
+
+        <div class="journey-arrow">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div class="journey-step">
+          <span class="mono step-num">03</span>
+          <div class="step-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h6l5-5v14l-5-5H3v-4z"/><path d="M18 8a4 4 0 0 1 0 8"/></svg>
+          </div>
+          <div class="step-label">Roadshow</div>
+          <div class="mono step-detail">INVESTOR PITCH</div>
+        </div>
+
+        <div class="journey-arrow">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div class="journey-step active">
+          <span class="mono step-num">04</span>
+          <div class="step-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </div>
+          <div class="step-label">Public Listing</div>
+          <div class="mono step-detail">NYSE · NASDAQ</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       02 — CASE STUDY: TESLA
+       ============================================================ -->
+  <section class="section-darker section-tech relative py-32 px-6 overflow-hidden">
+    <div class="grid-bg"></div>
+    <div class="orbit-line orbit-top"></div>
+
+    <div class="max-w-6xl mx-auto relative">
+      <div class="reveal text-center mb-12">
+        <div class="section-focal"></div>
+        <h2 class="font-display text-4xl sm:text-5xl font-bold leading-tight text-white">From Tesla IPO to today</h2>
+      </div>
+
+      <div class="reveal max-w-3xl mx-auto text-center">
+        <p class="text-lg text-white/80 leading-relaxed">
+          Tesla went public in <span class="hl">2010 at $17 per share</span>. Since then, the stock has grown dramatically, reaching <span class="hl">over $400 per share</span> at various points after stock-split adjustments and delivering <span class="hl">gains of more than 2,000%</span> from its IPO price.
+        </p>
+        <p class="mt-5 text-lg text-white/80 leading-relaxed">
+          Back then, it was a <span class="hl">risky electric-car company</span>. Today, it is one of the <span class="hl">world's most watched stocks</span>.
+        </p>
+      </div>
+
+      <!-- BEFORE / AFTER visual comparison -->
+      <div class="before-after reveal mt-16">
+        <div class="ba-card ba-before">
+          <div class="card-corners"></div>
+          <div class="ba-header">
+            <span class="mono ba-label">BEFORE · 2010</span>
+            <span class="ba-pill mono">IPO DAY</span>
+          </div>
+          <div class="ba-title">A risky electric-car startup.</div>
+          <div class="ba-stats">
+            <div class="ba-stat">
+              <span class="mono ba-stat-label">IPO Price</span>
+              <span class="ba-stat-value">$17</span>
+            </div>
+            <div class="ba-stat">
+              <span class="mono ba-stat-label">Status</span>
+              <span class="ba-stat-value muted">Unproven</span>
+            </div>
+            <div class="ba-stat">
+              <span class="mono ba-stat-label">Market view</span>
+              <span class="ba-stat-value muted">Speculative</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="ba-bridge">
+          <div class="ba-bridge-line"></div>
+          <div class="ba-bridge-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#5BBAE6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="ba-bridge-meta mono">15+ YRS</div>
+          <div class="ba-bridge-line"></div>
+        </div>
+
+        <div class="ba-card ba-after">
+          <div class="card-corners"></div>
+          <div class="ba-header">
+            <span class="mono ba-label">AFTER · TODAY</span>
+            <span class="ba-pill mono on">LIVE</span>
+          </div>
+          <div class="ba-title">One of the world's most watched stocks.</div>
+          <div class="ba-stats">
+            <div class="ba-stat">
+              <span class="mono ba-stat-label">Peak Price</span>
+              <span class="ba-stat-value">$400+</span>
+            </div>
+            <div class="ba-stat featured">
+              <span class="mono ba-stat-label">Growth from IPO</span>
+              <span class="ba-stat-value">+2,000%</span>
+            </div>
+            <div class="ba-stat">
+              <span class="mono ba-stat-label">Market view</span>
+              <span class="ba-stat-value">Megacap</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-16 text-center reveal">
+        <a href="#register" class="cta-button">Register now</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       04 — TRAJECTORY DATA
+       ============================================================ -->
+  <section id="stories" class="section-dark section-tech relative py-32 px-6 overflow-hidden">
+    <div class="grid-bg"></div>
+
+    <div class="max-w-7xl mx-auto relative">
+      <div class="reveal mb-14 text-center">
+        <div class="section-focal"></div>
+        <h2 class="font-display text-4xl sm:text-5xl font-bold leading-tight text-white max-w-3xl mx-auto">From starting price to percentage growth</h2>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-6">
+        <!-- AMZN -->
+        <article class="reveal trajectory-card">
+          <div class="card-corners"></div>
+          <div class="panel-header">
+            <div class="callsign">
+              <span class="dot pulse"></span>
+              <span class="mono">AMZN</span>
+            </div>
+            <span class="mono mono-mini">EQUITY</span>
+          </div>
+
+          <div class="mini-chart">
+            <svg viewBox="0 0 240 80" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="aFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#0091D9" stop-opacity="0.3"/>
+                  <stop offset="100%" stop-color="#0091D9" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M0 75 L40 70 L80 55 L120 50 L160 30 L200 18 L240 12 L240 80 L0 80 Z" fill="url(#aFill)"/>
+              <path d="M0 75 L40 70 L80 55 L120 50 L160 30 L200 18 L240 12" stroke="#5BBAE6" stroke-width="1.5" fill="none"/>
+              <circle cx="240" cy="12" r="3" fill="#5BBAE6"/>
+            </svg>
+          </div>
+
+          <h3 class="font-display text-2xl font-bold mt-4 text-white">Amazon</h3>
+
+          <div class="card-specs">
+            <div class="spec-row">
+              <span class="mono spec-key">IPO PX</span>
+              <span class="spec-val">$18.00 · '97</span>
+            </div>
+            <div class="spec-row">
+              <span class="mono spec-key">CURRENT</span>
+              <span class="spec-val">~$185</span>
+            </div>
+            <div class="spec-row featured">
+              <span class="mono spec-key">GAIN</span>
+              <span class="spec-val text-brand-blue-light">+928%</span>
+            </div>
+            <div class="spec-row">
+              <span class="mono spec-key">PEAK</span>
+              <span class="spec-val">+1,247%</span>
+            </div>
+          </div>
+
+          <p class="mono mono-mini text-white/35 mt-5 pt-4 border-t border-white/5">PEAK ~$242.52 · FEB 2025</p>
+        </article>
+
+        <!-- NVDA -->
+        <article class="reveal trajectory-card">
+          <div class="card-corners"></div>
+          <div class="panel-header">
+            <div class="callsign">
+              <span class="dot pulse"></span>
+              <span class="mono">NVDA</span>
+            </div>
+            <span class="mono mono-mini">EQUITY</span>
+          </div>
+
+          <div class="mini-chart">
+            <svg viewBox="0 0 240 80" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="nFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#0091D9" stop-opacity="0.3"/>
+                  <stop offset="100%" stop-color="#0091D9" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M0 76 L40 74 L80 70 L120 60 L160 42 L200 18 L240 6 L240 80 L0 80 Z" fill="url(#nFill)"/>
+              <path d="M0 76 L40 74 L80 70 L120 60 L160 42 L200 18 L240 6" stroke="#5BBAE6" stroke-width="1.5" fill="none"/>
+              <circle cx="240" cy="6" r="3" fill="#5BBAE6"/>
+            </svg>
+          </div>
+
+          <h3 class="font-display text-2xl font-bold mt-4 text-white">Nvidia</h3>
+
+          <div class="card-specs">
+            <div class="spec-row">
+              <span class="mono spec-key">IPO PX</span>
+              <span class="spec-val">$12.00 · '99</span>
+            </div>
+            <div class="spec-row">
+              <span class="mono spec-key">CURRENT</span>
+              <span class="spec-val">~$950</span>
+            </div>
+            <div class="spec-row featured">
+              <span class="mono spec-key">GAIN</span>
+              <span class="spec-val text-brand-blue-light">+7,817%</span>
+            </div>
+            <div class="spec-row">
+              <span class="mono spec-key">PEAK</span>
+              <span class="spec-val">+11,567%</span>
+            </div>
+          </div>
+
+          <p class="mono mono-mini text-white/35 mt-5 pt-4 border-t border-white/5">PEAK ~$1,400 · JUN 2024</p>
+        </article>
+
+        <!-- META -->
+        <article class="reveal trajectory-card">
+          <div class="card-corners"></div>
+          <div class="panel-header">
+            <div class="callsign">
+              <span class="dot pulse"></span>
+              <span class="mono">META</span>
+            </div>
+            <span class="mono mono-mini">EQUITY</span>
+          </div>
+
+          <div class="mini-chart">
+            <svg viewBox="0 0 240 80" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="mFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#0091D9" stop-opacity="0.3"/>
+                  <stop offset="100%" stop-color="#0091D9" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d="M0 70 L40 65 L80 72 L120 55 L160 35 L200 22 L240 14 L240 80 L0 80 Z" fill="url(#mFill)"/>
+              <path d="M0 70 L40 65 L80 72 L120 55 L160 35 L200 22 L240 14" stroke="#5BBAE6" stroke-width="1.5" fill="none"/>
+              <circle cx="240" cy="14" r="3" fill="#5BBAE6"/>
+            </svg>
+          </div>
+
+          <h3 class="font-display text-2xl font-bold mt-4 text-white">Meta</h3>
+
+          <div class="card-specs">
+            <div class="spec-row">
+              <span class="mono spec-key">IPO PX</span>
+              <span class="spec-val">$38.00 · '12</span>
+            </div>
+            <div class="spec-row">
+              <span class="mono spec-key">CURRENT</span>
+              <span class="spec-val">~$500</span>
+            </div>
+            <div class="spec-row featured">
+              <span class="mono spec-key">GAIN</span>
+              <span class="spec-val text-brand-blue-light">+1,216%</span>
+            </div>
+            <div class="spec-row">
+              <span class="mono spec-key">PEAK</span>
+              <span class="spec-val">+1,328%</span>
+            </div>
+          </div>
+
+          <p class="mono mono-mini text-white/35 mt-5 pt-4 border-t border-white/5">PEAK ~$542.81 · FEB 2024</p>
+        </article>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============================================================
+       05 — MISSION BRIEFING (FAQ)
+       ============================================================ -->
+  <section id="faq" class="section-dark section-tech relative py-32 px-6 overflow-hidden">
+    <div class="grid-bg"></div>
+
+    <div class="max-w-4xl mx-auto relative">
+      <div class="reveal mb-12 text-center">
+        <div class="section-focal"></div>
+        <h2 class="font-display text-4xl sm:text-5xl font-bold leading-tight text-white">Frequently asked questions</h2>
+      </div>
+
+      <div class="faq-list">
+        <details class="reveal faq-item" open>
+          <div class="card-corners"></div>
+          <summary>
+            <span class="faq-num mono">Q.01</span>
+            <span class="faq-q">Do I need to wait for the IPO to get started?</span>
+          </summary>
+          <div class="faq-answer">No. You can register now and prepare your strategy before the listing — moving before the crowd is the whole point.</div>
+        </details>
+        <details class="reveal faq-item">
+          <div class="card-corners"></div>
+          <summary>
+            <span class="faq-num mono">Q.02</span>
+            <span class="faq-q">Can I really profit whichever way the IPO goes?</span>
+          </summary>
+          <div class="faq-answer">Through online trading you can open a position in either direction, up or down — the opportunity isn't only in the price going up.</div>
+        </details>
+        <details class="reveal faq-item">
+          <div class="card-corners"></div>
+          <summary>
+            <span class="faq-num mono">Q.03</span>
+            <span class="faq-q">What does 1:200 leverage mean?</span>
+          </summary>
+          <div class="faq-answer">Leverage lets you access a larger position with less starting capital. At up to 1:200, a smaller amount controls a bigger exposure — which raises both the potential gains and the potential losses.</div>
+        </details>
+        <details class="reveal faq-item">
+          <div class="card-corners"></div>
+          <summary>
+            <span class="faq-num mono">Q.04</span>
+            <span class="faq-q">What are "protected positions"?</span>
+          </summary>
+          <div class="faq-answer">A set of positions — up to 15 — designed to reduce your risk exposure as you take your first steps.</div>
+        </details>
+        <details class="reveal faq-item">
+          <div class="card-corners"></div>
+          <summary>
+            <span class="faq-num mono">Q.05</span>
+            <span class="faq-q">I'm just starting out — is the free consult for me?</span>
+          </summary>
+          <div class="faq-answer">Yes. The free 1-on-1 consult is there to answer your questions before you start. No experience needed.</div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       06 — LAUNCH SEQUENCE (Final CTA)
+       ============================================================ -->
+  <section id="register" class="section-darker section-tech relative py-36 px-6 overflow-hidden">
+    <div class="scanner-bg">
+      <div class="scanner-ring r-1"></div>
+      <div class="scanner-ring r-2"></div>
+      <div class="scanner-ring r-3"></div>
+      <div class="scanner-ring r-4"></div>
+    </div>
+    <div class="grid-bg"></div>
+
+    <div class="relative max-w-3xl mx-auto text-center reveal">
+      <h2 class="font-display text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight text-white">Ready to take your first step?</h2>
+      <p class="mt-6 text-lg text-white/75">Register now and prepare your strategy before the IPO crowd moves.</p>
+
+      <div class="mt-12">
+        <a href="#" class="cta-button cta-launch">Register now</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="bg-brand-dark border-t border-white/5 pt-12 pb-10 px-6 text-white/50">
+    <div class="max-w-7xl mx-auto">
+      <!-- Risk disclosure -->
+      <div class="risk-disclosure">
+        <span class="mono mono-mini risk-label">RISK DISCLOSURE</span>
+        <p>Trading involves significant risk and may result in the loss of your invested capital. Leveraged products can amplify both gains and losses. Past performance is not a reliable indicator of future results. The information on this site is provided for educational purposes and is not investment advice.</p>
+      </div>
+
+      <div class="footer-row flex flex-col sm:flex-row items-center justify-between gap-4 text-sm">
+        <div class="flex items-center gap-3">
+          <img src="assets/Group%20430.svg" alt="Digital Spearhead" class="logo-img-footer" />
+          <span>© 2026 Digital Spearhead — Not affiliated with SpaceX.</span>
+        </div>
+        <div class="flex gap-6">
+          <a href="#" class="hover:text-white transition">Privacy</a>
+          <a href="#" class="hover:text-white transition">Terms</a>
+          <a href="#" class="hover:text-white transition">Contact</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Mobile sticky CTA — appears only on small screens -->
+  <div class="mobile-sticky-cta" id="mobileStickyCta">
+    <a href="#register" class="cta-button cta-button-sm">Register now</a>
+  </div>
+
+  <script src="script.js"></script>
+
+  <!-- 3D MOON — Three.js loader + light/dark rotation -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    const container = document.getElementById('moonContainer');
+    if (container) {
+      // Scene + camera + renderer
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+      camera.position.z = 5;
+
+      const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      // Tone mapping + exposure so emissive values above 1.0 actually push the moon
+      // brighter on screen instead of clipping to flat white.
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.6;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      container.appendChild(renderer.domElement);
+
+      function fit() {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        renderer.setSize(w, h, false);
+        renderer.domElement.style.width = '100%';
+        renderer.domElement.style.height = '100%';
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      }
+      fit();
+      window.addEventListener('resize', fit);
+
+      // Lighting — sun position + ambient + emissive drive the bright/dark transition
+      const ambient = new THREE.AmbientLight(0xffffff, 1.4);
+      scene.add(ambient);
+      const sun = new THREE.DirectionalLight(0xfff8e7, 4.5);
+      sun.position.set(1, 1.5, 4);
+      scene.add(sun);
+      const fill = new THREE.HemisphereLight(0xffffff, 0x1a2030, 0.6);
+      scene.add(fill);
+      // Brand-blue rim for the cool crescent halo on dark side
+      const rim = new THREE.DirectionalLight(0x5BBAE6, 0.45);
+      rim.position.set(-3, 0.2, -2);
+      scene.add(rim);
+
+      // Bright vs dark target settings
+      const SETTINGS = {
+        bright: {
+          sunPos: new THREE.Vector3(1, 1.5, 4),    // front: whole face lit
+          sunIntensity: 4.5,
+          ambient: 1.4,
+          emissive: 0.55,                          // self-illuminate for brighter read
+          rotationY: 0,
+        },
+        dark: {
+          sunPos: new THREE.Vector3(4, 1.5, -3),   // behind: only rim lit
+          sunIntensity: 1.4,
+          ambient: 0.05,
+          emissive: 0,
+          rotationY: Math.PI,
+        },
+      };
+
+      let moon = null;
+      let target = SETTINGS.bright;
+      let currentY = 0;
+
+      const loader = new GLTFLoader();
+      loader.load(
+        'assets/moon.glb?v=3',
+        (gltf) => {
+          moon = gltf.scene;
+          // Normalize size — fit to ~3.7 world units
+          const box = new THREE.Box3().setFromObject(moon);
+          const size = box.getSize(new THREE.Vector3()).length();
+          const scale = 3.7 / size;
+          moon.scale.setScalar(scale);
+          // Recenter
+          const center = box.getCenter(new THREE.Vector3()).multiplyScalar(scale);
+          moon.position.sub(center);
+          // Add the base texture as an emissive map so the lit side reads brighter,
+          // and render double-sided so backface-culled meshes still show.
+          moon.traverse((child) => {
+            if (child.isMesh && child.material) {
+              const map = child.material.map;
+              if (map) {
+                child.material.emissiveMap = map;
+                child.material.emissive = new THREE.Color(0xffffff);
+                child.material.emissiveIntensity = 0.45;
+              }
+              child.material.side = THREE.DoubleSide;
+              child.material.needsUpdate = true;
+            }
+          });
+          console.log('[moon] loaded', moon);
+          scene.add(moon);
+        },
+        undefined,
+        (err) => console.warn('moon.glb failed to load:', err)
+      );
+
+      // Toggle hookup — switch target settings on click
+      document.querySelectorAll('.seg-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          target = SETTINGS[btn.dataset.side === 'dark' ? 'dark' : 'bright'];
+        });
+      });
+
+      // Animation loop — lerp sun, ambient, emissive, rotation together
+      const start = performance.now();
+      function tick(now) {
+        requestAnimationFrame(tick);
+
+        sun.position.lerp(target.sunPos, 0.14);
+        sun.intensity += (target.sunIntensity - sun.intensity) * 0.14;
+        ambient.intensity += (target.ambient - ambient.intensity) * 0.14;
+
+        if (moon) {
+          currentY += (target.rotationY - currentY) * 0.14;
+          moon.rotation.y = currentY;
+          moon.traverse((child) => {
+            if (child.isMesh && child.material) {
+              child.material.emissiveIntensity +=
+                (target.emissive - child.material.emissiveIntensity) * 0.14;
+            }
+          });
+          const t = (now - start) * 0.001;
+          moon.position.y = Math.sin(t * 0.8) * 0.04;
+        }
+        renderer.render(scene, camera);
+      }
+      requestAnimationFrame(tick);
+    }
+  </script>
+</body>
+</html>
