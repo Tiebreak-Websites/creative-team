@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { --bg:#fff; --text:#15181e; --muted:#8a92a3; --border:#e7e9ee; --accent:#4f46e5; --soft:#eef0ff; }
+      * { box-sizing: border-box; }
+      body { margin:0; font-family: Inter, -apple-system, 'Segoe UI', Roboto, sans-serif; color:var(--text); font-size:12px; padding:14px; }
+      h1 { font-size:13px; margin:0 0 2px; }
+      .sub { color:var(--muted); margin:0 0 14px; }
+      .row { margin-bottom:12px; }
+      label { display:block; color:var(--muted); margin-bottom:5px; font-weight:500; }
+      input { width:100%; padding:8px 9px; border:1px solid var(--border); border-radius:7px; font-size:12px; font-family:inherit; }
+      .file { background:var(--soft); color:var(--accent); border-radius:6px; padding:6px 8px; font-family: ui-monospace, monospace; word-break:break-all; }
+      button { width:100%; padding:9px; border:none; border-radius:7px; font-weight:600; font-size:12px; cursor:pointer; margin-top:6px; font-family:inherit; }
+      .primary { background:var(--accent); color:#fff; }
+      .secondary { background:#f1f3f5; color:var(--text); border:1px solid var(--border); }
+      .or { text-align:center; color:var(--muted); margin:10px 0; }
+      .status { margin-top:14px; padding:9px 10px; border-radius:7px; font-size:12px; display:none; }
+      .status.show { display:block; }
+      .status.ok { background:#e9f7ee; color:#137a3a; }
+      .status.err { background:#fdecec; color:#a51b1b; }
+      .status.info { background:#f1f3f5; color:var(--muted); }
+    </style>
+  </head>
+  <body>
+    <h1>Creative Tools</h1>
+    <p class="sub">Place results from the web platform onto this canvas.</p>
+
+    <div class="row">
+      <label>Current file</label>
+      <div class="file" id="fk">…</div>
+    </div>
+
+    <button class="primary" id="latest">Apply latest result for this file</button>
+
+    <div class="or">— or paste a code —</div>
+
+    <div class="row">
+      <label>Result code (from the web app)</label>
+      <input id="code" placeholder="e.g. 9F2A1C" autocomplete="off" />
+    </div>
+    <button class="secondary" id="byCode">Apply by code</button>
+
+    <div class="status" id="status"></div>
+
+    <script>
+      var BASE = 'http://localhost:8000/api/plugin'
+      var fileKey = ''
+
+      function status(msg, kind) {
+        var el = document.getElementById('status')
+        el.textContent = msg
+        el.className = 'status show ' + (kind || 'info')
+      }
+
+      onmessage = function (e) {
+        var m = e.data.pluginMessage
+        if (!m) return
+        if (m.type === 'file') {
+          fileKey = m.fileKey || ''
+          document.getElementById('fk').textContent = fileKey || '(unknown — save the file first)'
+        } else if (m.type === 'done') {
+          status('Applied ' + m.applied + ' operation(s)' + (m.skipped ? ' (' + m.skipped + ' skipped)' : '') + '.', 'ok')
+        } else if (m.type === 'error') {
+          status('Error: ' + m.message, 'err')
+        }
+      }
+
+      async function fetchAndApply(url) {
+        status('Fetching result…', 'info')
+        try {
+          var r = await fetch(url)
+          if (!r.ok) {
+            status('No result found. Run a tool in the web app first, then try again.', 'err')
+            return
+          }
+          var data = await r.json()
+          var ops = data.ops || []
+          if (!ops.length) {
+            status('That result has nothing to place on the canvas.', 'info')
+            return
+          }
+          status('Applying ' + ops.length + ' op(s) from ' + (data.label || data.tool) + '…', 'info')
+          parent.postMessage({ pluginMessage: { type: 'apply', ops: ops } }, '*')
+        } catch (err) {
+          status('Network error — is the platform backend running on :8000? ' + err, 'err')
+        }
+      }
+
+      document.getElementById('latest').onclick = function () {
+        if (!fileKey) { status('No file key yet — save the Figma file, then reopen the plugin.', 'err'); return }
+        fetchAndApply(BASE + '/latest?file_key=' + encodeURIComponent(fileKey))
+      }
+      document.getElementById('byCode').onclick = function () {
+        var code = document.getElementById('code').value.trim()
+        if (!code) { status('Enter the code shown in the web app.', 'err'); return }
+        fetchAndApply(BASE + '/ops/' + encodeURIComponent(code))
+      }
+    </script>
+  </body>
+</html>

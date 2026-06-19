@@ -1,0 +1,1 @@
+"""Translate (Figma) tool package."""

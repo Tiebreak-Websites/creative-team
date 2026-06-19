@@ -1,0 +1,12 @@
+{
+  "name": "Creative Tools",
+  "id": "creative-tools-platform-local",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "networkAccess": {
+    "allowedDomains": ["http://localhost:8000", "http://127.0.0.1:8000"],
+    "reasoning": "Fetches generated results (creative summaries, translations) from the team's local Creative Tools platform to place them on the canvas."
+  }
+}

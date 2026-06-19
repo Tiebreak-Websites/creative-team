@@ -1,0 +1,5 @@
+# Platform backend dependencies. The banner engine itself is Python stdlib-only;
+# these are just the web layer + the AI-assist client.
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30
+anthropic>=0.39
