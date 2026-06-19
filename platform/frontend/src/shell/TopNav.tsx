@@ -1,5 +1,7 @@
 import { Icon } from '../components/Icon'
 import type { Tool } from '../types'
+import { useAuth } from '../auth/AuthContext'
+import { UserMenu } from '../auth/UserMenu'
 
 const STATUS_PILL: Record<string, { cls: string; label: string } | null> = {
   available: null,
@@ -11,11 +13,14 @@ export function TopNav({
   tools,
   selectedId,
   onSelect,
+  onOpenSettings,
 }: {
   tools: Tool[]
   selectedId: string | null
   onSelect: (id: string | null) => void
+  onOpenSettings: () => void
 }) {
+  const { user } = useAuth()
   return (
     <header className="topnav">
       <button className="brand" onClick={() => onSelect(null)} title="Home">
@@ -40,8 +45,14 @@ export function TopNav({
         })}
       </nav>
       <div className="nav-right">
+        {user?.role === 'admin' && (
+          <button className="nav-item" onClick={onOpenSettings} title="Tool settings (admin)">
+            <Icon name="wrench" size={16} />
+            <span className="label">Settings</span>
+          </button>
+        )}
         <span className="dot live" />
-        <span>Local</span>
+        <UserMenu />
       </div>
     </header>
   )

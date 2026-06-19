@@ -4,8 +4,32 @@ import { Icon } from '../components/Icon'
 
 const RUNNING = ['queued', 'running_master', 'running_recomp']
 
+/** Sort the gallery: group by concept order (c1, c2, …), then size within a
+ *  concept (master first, then the rest by pixel area ascending). */
+function sortBanners(banners: Banner[]): Banner[] {
+  const conceptOrder = new Map<string, number>()
+  banners.forEach((b) => {
+    if (!conceptOrder.has(b.concept)) conceptOrder.set(b.concept, conceptOrder.size)
+  })
+  const area = (size: string) => {
+    const [w, h] = size.split('x').map(Number)
+    return (w || 0) * (h || 0)
+  }
+  return [...banners].sort((a, b) => {
+    const ca = conceptOrder.get(a.concept) ?? 0
+    const cb = conceptOrder.get(b.concept) ?? 0
+    if (ca !== cb) return ca - cb
+    // Master frame first within its concept.
+    const ma = a.phase === 'master' ? 0 : 1
+    const mb = b.phase === 'master' ? 0 : 1
+    if (ma !== mb) return ma - mb
+    return area(a.size) - area(b.size)
+  })
+}
+
 export function OutputPane({ run }: { run: RunData | null }) {
   if (!run) return <EmptyOutput />
+  const banners = sortBanners(run.banners)
   return (
     <>
       <RunBar run={run} />
@@ -15,7 +39,7 @@ export function OutputPane({ run }: { run: RunData | null }) {
         </div>
       )}
       <div className="asset-grid">
-        {run.banners.map((b) => (
+        {banners.map((b) => (
           <AssetCard key={b.label} b={b} />
         ))}
       </div>

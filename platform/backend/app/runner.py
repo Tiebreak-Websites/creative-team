@@ -103,15 +103,119 @@ STORE = RunStore()
 
 
 # ---------------------------------------------------------------------------
-# Build + validate
+# Card -> engine concept mapping
 # ---------------------------------------------------------------------------
-def _concept_dict(c) -> dict:
-    d = {"title": c.title, "locale": c.locale or "en",
-         "hook_phrase": c.hook_phrase, "creative_brief": c.creative_brief}
-    if c.cta:
-        d["cta"] = c.cta
-        if c.button_combo:
-            d["button_combo"] = list(c.button_combo)
+#
+# A concept *card* is the simple thing a marketer types: Title (required),
+# Subtitle (optional), Button (optional). The engine needs a richer dict —
+# {title, locale, hook_phrase, creative_brief, cta?, button_combo?} — and it
+# validates that hook_phrase is a verbatim substring of title. We synthesize
+# that dict here, deterministically, so every card produces an engine-valid
+# concept without any LLM in the loop.
+
+def _derive_hook(title: str) -> str:
+    """A 2-4 word verbatim fragment of the title (its leading words).
+
+    Prefers stopping at the first sentence boundary so the hook reads as a clean
+    phrase; otherwise takes the first 2-4 words. The returned fragment is always
+    a *verbatim* (case-insensitive) substring of the title — what
+    engine.validate_manifest requires of hook_phrase — so it is sliced directly
+    out of the title rather than rebuilt from split tokens.
+    """
+    t = title.strip()
+    if not t:
+        return t
+    words = t.split()
+    # How many leading words to take: stop at the first word that ends a
+    # sentence (.!?), but always keep 2-4 words when the title is long enough.
+    take = 0
+    for i, w in enumerate(words):
+        take = i + 1
+        if take >= 2 and w[-1:] in ".!?":
+            break
+        if take >= 4:
+            break
+    take = min(take, 4)
+    if len(words) >= 2:
+        take = max(take, 2)
+
+    # Slice the verbatim substring spanning the first `take` words.
+    consumed = 0
+    idx = 0
+    for w in words[:take]:
+        idx = t.lower().index(w.lower(), idx) + len(w)
+        consumed += 1
+        if consumed == take:
+            break
+    hook = t[:idx]
+    # Trim trailing punctuation/space so the hook isn't left dangling on a "." —
+    # rstrip only removes chars that are NOT part of any word, so it stays a
+    # verbatim substring.
+    return hook.rstrip(" .,:;!?-—–")
+
+
+def _synthesize_brief(subtitle: str, style: str) -> str:
+    """Build ~250-400 chars of creative-brief prose from subtitle + style.
+
+    Composes the user's optional subtitle and campaign style on top of a clean,
+    modern poster default. The result is free-form prose (the shape the engine's
+    creative_brief expects), never a template list.
+    """
+    parts = [
+        "Clean modern poster: the hook set in bold confident display type, "
+        "anchored upper-left against a smooth thematic gradient with generous "
+        "breathing room; editorial, premium, uncluttered."
+    ]
+    sub = (subtitle or "").strip()
+    if sub:
+        parts.append(f"Supporting message to convey: {sub}.")
+    sty = (style or "").strip()
+    if sty:
+        parts.append(f"Look and brand vibe: {sty}.")
+    else:
+        parts.append("Restrained, contemporary palette; soft directional light; calm but high-impact mood.")
+    brief = " ".join(parts)
+    # Keep it inside the ~250-400 char band the engine brief is tuned for.
+    if len(brief) > 400:
+        brief = brief[:397].rstrip() + "…"
+    return brief
+
+
+def _pick_button_combo(style: str):
+    """Auto-pick an approved [bg, text] pair from engine.BUTTON_COMBOS.
+
+    Defaults to the first combo; nudges toward a hue when the campaign style
+    names a colour, so the CTA fits the requested vibe.
+    """
+    combos = engine.BUTTON_COMBOS
+    s = (style or "").lower()
+    hue_hint = {
+        "orange": "#F97316", "green": "#16A34A", "red": "#DC2626",
+        "violet": "#7C3AED", "purple": "#7C3AED", "yellow": "#FACC15",
+        "teal": "#14B8A6", "rose": "#BE123C", "pink": "#BE123C", "blue": "#2563EB",
+    }
+    for word, hexv in hue_hint.items():
+        if word in s:
+            for bg, text in combos:
+                if bg.upper() == hexv:
+                    return [bg, text]
+    bg, text = combos[0]
+    return [bg, text]
+
+
+def card_to_concept(c, locale: str, style: str) -> dict:
+    """Map one concept card (+ campaign locale/style) to an engine concept dict."""
+    title = (c.title or "").strip()
+    d = {
+        "title": title,
+        "locale": locale or "en",
+        "hook_phrase": _derive_hook(title),
+        "creative_brief": _synthesize_brief(c.subtitle or "", style or ""),
+    }
+    button = (c.button or "").strip()
+    if button:
+        d["cta"] = button
+        d["button_combo"] = _pick_button_combo(style or "")
     return d
 
 
@@ -123,7 +227,8 @@ def normalize_sizes(sizes: List[str]) -> List[str]:
 
 
 def validate_request(req: RunRequest):
-    """Reuse the engine's own validators so the web path and CLI agree.
+    """Map cards -> engine concepts, then reuse the engine's OWN validators so
+    the web path can't run anything the engine would reject.
 
     Returns (errors, concepts, sizes). errors == [] means safe to run.
     """
@@ -131,8 +236,11 @@ def validate_request(req: RunRequest):
         return ["at least one concept is required"], {}, []
     if len(req.concepts) > 5:
         return ["cap is 5 concepts per run"], {}, []
+    for c in req.concepts:
+        if not (c.title or "").strip():
+            return ["every concept card needs a title"], {}, []
 
-    concepts = {c.key: _concept_dict(c) for c in req.concepts}
+    concepts = {c.key: card_to_concept(c, req.locale, req.style or "") for c in req.concepts}
     sizes = normalize_sizes(req.sizes)
     manifest = {"concepts": concepts}
     urls_like = [

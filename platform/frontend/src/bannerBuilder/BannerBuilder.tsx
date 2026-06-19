@@ -1,29 +1,39 @@
 import { useEffect, useState } from 'react'
-import type { ConceptForm, Meta, Tool } from '../types'
+import type { Meta, Tool } from '../types'
 import { TERMINAL_STATUSES } from '../types'
-import { ApiError, createRun, getRun, suggestConcepts, zipUrl } from '../api'
-import type { ConceptPayload, RunRequest } from '../api'
+import { ApiError, getRun, zipUrl } from '../api'
+import { createRun } from './campaignApi'
+import type { CampaignRunRequest } from './campaignApi'
 import { usePolling } from '../hooks/usePolling'
 import { Toolbar, MissingSecret } from '../shell/States'
 import { Icon } from '../components/Icon'
 import { OutputPane } from './Results'
 
+/** A concept card as the user edits it: Title (required), Subtitle, Button. */
+interface ConceptCard {
+  key: string
+  title: string
+  subtitle: string
+  button: string
+}
+
 let uid = 0
-function blankConcept(): ConceptForm {
+function blankCard(): ConceptCard {
   uid += 1
-  return { key: `k${uid}`, hook_phrase: '', creative_brief: '', button_bg: null }
+  return { key: `k${uid}`, title: '', subtitle: '', button: '' }
 }
 
 export function BannerBuilder({ tool, meta }: { tool: Tool; meta: Meta }) {
-  const [bannerText, setBannerText] = useState('')
-  const [cta, setCta] = useState('')
-  const [locale, setLocale] = useState('en')
+  // ---- Campaign settings ----
+  const [sizes, setSizes] = useState<Set<string>>(new Set([meta.master_size]))
   const [model, setModel] = useState(meta.models[0] ?? 'gpt-image-2')
   const [quality, setQuality] = useState(meta.qualities[0] ?? 'medium')
-  const [sizes, setSizes] = useState<Set<string>>(new Set([meta.master_size]))
-  const [concepts, setConcepts] = useState<ConceptForm[]>([blankConcept()])
+  const [locale, setLocale] = useState('en')
+  const [style, setStyle] = useState('')
 
-  const [aiBusy, setAiBusy] = useState(false)
+  // ---- Concept cards ----
+  const [cards, setCards] = useState<ConceptCard[]>([blankCard()])
+
   const [formError, setFormError] = useState<string | null>(null)
   const [formErrors, setFormErrors] = useState<string[]>([])
   const [missing, setMissing] = useState<{ env: string; label: string; docs_url: string }[] | null>(null)
@@ -36,14 +46,12 @@ export function BannerBuilder({ tool, meta }: { tool: Tool; meta: Meta }) {
     if (runData && TERMINAL_STATUSES.includes(runData.status)) setPolling(false)
   }, [runData])
 
-  const hasCta = cta.trim().length > 0
-  const titleLower = bannerText.trim().toLowerCase()
-  const aiAvailable = tool.secrets.find((s) => s.env === 'ANTHROPIC_API_KEY')?.present === true
   const running = !!runData && !TERMINAL_STATUSES.includes(runData.status)
   const anyOk = !!runData && runData.banners.some((b) => b.status === 'ok')
 
+  // ---- Sizes ----
   function toggleSize(s: string) {
-    if (s === meta.master_size) return
+    if (s === meta.master_size) return // master always on
     setSizes((prev) => {
       const next = new Set(prev)
       if (next.has(s)) next.delete(s)
@@ -52,76 +60,55 @@ export function BannerBuilder({ tool, meta }: { tool: Tool; meta: Meta }) {
     })
   }
 
-  function updateConcept(key: string, patch: Partial<ConceptForm>) {
-    setConcepts((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)))
+  // ---- Cards: add / remove / reorder ----
+  function updateCard(key: string, patch: Partial<ConceptCard>) {
+    setCards((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)))
   }
-  function addConcept() {
-    setConcepts((prev) => (prev.length >= 5 ? prev : [...prev, blankConcept()]))
+  function addCard() {
+    setCards((prev) => (prev.length >= 5 ? prev : [...prev, blankCard()]))
   }
-  function removeConcept(key: string) {
-    setConcepts((prev) => (prev.length <= 1 ? prev : prev.filter((c) => c.key !== key)))
+  function removeCard(key: string) {
+    setCards((prev) => (prev.length <= 1 ? prev : prev.filter((c) => c.key !== key)))
   }
-
-  async function runAiAssist() {
-    if (!bannerText.trim()) {
-      setFormError('Enter the banner text first.')
-      return
-    }
-    setAiBusy(true)
-    setFormError(null)
-    setFormErrors([])
-    try {
-      const suggested = await suggestConcepts({
-        banner_text: bannerText.trim(),
-        cta: hasCta ? cta.trim() : undefined,
-        locale,
-        concept_count: Math.max(1, concepts.length),
-      })
-      setConcepts(
-        suggested.map((s, i) => ({
-          key: `ai_${Date.now()}_${i}`,
-          hook_phrase: s.hook_phrase,
-          creative_brief: s.creative_brief,
-          button_bg: s.button_combo?.[0] ?? null,
-        })),
-      )
-    } catch (e) {
-      if (e instanceof ApiError && e.errors) setFormErrors(e.errors)
-      else setFormError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setAiBusy(false)
-    }
+  function moveCard(index: number, dir: -1 | 1) {
+    setCards((prev) => {
+      const next = [...prev]
+      const j = index + dir
+      if (j < 0 || j >= next.length) return prev
+      ;[next[index], next[j]] = [next[j], next[index]]
+      return next
+    })
   }
 
-  const canRun =
-    bannerText.trim().length > 0 &&
-    concepts.length > 0 &&
-    concepts.every((c) => c.hook_phrase.trim() && c.creative_brief.trim())
+  // ---- Drag to reorder ----
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  function onDrop(index: number) {
+    setCards((prev) => {
+      if (dragIndex === null || dragIndex === index) return prev
+      const next = [...prev]
+      const [moved] = next.splice(dragIndex, 1)
+      next.splice(index, 0, moved)
+      return next
+    })
+    setDragIndex(null)
+  }
+
+  const canRun = cards.length > 0 && cards.every((c) => c.title.trim().length > 0)
 
   async function startRun() {
     setFormError(null)
     setFormErrors([])
     setMissing(null)
-    const fallbackBg = meta.button_combos[0]
-    const payload: RunRequest = {
-      banner_text: bannerText.trim(),
-      locale,
+    const payload: CampaignRunRequest = {
       model,
       quality,
+      locale: locale.trim() || 'en',
       sizes: Array.from(sizes),
-      concepts: concepts.map((c, i) => {
-        const p: ConceptPayload = {
-          key: `c${i + 1}`,
-          title: bannerText.trim(),
-          locale,
-          hook_phrase: c.hook_phrase.trim(),
-          creative_brief: c.creative_brief.trim(),
-        }
-        if (hasCta) {
-          p.cta = cta.trim()
-          const combo = meta.button_combos.find((bc) => bc.bg === c.button_bg) ?? fallbackBg
-          if (combo) p.button_combo = [combo.bg, combo.text]
-        }
+      style: style.trim() || undefined,
+      concepts: cards.map((c, i) => {
+        const p: CampaignRunRequest['concepts'][number] = { key: `c${i + 1}`, title: c.title.trim() }
+        if (c.subtitle.trim()) p.subtitle = c.subtitle.trim()
+        if (c.button.trim()) p.button = c.button.trim()
         return p
       }),
     }
@@ -162,39 +149,34 @@ export function BannerBuilder({ tool, meta }: { tool: Tool; meta: Meta }) {
               </div>
             )}
 
+            {/* ---- Campaign settings ---- */}
             <div className="section">
               <div className="section-head">
-                <h3>Copy</h3>
+                <h3>Campaign settings</h3>
               </div>
+
               <label className="field">
-                <span>Banner text (rendered verbatim)</span>
-                <textarea
-                  value={bannerText}
-                  onChange={(e) => setBannerText(e.target.value)}
-                  placeholder="Oil prices fell. The ringgit moved. PETRONAS earnings shifted."
-                />
+                <span>Sizes · {sizes.size} selected</span>
+                <div className="size-grid">
+                  {meta.sizes.map((s) => {
+                    const isMaster = s === meta.master_size
+                    const on = sizes.has(s)
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        className={`chip ${on ? 'on' : ''} ${isMaster ? 'locked' : ''}`}
+                        onClick={() => toggleSize(s)}
+                        title={isMaster ? 'Master — always generated first' : ''}
+                      >
+                        {s}
+                        {isMaster ? ' · master' : ''}
+                      </button>
+                    )
+                  })}
+                </div>
               </label>
-              <div className="field-row">
-                <label className="field">
-                  <span>CTA (optional)</span>
-                  <input
-                    className="input"
-                    type="text"
-                    value={cta}
-                    onChange={(e) => setCta(e.target.value)}
-                    placeholder="Learn more"
-                  />
-                </label>
-                <label className="field">
-                  <span>Locale</span>
-                  <input
-                    className="input"
-                    type="text"
-                    value={locale}
-                    onChange={(e) => setLocale(e.target.value)}
-                  />
-                </label>
-              </div>
+
               <div className="field-row">
                 <label className="field">
                   <span>Model</span>
@@ -217,111 +199,111 @@ export function BannerBuilder({ tool, meta }: { tool: Tool; meta: Meta }) {
                   </select>
                 </label>
               </div>
+
+              <div className="field-row">
+                <label className="field">
+                  <span>Locale</span>
+                  <input
+                    className="input"
+                    type="text"
+                    value={locale}
+                    onChange={(e) => setLocale(e.target.value)}
+                    placeholder="en"
+                  />
+                </label>
+                <label className="field">
+                  <span>Style (optional)</span>
+                  <input
+                    className="input"
+                    type="text"
+                    value={style}
+                    onChange={(e) => setStyle(e.target.value)}
+                    placeholder="warm editorial, orange accents"
+                  />
+                </label>
+              </div>
             </div>
 
+            {/* ---- Concept cards ---- */}
             <div className="section">
               <div className="section-head">
-                <h3>Sizes</h3>
+                <h3>Concepts · {cards.length}/5</h3>
               </div>
-              <div className="size-grid">
-                {meta.sizes.map((s) => {
-                  const isMaster = s === meta.master_size
-                  const on = sizes.has(s)
-                  return (
-                    <button
-                      key={s}
-                      className={`chip ${on ? 'on' : ''} ${isMaster ? 'locked' : ''}`}
-                      onClick={() => toggleSize(s)}
-                      title={isMaster ? 'Master — always generated first' : ''}
-                    >
-                      {s}
-                      {isMaster ? ' · master' : ''}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
 
-            <div className="section">
-              <div className="section-head">
-                <h3>Concepts · {concepts.length}/5</h3>
-                <button
-                  className="btn sm secondary"
-                  onClick={runAiAssist}
-                  disabled={aiBusy || !aiAvailable}
-                  title={aiAvailable ? 'Draft concepts from the banner text' : 'Add ANTHROPIC_API_KEY to enable AI assist'}
+              {cards.map((c, i) => (
+                <div
+                  className={`concept-card ${dragIndex === i ? 'dragging' : ''}`}
+                  key={c.key}
+                  draggable
+                  onDragStart={() => setDragIndex(i)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => onDrop(i)}
+                  onDragEnd={() => setDragIndex(null)}
                 >
-                  {aiBusy ? (
-                    <>
-                      <span className="spinner" /> Generating
-                    </>
-                  ) : (
-                    '✦ AI assist'
-                  )}
-                </button>
-              </div>
-
-              {concepts.map((c, i) => {
-                const hookOk =
-                  c.hook_phrase.trim() && titleLower.includes(c.hook_phrase.trim().toLowerCase())
-                return (
-                  <div className="concept-card" key={c.key}>
-                    <div className="concept-head">
-                      <span className="ckey">
-                        <span className="concept-num">{i + 1}</span> Concept
-                      </span>
-                      {concepts.length > 1 && (
-                        <button className="link-btn" onClick={() => removeConcept(c.key)}>
+                  <div className="concept-head">
+                    <span className="ckey">
+                      <span className="concept-num">{i + 1}</span> Concept
+                    </span>
+                    <span className="card-tools" style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() => moveCard(i, -1)}
+                        disabled={i === 0}
+                        title="Move up"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() => moveCard(i, 1)}
+                        disabled={i === cards.length - 1}
+                        title="Move down"
+                      >
+                        ↓
+                      </button>
+                      {cards.length > 1 && (
+                        <button type="button" className="link-btn" onClick={() => removeCard(c.key)}>
                           Remove
                         </button>
                       )}
-                    </div>
-                    <label className="field">
-                      <span>Hook · 2–4 words from the banner text</span>
-                      <input
-                        className="input"
-                        type="text"
-                        value={c.hook_phrase}
-                        onChange={(e) => updateConcept(c.key, { hook_phrase: e.target.value })}
-                        placeholder="OIL PRICES FELL"
-                      />
-                      {c.hook_phrase.trim().length > 0 &&
-                        (hookOk ? (
-                          <div className="hint good">✓ found in banner text</div>
-                        ) : (
-                          <div className="hint bad">✗ not a verbatim fragment of the banner text</div>
-                        ))}
-                    </label>
-                    <label className="field">
-                      <span>Creative brief</span>
-                      <textarea
-                        value={c.creative_brief}
-                        onChange={(e) => updateConcept(c.key, { creative_brief: e.target.value })}
-                        placeholder="Type-hero poster. Hook in saturated orange against a deep charcoal gradient…"
-                      />
-                    </label>
-                    {hasCta && (
-                      <label className="field">
-                        <span>Button colour</span>
-                        <div className="swatches">
-                          {meta.button_combos.map((bc) => (
-                            <div
-                              key={bc.bg}
-                              className={`swatch ${c.button_bg === bc.bg ? 'on' : ''}`}
-                              style={{ background: bc.bg }}
-                              title={`${bc.bg} / ${bc.text}`}
-                              onClick={() => updateConcept(c.key, { button_bg: bc.bg })}
-                            />
-                          ))}
-                        </div>
-                      </label>
-                    )}
+                    </span>
                   </div>
-                )
-              })}
 
-              {concepts.length < 5 && (
-                <button className="btn ghost" style={{ width: '100%' }} onClick={addConcept}>
+                  <label className="field">
+                    <span>Title</span>
+                    <input
+                      className="input"
+                      type="text"
+                      value={c.title}
+                      onChange={(e) => updateCard(c.key, { title: e.target.value })}
+                      placeholder="Oil prices fell. The ringgit moved."
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Subtitle (optional)</span>
+                    <textarea
+                      value={c.subtitle}
+                      onChange={(e) => updateCard(c.key, { subtitle: e.target.value })}
+                      placeholder="Three signals, one connected story."
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Button (optional)</span>
+                    <input
+                      className="input"
+                      type="text"
+                      value={c.button}
+                      onChange={(e) => updateCard(c.key, { button: e.target.value })}
+                      placeholder="Learn more"
+                    />
+                  </label>
+                </div>
+              ))}
+
+              {cards.length < 5 && (
+                <button type="button" className="btn ghost" style={{ width: '100%' }} onClick={addCard}>
                   + Add concept
                 </button>
               )}
@@ -338,9 +320,7 @@ export function BannerBuilder({ tool, meta }: { tool: Tool; meta: Meta }) {
                 'Generate banners'
               )}
             </button>
-            {!canRun && (
-              <div className="hint">Add banner text and fill each concept's hook + brief.</div>
-            )}
+            {!canRun && <div className="hint">Give each concept a title to generate.</div>}
           </div>
         </aside>
 

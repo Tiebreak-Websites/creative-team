@@ -4,7 +4,8 @@
   GET  /runs/{run_id}                -> poll status (frontend polls ~2s)
   GET  /runs/{run_id}/banners/{label}.png[?download=1]
   GET  /runs/{run_id}/download.zip   -> zip of all ok PNGs
-  POST /suggest                      -> AI-assist: propose concept dicts
+
+Banners are create -> sort -> download only. No Figma, no plugin.
 """
 import io
 import zipfile
@@ -14,8 +15,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from ... import runner
-from ...models import RunRequest, SuggestRequest
-from ...secrets import get_secret, has_secret
+from ...models import RunRequest
+from ...secrets import get_secret
 
 _OPENAI_SECRET = {"env": "OPENAI_API_KEY", "label": "OpenAI API key",
                   "docs_url": "https://platform.openai.com/api-keys", "present": False}
@@ -78,20 +79,5 @@ def build_router() -> APIRouter:
             buf, media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="banners_{run_id}.zip"'},
         )
-
-    @router.post("/suggest")
-    def suggest(req: SuggestRequest):
-        if not has_secret("ANTHROPIC_API_KEY"):
-            return JSONResponse(
-                status_code=503,
-                content={"error": "ANTHROPIC_API_KEY not set — AI-assist unavailable. "
-                                  "Write the creative brief manually."},
-            )
-        from .brief import suggest_concepts, BriefError  # lazy: only needs anthropic here
-        try:
-            concepts = suggest_concepts(req)
-        except BriefError as e:
-            raise HTTPException(status_code=422, detail={"errors": e.errors})
-        return {"concepts": concepts}
 
     return router

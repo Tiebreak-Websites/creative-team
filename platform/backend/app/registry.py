@@ -87,7 +87,7 @@ def _generic_router(plugin) -> APIRouter:
     return router
 
 
-def mount_tool_routers(app) -> None:
+def mount_tool_routers(app, dependencies=None) -> None:
     for plugin in ToolRegistry.all():
         tid = plugin.spec.meta.id
         router: Optional[APIRouter] = None
@@ -96,4 +96,5 @@ def mount_tool_routers(app) -> None:
         elif hasattr(plugin, "run"):
             router = _generic_router(plugin)
         if router is not None:
-            app.include_router(router, prefix=f"/api/tools/{tid}", tags=[tid])
+            app.include_router(router, prefix=f"/api/tools/{tid}", tags=[tid],
+                               dependencies=dependencies or [])

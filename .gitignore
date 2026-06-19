@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+platform/backend/.secret_key
 
 # Python
 __pycache__/
