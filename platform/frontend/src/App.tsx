@@ -1,17 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Settings } from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
-import { TopNav } from './shell/TopNav'
-import { Welcome, ComingSoon, DesktopOnly } from './shell/States'
-import { GenericToolForm } from './shell/GenericToolForm'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
-import { FigmaQa } from './figmaQa/FigmaQa'
-import { CreativeSummary } from './creativeSummary/CreativeSummary'
-import { Translate } from './translate/Translate'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { Login } from './auth/Login'
+import { UserMenu } from './auth/UserMenu'
 import { ToolSettings } from './admin/ToolSettings'
-import { ToolInstructions } from './components/ToolInstructions'
+import { Button } from '@/components/ui/button'
 
 export function App() {
   return (
@@ -21,17 +17,12 @@ export function App() {
   )
 }
 
-// Gate the whole app behind login.
 function Gate() {
   const { user, loading } = useAuth()
   if (loading) {
     return (
-      <div className="app">
-        <main className="main">
-          <div className="page">
-            <div className="page-inner muted">Loading…</div>
-          </div>
-        </main>
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        Loading…
       </div>
     )
   }
@@ -39,89 +30,71 @@ function Gate() {
   return <Workspace />
 }
 
+// Single-purpose app: the Banner Builder. No home page, no tool switcher.
 function Workspace() {
-  const [tools, setTools] = useState<Tool[]>([])
+  const { user } = useAuth()
+  const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [view, setView] = useState<'tools' | 'settings'>('tools')
+  const [view, setView] = useState<'tool' | 'settings'>('tool')
   const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([fetchTools(), fetchMeta()])
       .then(([t, m]) => {
-        setTools(t.tools)
+        setTool(t.tools.find((x) => x.id === 'banner-builder') ?? null)
         setMeta(m)
       })
       .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
   }, [])
 
-  const selected = useMemo(
-    () => tools.find((t) => t.id === selectedId) ?? null,
-    [tools, selectedId],
-  )
-
-  function openTool(id: string | null) {
-    setView('tools')
-    setSelectedId(id)
-  }
+  const isAdmin = user?.role === 'admin'
 
   return (
-    <div className="app">
-      <TopNav
-        tools={tools}
-        selectedId={view === 'tools' ? selectedId : null}
-        onSelect={openTool}
-        onOpenSettings={() => setView('settings')}
-      />
-      <main className="main">
+    <div className="flex h-screen flex-col bg-background text-foreground">
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur">
+        <button
+          type="button"
+          className="flex items-center gap-2.5"
+          onClick={() => setView('tool')}
+          title="Banner Builder"
+        >
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground shadow-sm">
+            C
+          </span>
+          <span className="text-[15px] font-semibold tracking-tight">Banner Builder</span>
+        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {isAdmin && (
+            <Button
+              variant={view === 'settings' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setView(view === 'settings' ? 'tool' : 'settings')}
+            >
+              <Settings className="h-4 w-4" />
+              Settings
+            </Button>
+          )}
+          <UserMenu />
+        </div>
+      </header>
+
+      <main className="min-h-0 flex-1 overflow-hidden">
         {loadError ? (
-          <div className="page">
-            <div className="page-inner">
-              <div className="alert err">
-                Could not reach the backend: {loadError}. Is it running on port 8000?
-              </div>
+          <div className="p-6">
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              Could not reach the backend: {loadError}. Is it running on port 8000?
             </div>
           </div>
-        ) : view === 'settings' ? (
-          <ToolSettings tools={tools} />
-        ) : !selected ? (
-          <Welcome tools={tools} onSelect={openTool} />
+        ) : view === 'settings' && tool ? (
+          <div className="h-full overflow-y-auto">
+            <ToolSettings tools={[tool]} />
+          </div>
+        ) : tool && meta ? (
+          <BannerBuilder tool={tool} meta={meta} />
         ) : (
-          <ToolView tool={selected} meta={meta} />
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
         )}
       </main>
     </div>
-  )
-}
-
-function ToolView({ tool, meta }: { tool: Tool; meta: Meta | null }) {
-  if (tool.status === 'coming-soon') return <ComingSoon tool={tool} />
-  if (tool.status === 'desktop-only') return <DesktopOnly tool={tool} />
-  if (tool.id === 'banner-builder') {
-    if (!meta)
-      return (
-        <div className="page">
-          <div className="page-inner muted">Loading…</div>
-        </div>
-      )
-    // Banner uses a full-height two-pane workspace; no instructions banner so it isn't squeezed.
-    return <BannerBuilder tool={tool} meta={meta} />
-  }
-  // Page-based tools: show the admin-edited instructions above the tool body.
-  const body =
-    tool.id === 'qa' ? (
-      <FigmaQa tool={tool} />
-    ) : tool.id === 'creative-summary' ? (
-      <CreativeSummary tool={tool} />
-    ) : tool.id === 'translate-figma' ? (
-      <Translate tool={tool} />
-    ) : (
-      <GenericToolForm tool={tool} />
-    )
-  return (
-    <>
-      <ToolInstructions toolId={tool.id} />
-      {body}
-    </>
   )
 }

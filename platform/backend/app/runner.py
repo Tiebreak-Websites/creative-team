@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from . import engine
+from . import creative_director, engine
 from .models import RunRequest
 from .settings import settings
 
@@ -77,6 +77,11 @@ class Run:
     updated_at: str
     api_key: str = ""                  # never serialized
     error: Optional[str] = None
+    style: str = ""                    # campaign look/vibe (fed to the director)
+    effort: Optional[str] = None       # per-run GPT-5.5 thinking effort (None -> admin default)
+    cards: Dict[str, dict] = field(default_factory=dict)   # key -> {title, subtitle, button}
+    size_briefs: Dict[str, Dict[str, str]] = field(default_factory=dict)  # concept -> {size -> brief}
+    director: dict = field(default_factory=dict)           # summary surfaced in the API
 
     def touch(self):
         self.updated_at = _now()
@@ -155,16 +160,19 @@ def _derive_hook(title: str) -> str:
 
 
 def _synthesize_brief(subtitle: str, style: str) -> str:
-    """Build ~250-400 chars of creative-brief prose from subtitle + style.
-
-    Composes the user's optional subtitle and campaign style on top of a clean,
-    modern poster default. The result is free-form prose (the shape the engine's
-    creative_brief expects), never a template list.
+    """Deterministic fallback brief — used ONLY when the GPT-5.5 director is off or
+    unavailable. A bold, concrete, high-CTR default (not a soft mood piece), since
+    it can't see the specific subject the way the director can.
     """
     parts = [
-        "Clean modern poster: the hook set in bold confident display type, "
-        "anchored upper-left against a smooth thematic gradient with generous "
-        "breathing room; editorial, premium, uncluttered."
+        "High-impact paid-social ad built on ONE clear idea: the hook in bold confident "
+        "display type with strong figure-ground contrast against a clean, saturated "
+        "background; a single concrete hero relevant to the message (a real-looking "
+        "generic person facing the viewer with confident, aspirational posture, and/or "
+        "the actual product), deliberate directional lighting, punchy modern palette; "
+        "scroll-stopping and premium. No watercolor wash, no bokeh particles, no abstract "
+        "swooshes, no candlestick/line charts (even as props), no desk/hand-on-chin stock "
+        "pose, no gambling or get-rich-quick symbolism."
     ]
     sub = (subtitle or "").strip()
     if sub:
@@ -172,12 +180,9 @@ def _synthesize_brief(subtitle: str, style: str) -> str:
     sty = (style or "").strip()
     if sty:
         parts.append(f"Look and brand vibe: {sty}.")
-    else:
-        parts.append("Restrained, contemporary palette; soft directional light; calm but high-impact mood.")
     brief = " ".join(parts)
-    # Keep it inside the ~250-400 char band the engine brief is tuned for.
-    if len(brief) > 400:
-        brief = brief[:397].rstrip() + "…"
+    if len(brief) > 600:
+        brief = brief[:597].rstrip() + "…"
     return brief
 
 
@@ -283,11 +288,16 @@ def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
         for f in plan
     }
     now = _now()
+    cards = {
+        c.key: {"title": c.title, "subtitle": c.subtitle or "", "button": c.button or ""}
+        for c in req.concepts
+    }
     run = Run(
         id=run_id, status="queued", model=req.model, quality=req.quality,
         sizes=sizes, concepts=concepts, frames_plan=plan,
         frame_results=frame_results, dir=run_dir,
         created_at=now, updated_at=now, api_key=api_key,
+        style=req.style or "", effort=req.effort, cards=cards,
     )
     STORE.add(run)
     _RUN_POOL.submit(execute_run, run_id)
@@ -299,13 +309,18 @@ def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
 # ---------------------------------------------------------------------------
 def _gen_one_frame(run: Run, frame: dict):
     fr = run.fr(frame["concept"], frame["size"])
-    concept = run.concepts[frame["concept"]]
+    base = run.concepts[frame["concept"]]
+    # Per-size creative brief from the GPT-5.5 director if present, else the base
+    # (deterministic template) brief — so a frame is never left without direction.
+    brief = run.size_briefs.get(frame["concept"], {}).get(frame["size"]) or base.get("creative_brief")
+    concept = {**base, "creative_brief": brief}
     fr.status = "running"
     run.touch()
 
     try:
         if frame["mode"] == "edit":
-            prompt = engine.build_recomp_prompt(concept, engine.MASTER_SIZE, frame["size"])
+            prompt = engine.build_recomp_prompt(
+                concept, engine.MASTER_SIZE, frame["size"], art_direction=brief)
         else:
             prompt = engine.build_prompt(concept, frame["size"])
     except Exception as e:  # noqa: BLE001
@@ -367,11 +382,142 @@ def _finalize(run: Run) -> str:
     return "partial"
 
 
+# ---------------------------------------------------------------------------
+# Creative direction (GPT-5.5) — Phase 0
+# ---------------------------------------------------------------------------
+def _director_config() -> dict:
+    """Admin-editable director settings (options.creativeDirector) with safe
+    defaults. Never raises — a config problem must not break a run."""
+    enabled, model, effort = True, "gpt-5.5", "high"
+    try:
+        from .tool_config import merged_config
+        cd = (merged_config(TOOL_ID).get("options") or {}).get("creativeDirector") or {}
+        enabled = bool(cd.get("enabled", True))
+        model = (str(cd.get("model") or "").strip() or "gpt-5.5")
+        effort = str(cd.get("effort") or "high").strip()
+    except Exception:  # noqa: BLE001
+        pass
+    if effort not in creative_director.VALID_EFFORTS:
+        effort = "high"
+    return {"enabled": enabled, "model": model, "effort": effort}
+
+
+def _validate_director(*, title, base_hook, base_brief, base_button_combo,
+                       has_cta, sizes, result) -> dict:
+    """Enforce the engine's OWN rules on a director result; fall back per field.
+
+    Pure (no network). Guarantees: hook is a verbatim substring of the title;
+    every size has a moderation-clean brief; button_combo (when a CTA exists) is
+    an approved pair. Anything the model got wrong reverts to the deterministic
+    baseline, so the run is always engine-valid.
+    """
+    notes = []
+    hook = (result.get("hook_phrase") or "").strip()
+    if not (hook and hook.lower() in (title or "").lower()):
+        if result.get("hook_phrase"):
+            notes.append("hook not a substring of title; kept derived hook")
+        hook = base_hook
+
+    button_combo = base_button_combo
+    if has_cta:
+        bg = result.get("button_bg")
+        if isinstance(bg, str) and bg.strip():
+            for cbg, ctext in engine.BUTTON_COMBOS:
+                if cbg.upper() == bg.strip().upper():
+                    button_combo = [cbg, ctext]
+                    break
+
+    size_briefs, used = {}, 0
+    model_briefs = result.get("size_briefs") or {}
+    for s in sizes:
+        b = (model_briefs.get(s) or "").strip()
+        if b:
+            ok, _ = engine.check_moderation(
+                {"title": title, "hook_phrase": hook, "creative_brief": b})
+            if ok:
+                size_briefs[s] = b
+                used += 1
+                continue
+            notes.append(f"{s}: brief failed moderation; used template")
+        size_briefs[s] = base_brief
+    return {"hook": hook, "button_combo": button_combo,
+            "size_briefs": size_briefs, "sizes_directed": used, "notes": notes}
+
+
+def _direct_run(run: Run):
+    """Phase 0: GPT-5.5 art-directs each concept across all requested sizes.
+
+    Concurrent across concepts, best-effort: a per-concept failure falls back to
+    the deterministic template brief for that concept and the run proceeds.
+    """
+    cfg = _director_config()
+    if not cfg["enabled"]:
+        run.director = {"used": False, "reason": "disabled"}
+        return
+
+    # Per-run effort (the user's choice) wins over the admin default when valid.
+    effort = run.effort if (run.effort in creative_director.VALID_EFFORTS) else cfg["effort"]
+
+    run.status = "directing"
+    run.touch()
+
+    def _one(ck: str):
+        base = run.concepts[ck]
+        card = run.cards.get(ck, {})
+        try:
+            result = creative_director.direct_concept(
+                api_key=run.api_key, title=base.get("title", ""),
+                subtitle=card.get("subtitle", ""), button=card.get("button", ""),
+                style=run.style, locale=base.get("locale", "en"),
+                sizes=run.sizes, model=cfg["model"], effort=effort,
+            )
+        except creative_director.DirectorError as e:
+            return ck, None, str(e)
+        v = _validate_director(
+            title=base.get("title", ""), base_hook=base.get("hook_phrase", ""),
+            base_brief=base.get("creative_brief", ""),
+            base_button_combo=base.get("button_combo"),
+            has_cta=bool(base.get("cta")), sizes=run.sizes, result=result,
+        )
+        return ck, v, None
+
+    keys = list(run.concepts.keys())
+    directed_sizes, failed, errors = 0, 0, []
+    with ThreadPoolExecutor(max_workers=min(4, max(1, len(keys)))) as ex:
+        for ck, v, err in ex.map(_one, keys):
+            if v is None:
+                failed += 1
+                if err:
+                    errors.append(err)
+                run.size_briefs[ck] = {
+                    s: run.concepts[ck].get("creative_brief", "") for s in run.sizes
+                }
+                continue
+            run.concepts[ck]["hook_phrase"] = v["hook"]
+            if v["button_combo"]:
+                run.concepts[ck]["button_combo"] = v["button_combo"]
+            run.size_briefs[ck] = v["size_briefs"]
+            directed_sizes += v["sizes_directed"]
+
+    run.director = {
+        "used": failed < len(keys),
+        "model": cfg["model"], "effort": effort,
+        "concepts": len(keys), "failed": failed,
+        "sizes_directed": directed_sizes,
+        "error": (errors[0] if errors and failed == len(keys) else None),
+    }
+    run.touch()
+
+
 def execute_run(run_id: str):
     run = STORE.get(run_id)
     if run is None:
         return
     try:
+        # Phase 0 — GPT-5.5 creative direction (per-size briefs). Best-effort:
+        # any failure falls back to the deterministic template brief.
+        _direct_run(run)
+
         # Phase 1 — masters (parallel), then BARRIER.
         run.status = "running_master"
         run.touch()
@@ -431,6 +577,7 @@ def run_to_dict(run: Run) -> dict:
         label = _label(f["concept"], f["size"])
         banners.append({
             "label": label, "concept": f["concept"], "size": f["size"],
+            "title": run.concepts.get(f["concept"], {}).get("title", ""),
             "mode": f["mode"], "phase": f["phase"], "status": fr.status,
             "attempts": fr.attempts, "gen_ms": fr.gen_ms, "bytes": fr.bytes,
             "error": fr.error,
@@ -443,5 +590,6 @@ def run_to_dict(run: Run) -> dict:
         "completed": sum(1 for fr in run.frame_results.values() if fr.status == "ok"),
         "counts": _counts(run),
         "created_at": run.created_at, "updated_at": run.updated_at,
+        "director": run.director,
         "banners": banners,
     }

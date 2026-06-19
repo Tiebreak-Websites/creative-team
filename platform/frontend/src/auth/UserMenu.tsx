@@ -1,17 +1,7 @@
-import { useState, type CSSProperties } from 'react'
+import { useState } from 'react'
+import { LogOut } from 'lucide-react'
 import { useAuth } from './AuthContext'
-
-// Compact top-nav widget: signed-in email + Logout. Reuses shared classes
-// (.btn.sm.secondary, .muted); only layout is scoped inline.
-const wrap: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10 }
-const emailStyle: CSSProperties = {
-  fontSize: 12,
-  color: 'var(--text-2)',
-  maxWidth: 180,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-}
+import { Button } from '@/components/ui/button'
 
 export function UserMenu() {
   const { user, logout } = useAuth()
@@ -29,13 +19,17 @@ export function UserMenu() {
   }
 
   return (
-    <div style={wrap}>
-      <span style={emailStyle} title={user.email}>
+    <div className="flex items-center gap-2">
+      <span
+        className="hidden max-w-[180px] truncate text-xs text-muted-foreground sm:inline"
+        title={user.email}
+      >
         {user.email}
       </span>
-      <button className="btn sm secondary" onClick={onLogout} disabled={busy}>
+      <Button variant="ghost" size="sm" onClick={onLogout} disabled={busy}>
+        <LogOut className="h-4 w-4" />
         {busy ? 'Signing out…' : 'Logout'}
-      </button>
+      </Button>
     </div>
   )
 }

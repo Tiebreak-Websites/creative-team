@@ -23,7 +23,8 @@ class ConceptIn(BaseModel):
 class RunRequest(BaseModel):
     """A campaign run: settings menu + concept cards."""
     model: str = "gpt-image-2"
-    quality: str = "medium"
+    quality: str = "medium"              # gpt-image-2 image quality: low | medium | high
+    effort: Optional[str] = None         # GPT-5.5 thinking effort override; None -> admin default
     locale: str = "en"
     sizes: List[str] = Field(default_factory=lambda: ["1200x1200"])
     style: Optional[str] = None          # optional look / brand vibe

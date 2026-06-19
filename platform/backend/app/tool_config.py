@@ -38,17 +38,28 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
     "banner-builder": {
         "instructions": (
             "## Banner Builder\n"
-            "Generate on-brand ad banners with OpenAI **gpt-image-2**.\n\n"
-            "1. Write the banner copy and pick a locale.\n"
-            "2. Add one or more creative concepts (or use AI-assist to draft them).\n"
+            "Generate on-brand ad banners with a **GPT-5.5** creative director + OpenAI "
+            "**gpt-image-2**.\n\n"
+            "1. Write the banner copy (Title, optional Subtitle/Button) and pick a locale.\n"
+            "2. Add one or more concept cards and set the campaign style.\n"
             "3. Choose the sizes to render, then generate and download as PNG.\n\n"
-            "_Tip:_ keep headlines short — long copy is hard for the model to render cleanly."
+            "GPT-5.5 reasons over each concept and writes a bespoke creative brief for every "
+            "size before gpt-image-2 renders it (configurable below). If the director is off "
+            "or unavailable, a deterministic template brief is used instead.\n\n"
+            "_Tip:_ keep headlines short — long copy is hard for the image model to render cleanly."
         ),
         "options": {
             "sizes": ["1080x1080", "1080x1920", "1200x628", "300x250", "728x90"],
             "defaultModel": "gpt-image-2",
-            "defaultQuality": "medium",
+            "defaultQuality": "high",  # gpt-image-2 max fidelity (low | medium | high)
             "aiAssist": True,
+            # GPT-5.5 "creative director": reasons per concept and writes a bespoke
+            # creative brief for each size before gpt-image-2 renders it.
+            "creativeDirector": {
+                "enabled": True,
+                "model": "gpt-5.5",
+                "effort": "xhigh",  # max "Extended" thinking; none|minimal|low|medium|high|xhigh
+            },
         },
     },
     "qa": {

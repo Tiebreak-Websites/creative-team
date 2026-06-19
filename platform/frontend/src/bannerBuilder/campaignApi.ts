@@ -22,6 +22,7 @@ export interface ConceptCardPayload {
 export interface CampaignRunRequest {
   model: string
   quality: string
+  effort?: string // GPT-5.5 thinking effort (low | medium | high | xhigh)
   locale: string
   sizes: string[]
   style?: string

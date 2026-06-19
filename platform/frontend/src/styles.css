@@ -9,10 +9,11 @@
   --text-2: #3f4654;
   --muted: #8a92a3;
 
-  --accent: #4f46e5;
-  --accent-hover: #4338ca;
-  --accent-soft: #eef0ff;
-  --accent-ring: rgba(79, 70, 229, 0.28);
+  /* Green CTA — modern platform accent (matches shadcn --primary) */
+  --accent: #16a34a;
+  --accent-hover: #15803d;
+  --accent-soft: #e9f7ee;
+  --accent-ring: rgba(22, 163, 74, 0.28);
 
   --ok: #16a34a;
   --ok-soft: #e9f7ee;

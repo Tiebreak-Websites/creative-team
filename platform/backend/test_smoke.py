@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))       # so `import app`
 
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
+from app import runner  # noqa: E402
 
 client = TestClient(app)   # becomes authenticated via _login() below
 anon = TestClient(app)     # never logs in
@@ -68,8 +69,9 @@ def test_tools_listing():
     assert bb["status"] == "available"
     assert bb["custom_ui"] is True
     available = {tid for tid, t in tools.items() if t["status"] == "available"}
-    assert available == {"banner-builder", "qa", "creative-summary", "translate-figma"}, available
-    for removed in ("banner-prompt", "banner-higgsfield", "pull", "push"):
+    assert available == {"banner-builder"}, available  # single-purpose app
+    for removed in ("qa", "creative-summary", "translate-figma",
+                    "banner-prompt", "banner-higgsfield", "pull", "push"):
         assert removed not in tools, removed
 
 
@@ -98,6 +100,52 @@ def test_run_rejects_bad_size_with_422():
     assert any("1234x5678" in e for e in errs), errs
 
 
+def test_director_validation_and_fallback():
+    """The GPT-5.5 director's output is run through the engine's own rules with a
+    per-field deterministic fallback. Pure logic — no network."""
+    # Good result: hook is a verbatim substring, briefs clean, bg approved.
+    good = runner._validate_director(
+        title="Oil prices fell. The ringgit moved.",
+        base_hook="Oil prices",
+        base_brief="TEMPLATE BRIEF",
+        base_button_combo=["#2563EB", "#FFFFFF"],
+        has_cta=True,
+        sizes=["1200x1200", "1080x1920"],
+        result={
+            "hook_phrase": "Oil prices fell",
+            "button_bg": "#F97316",
+            "size_briefs": {
+                "1200x1200": "A clean editorial poster with a warm gradient.",
+                "1080x1920": "Tall composition, hook stacked high, calm mood.",
+            },
+        },
+    )
+    assert good["hook"] == "Oil prices fell"                 # accepted (substring of title)
+    assert good["button_combo"] == ["#F97316", "#FFFFFF"]    # snapped to the approved pair
+    assert good["sizes_directed"] == 2
+    assert good["size_briefs"]["1080x1920"].startswith("Tall")
+
+    # Bad result: hook not in title -> base hook; forbidden keyword -> template brief;
+    # unknown bg -> keep base combo.
+    bad = runner._validate_director(
+        title="Premium fund launch",
+        base_hook="Premium fund",
+        base_brief="TEMPLATE BRIEF",
+        base_button_combo=["#2563EB", "#FFFFFF"],
+        has_cta=True,
+        sizes=["1200x1200"],
+        result={
+            "hook_phrase": "RIGGED MARKETS",
+            "button_bg": "#000000",
+            "size_briefs": {"1200x1200": "poster featuring elon musk silhouette"},
+        },
+    )
+    assert bad["hook"] == "Premium fund"                     # reverted to base
+    assert bad["button_combo"] == ["#2563EB", "#FFFFFF"]     # bad bg ignored
+    assert bad["size_briefs"]["1200x1200"] == "TEMPLATE BRIEF"  # moderation fallback
+    assert bad["sizes_directed"] == 0
+
+
 if __name__ == "__main__":
     test_health()
     test_auth_required_without_session()
@@ -106,4 +154,5 @@ if __name__ == "__main__":
     test_tools_listing()
     test_tool_config_gates()
     test_run_rejects_bad_size_with_422()
+    test_director_validation_and_fallback()
     print("ALL BACKEND SMOKE TESTS PASSED")

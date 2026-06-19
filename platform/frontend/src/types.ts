@@ -41,17 +41,26 @@ export interface ButtonCombo {
   text: string
 }
 
+export interface ThinkingEffort {
+  value: string
+  label: string
+}
+
 export interface Meta {
   button_combos: ButtonCombo[]
   sizes: string[]
   master_size: string
   models: string[]
   qualities: string[]
+  default_quality?: string
+  thinking_efforts?: ThinkingEffort[]
+  default_effort?: string
 }
 
 export interface Banner {
   label: string
   concept: string
+  title: string
   size: string
   mode: string
   phase: string
@@ -63,6 +72,17 @@ export interface Banner {
   url: string | null
 }
 
+export interface RunDirector {
+  used: boolean
+  model?: string
+  effort?: string
+  concepts?: number
+  failed?: number
+  sizes_directed?: number
+  reason?: string
+  error?: string | null
+}
+
 export interface RunData {
   run_id: string
   status: string
@@ -72,6 +92,7 @@ export interface RunData {
   counts: { ok: number; failed: number; pending: number; running: number }
   created_at: string
   updated_at: string
+  director?: RunDirector
   banners: Banner[]
 }
 

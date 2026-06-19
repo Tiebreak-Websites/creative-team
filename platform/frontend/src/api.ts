@@ -95,6 +95,11 @@ export function zipUrl(runId: string): string {
   return assetUrl(`/api/tools/banner-builder/runs/${runId}/download.zip`)
 }
 
+/** Zip every ok PNG across several runs (used by "Download all" once runs accumulate). */
+export function zipAllUrl(runIds: string[]): string {
+  return assetUrl(`/api/tools/banner-builder/download_all.zip?ids=${runIds.join(',')}`)
+}
+
 export interface SuggestRequest {
   banner_text: string
   cta?: string

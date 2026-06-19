@@ -46,15 +46,18 @@ _APPROVED_BG_HEXES = {bg.upper() for bg, _ in BUTTON_COMBOS}
 # ---------------------------------------------------------------------------
 # Aspect-locked layout (base) + button placement (only when CTA present)
 # ---------------------------------------------------------------------------
+# Aspect + safe zones + legibility only — the COMPOSITION (where the subject sits,
+# full-bleed vs paneled) is the creative direction's choice, so concepts vary
+# instead of all converging on one "headline-left / subject-right" template.
 LAYOUT_BASE = {
-    "1200x1200": "Layout 1:1: hook type-hero anchored upper-left (top 35-45% of canvas); body title at center-left directly below the hook; thematic visual atmosphere fills the right half. Breathing room between text and visual.",
-    "1080x1080": "Layout 1:1: hook type-hero anchored upper-left (top 35-45% of canvas); body title at center-left directly below the hook; thematic visual atmosphere fills the right half. Breathing room between text and visual.",
-    "1200x628":  "Layout 1200x628 wide: hook + body title block left 45%; thematic visual right 55%; horizontal composition; 12% safe top+bottom.",
-    "1080x1920": "Layout 9:16 tall: hook top 22-32%; body title directly below hook; thematic visual center-to-lower 40-55%; mobile safe top 8% + bottom 12%; 10% safe left+right.",
-    "1080x1350": "Layout 4:5 portrait: hook upper third; body title directly below hook; thematic visual center-to-lower; editorial poster composition; 10% safe left+right.",
-    "960x1200":  "Layout 4:5 portrait: hook upper third; body title directly below hook; thematic visual center-to-lower; editorial poster composition; 10% safe left+right.",
-    "1920x1080": "Layout 16:9 landscape: hook + body title block left 40%; thematic visual right 60%; cinematic wide composition.",
-    "1200x960":  "Layout 5:4 mild-wide: hook + body title block left 45%; thematic visual right 55%; horizontal composition.",
+    "1200x1200": "Aspect 1:1 square. The headline is the dominant text block in its own high-contrast, fully legible zone; the hero subject/visual gets a separate zone with clear separation. Composition (subject left/right/centered/full-bleed with a text overlay panel) is the creative direction's choice. Generous breathing room; keep text ~6% clear of every edge.",
+    "1080x1080": "Aspect 1:1 square. The headline is the dominant text block in its own high-contrast, fully legible zone; the hero subject/visual gets a separate zone with clear separation. Composition (subject left/right/centered/full-bleed with a text overlay panel) is the creative direction's choice. Generous breathing room; keep text ~6% clear of every edge.",
+    "1200x628":  "Aspect 1.91:1 wide banner. Headline block and hero subject share the frame — split or overlay per the creative direction. Headline stays large and legible; 12% safe top+bottom.",
+    "1080x1920": "Aspect 9:16 tall. Headline in the upper area with the hero subject filling the lower two-thirds, OR a full-bleed subject with a headline overlay — per the creative direction. Mobile safe top 8% + bottom 12%; 10% safe left+right.",
+    "1080x1350": "Aspect 4:5 portrait. Headline prominent with the hero subject in a separate zone, or full-bleed with overlay — per the creative direction. Editorial, premium; 10% safe left+right.",
+    "960x1200":  "Aspect 4:5 portrait. Headline prominent with the hero subject in a separate zone, or full-bleed with overlay — per the creative direction. Editorial, premium; 10% safe left+right.",
+    "1920x1080": "Aspect 16:9 landscape. Headline block and hero subject share the frame — split or overlay per the creative direction. Cinematic, wide; headline large and legible.",
+    "1200x960":  "Aspect 5:4 mild-wide. Headline block and hero subject share the frame — split or overlay per the creative direction. Headline large and legible.",
 }
 
 BUTTON_PLACEMENT = {
@@ -83,19 +86,33 @@ LAYOUT_FAMILY = {
 # System layer — fixed across every prompt
 # ---------------------------------------------------------------------------
 SYSTEM_HEADER = (
-    "Designed graphic ad — a finished paid-social poster. "
-    "NOT a photograph of an office, NOT an illustration of furniture, NOT a slide."
+    "A finished, high-converting paid-social ad creative, art-directed to stop the "
+    "scroll and drive clicks. The medium is whatever the creative direction below "
+    "calls for — advertising photography (a real-looking, generic non-celebrity human "
+    "subject and/or the actual product is encouraged when it fits the offer), bold "
+    "graphic/typographic, or 3D. It is a real ad, not a slide, not a wireframe, not a "
+    "generic stock template."
 )
 
 HARD_NEGATIVES = (
-    "Forbidden: dark office scene, desk with laptop, hands on keyboard, classroom, "
-    "headshot, split-panel composition, real-person likeness, fake UI text or "
-    "invented numbers inside screens or charts, flags, partisan colors, "
-    "real company logos, real brand wordmarks, branded product packaging or signage "
-    "(e.g. branded oil drums, branded fuel pumps, branded buildings), "
-    "recognizable real-world architecture (e.g. Petronas Towers, Burj Khalifa, "
-    "Eiffel Tower, Empire State, Sydney Opera House) — use abstract silhouettes only, "
-    "invented decorative icon rows, infographic icon sets, or feature-grid icons."
+    "Avoid the tells of cheap AI/stock creative unless the direction explicitly calls "
+    "for them: watercolor or ink-wash gradient backgrounds; glowing bokeh particle "
+    "dust; abstract swooshes or wave lines; candlestick or line stock-market charts "
+    "ANYWHERE (including as props on papers, screens, tablets or walls); and the "
+    "generic corporate stock-photo trope — a suited person seated at a desk, hand on "
+    "chin, frowning at paperwork or a laptop. Commit to ONE dominant idea — do not "
+    "stack competing metaphors or props (no symbol soup). A human subject should FACE "
+    "THE VIEWER with confident, aspirational posture and eye contact, never look down "
+    "at props. For finance/investing: NO gambling or luck symbolism (dice, casino "
+    "chips, roulette, slot machines, lottery or scratch cards) and NO get-rich-quick "
+    "imagery (cash rain, money piles, luxury-car flexing) — both are off-message and a "
+    "compliance risk. Never include: real or identifiable individuals or celebrities (a "
+    "generic, fictional model is fine and encouraged), real company logos, brand "
+    "wordmarks or trademarked packaging, fake or garbled UI text and invented numbers "
+    "inside screens or charts, recognizable real-world landmarks or architecture (use "
+    "generic), watermarks, or AI artifacts (warped or asymmetric faces and eyes, "
+    "malformed hands/fingers/teeth, melted or duplicated text, misspelled words, "
+    "stripped or wrong diacritics)."
 )
 
 BRAND_DEFENCE_LINE = (
@@ -132,7 +149,7 @@ def hierarchy_rule(has_cta: bool) -> str:
     return (
         "Visual hierarchy: hook is the primary visual anchor at ~40-50% canvas height "
         "(prominent, not consuming). Body title legible at ~6-8% canvas height "
-        "(readable support). Thematic visual atmosphere supports — together with the hook, "
+        "(readable support). The hero subject or product supports — together with the hook, "
         "the two most important elements. Breathing room around all elements."
     )
 
@@ -169,7 +186,7 @@ FORBIDDEN_KEYWORDS = {
     "us flag", "american flag", "russian flag", "chinese flag",
     "swastika", "hammer and sickle",
     # Visual concepts banned by framework
-    "partisan colors", "real person",
+    "partisan colors",
 }
 
 
@@ -239,8 +256,8 @@ def build_prompt(concept: dict, size: str) -> str:
         hierarchy_rule(has_cta=has_cta),
         f'Title (verbatim, render exactly as written): "{title}"',
         f'Hook: "{hook}" — pulled verbatim from the Title above. This fragment is '
-        "the visual hero of the composition. Claude has chosen the treatment in "
-        "the creative direction below.",
+        "the type-hero of the composition; its treatment is specified in the "
+        "creative direction below.",
         BRAND_DEFENCE_LINE,
         "Creative direction: " + brief.strip(),
     ]
@@ -260,20 +277,24 @@ def build_prompt(concept: dict, size: str) -> str:
             "No trailing punctuation on the button label."
         )
 
-    if locale.lower() != "en":
-        sections.append(TYPOGRAPHY_RULE)
+    sections.append(TYPOGRAPHY_RULE)
     if is_rtl(locale):
         sections.append(RTL_RULE)
 
     return "\n\n".join(sections)
 
 
-def build_recomp_prompt(concept: dict, master_size: str, target_size: str) -> str:
+def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
+                        art_direction: Optional[str] = None) -> str:
     """Compose a recomposition prompt for /v1/images/edits.
 
     Sent with the MVP master image attached. Preserves the title, hook, button,
     palette, and visual direction from the master — only the layout and button
     placement change for the new aspect.
+
+    `art_direction` (optional) is a per-aspect creative brief (e.g. authored by
+    the GPT-5.5 creative director). When present it is layered in as guidance for
+    HOW to re-lay-out this format, on top of "preserve the master's identity".
     """
     if target_size == master_size:
         raise ValueError(
@@ -313,7 +334,7 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str) -> st
             f"with very generous internal padding. Command-presence sized. "
             f"The action anchor — impossible to miss. No trailing punctuation on the label."
         )
-    preserve.append("- Thematic background and visual elements from the master, repositioned for the new aspect")
+    preserve.append("- Subject, background and visual elements from the master, repositioned for the new aspect")
     preserve.append("- Palette from the master (no new colors introduced)")
 
     sections = [
@@ -325,20 +346,25 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str) -> st
         f"NEW LAYOUT ({family}): {layout_lock(target_size, has_cta=has_cta)}",
 
         hierarchy_rule(has_cta=has_cta),
+    ]
 
+    if art_direction and art_direction.strip():
+        sections.append("Art direction for this format: " + art_direction.strip())
+
+    sections += [
         "PRESERVE (reposition, do not remove):\n" + "\n".join(preserve),
 
         BRAND_DEFENCE_LINE,
 
         f"Constraints: exactly {target_size} px. No new content. No watermarks. "
-        "NO HARD SPLIT-PANEL. NO regression into dark office, desk, laptop, fake UI, "
-        "real person, flag, real company logo, real brand wordmark, branded packaging, "
-        "recognizable real-world architecture, invented icon rows.",
+        "NO HARD SPLIT-PANEL. Keep it a real ad: no fake UI text or invented numbers, "
+        "no real brand logos or wordmarks, no recognizable real landmarks, no AI "
+        "artifacts; do not drift into the watercolor/bokeh/abstract-swoosh or generic "
+        "candlestick-chart template.",
     ]
     if is_rtl(locale):
         sections.append("RTL composition: keep mirrored direction; hook + copy block on the right.")
-    if locale.lower() != "en":
-        sections.append(TYPOGRAPHY_RULE)
+    sections.append(TYPOGRAPHY_RULE)
 
     return "\n\n".join(sections)
 

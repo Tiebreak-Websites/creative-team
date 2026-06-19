@@ -1,31 +1,10 @@
-import { useState, type CSSProperties, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
+import { Loader2 } from 'lucide-react'
 import { useAuth } from './AuthContext'
-
-// Scoped inline styles only — no new global CSS. Everything else reuses the
-// shared design classes (.card/.field/.input/.btn/.alert/.spinner/.muted).
-const screen: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  minHeight: '100vh',
-  padding: '24px',
-  background: 'var(--bg)',
-}
-const card: CSSProperties = { width: '100%', maxWidth: 380, margin: 0 }
-const head: CSSProperties = { textAlign: 'center', marginBottom: 20 }
-const logo: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 40,
-  height: 40,
-  borderRadius: 'var(--radius-sm)',
-  background: 'var(--accent)',
-  color: '#fff',
-  fontWeight: 700,
-  fontSize: 18,
-  marginBottom: 12,
-}
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 
 export function Login() {
   const { login } = useAuth()
@@ -48,55 +27,54 @@ export function Login() {
   }
 
   return (
-    <div style={screen}>
-      <form className="card" style={card} onSubmit={onSubmit}>
-        <div style={head}>
-          <span style={logo}>C</span>
-          <h1 style={{ fontSize: 20 }}>Creative Tools</h1>
-          <p className="muted" style={{ margin: '4px 0 0' }}>
-            Sign in to continue
-          </p>
-        </div>
-
-        {error && <div className="alert err">{error}</div>}
-
-        <label className="field">
-          <span>Email</span>
-          <input
-            className="input"
-            type="email"
-            autoComplete="username"
-            autoFocus
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@tiebreak.dev"
-            required
-          />
-        </label>
-
-        <label className="field">
-          <span>Password</span>
-          <input
-            className="input"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-            required
-          />
-        </label>
-
-        <button
-          className="btn block"
-          type="submit"
-          disabled={submitting}
-          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-        >
-          {submitting && <span className="spinner light" />}
-          {submitting ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <Card className="w-full max-w-sm">
+        <CardHeader className="items-center text-center">
+          <span className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
+            C
+          </span>
+          <CardTitle className="text-xl">Creative Tools</CardTitle>
+          <CardDescription>Sign in to continue</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={onSubmit} className="space-y-4">
+            {error && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="username"
+                autoFocus
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@tiebreak.dev"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {submitting ? 'Signing in…' : 'Sign in'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from ... import runner
+from ...creative_director import VALID_EFFORTS
 from ...models import RunRequest
 from ...secrets import get_secret
 
@@ -32,8 +33,10 @@ def build_router() -> APIRouter:
             return JSONResponse(status_code=424, content={"missing_secrets": [_OPENAI_SECRET]})
         if req.model not in ("gpt-image-2", "gpt-image-1-mini"):
             raise HTTPException(status_code=422, detail={"errors": [f"unknown model '{req.model}'"]})
-        if req.quality not in ("low", "medium"):
+        if req.quality not in ("low", "medium", "high"):
             raise HTTPException(status_code=422, detail={"errors": [f"unknown quality '{req.quality}'"]})
+        if req.effort and req.effort not in VALID_EFFORTS:
+            raise HTTPException(status_code=422, detail={"errors": [f"unknown thinking effort '{req.effort}'"]})
         errors, concepts, sizes = runner.validate_request(req)
         if errors:
             raise HTTPException(status_code=422, detail={"errors": errors})
@@ -78,6 +81,26 @@ def build_router() -> APIRouter:
         return StreamingResponse(
             buf, media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="banners_{run_id}.zip"'},
+        )
+
+    @router.get("/download_all.zip")
+    def download_all(ids: str = ""):
+        """Zip every ok PNG across one or more runs (?ids=a,b,c). Banners are
+        namespaced by run id in the archive so labels can't collide."""
+        run_ids = [x.strip() for x in ids.split(",") if x.strip()]
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for rid in run_ids:
+                run = runner.STORE.get(rid)
+                if run is None:
+                    continue
+                for fr in run.frame_results.values():
+                    if fr.status == "ok" and fr.png_path and Path(fr.png_path).exists():
+                        zf.write(fr.png_path, arcname=f"{rid}/{Path(fr.png_path).name}")
+        buf.seek(0)
+        return StreamingResponse(
+            buf, media_type="application/zip",
+            headers={"Content-Disposition": 'attachment; filename="banners.zip"'},
         )
 
     return router

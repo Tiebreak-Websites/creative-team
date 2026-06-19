@@ -2,16 +2,38 @@
 from fastapi import APIRouter
 
 from .. import engine
+from ..tool_config import merged_config
 
 router = APIRouter(prefix="/api", tags=["meta"])
+
+# gpt-image-2 image-quality tiers (low | medium | high). "high" = max fidelity.
+QUALITIES = ["low", "medium", "high"]
+
+# GPT-5.5 reasoning-effort tiers offered for the creative director. "xhigh" is
+# the model's maximum ("Extended"). Values are the real OpenAI effort strings.
+THINKING_EFFORTS = [
+    {"value": "low", "label": "Low"},
+    {"value": "medium", "label": "Medium"},
+    {"value": "high", "label": "High"},
+    {"value": "xhigh", "label": "Extended"},
+]
 
 
 @router.get("/meta")
 def meta():
+    # Defaults come from the admin tool-config so they stay editable from the UI.
+    try:
+        opts = merged_config("banner-builder").get("options", {}) or {}
+    except Exception:  # noqa: BLE001 - meta must never 500 on a config hiccup
+        opts = {}
+    cd = opts.get("creativeDirector") or {}
     return {
         "button_combos": [{"bg": bg, "text": text} for bg, text in engine.BUTTON_COMBOS],
         "sizes": engine.SUPPORTED_SIZES,
         "master_size": engine.MASTER_SIZE,
         "models": engine.MODELS,
-        "qualities": ["low", "medium"],
+        "qualities": QUALITIES,
+        "default_quality": opts.get("defaultQuality") if opts.get("defaultQuality") in QUALITIES else "high",
+        "thinking_efforts": THINKING_EFFORTS,
+        "default_effort": cd.get("effort") or "xhigh",
     }
