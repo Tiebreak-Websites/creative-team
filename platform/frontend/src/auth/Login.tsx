@@ -2,9 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useAuth } from './AuthContext'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { BrandMark } from '@/components/BrandMark'
 
 export function Login() {
   const { login } = useAuth()
@@ -27,19 +27,27 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="items-center text-center">
-          <span className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-foreground">
-            C
-          </span>
-          <CardTitle className="text-xl">Creative Tools</CardTitle>
-          <CardDescription>Sign in to continue</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={onSubmit} className="space-y-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-6">
+      {/* Ambient mint glow */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-1/2 h-[560px] w-[560px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-[0.07] blur-[130px]"
+        style={{ background: 'radial-gradient(circle, hsl(var(--primary)), transparent 70%)' }}
+      />
+      <div className="relative z-10 w-full max-w-sm animate-fade-up">
+        <div className="rounded-2xl border border-border bg-card p-9 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.8)]">
+          <div className="flex flex-col items-center text-center">
+            <BrandMark size={44} />
+            <span className="mt-4 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+              tiebreak
+            </span>
+            <h1 className="mt-1 font-display text-2xl font-bold tracking-tight">Banner Builder</h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">Sign in to continue</p>
+          </div>
+
+          <form onSubmit={onSubmit} className="mt-7 space-y-4">
             {error && (
-              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 {error}
               </div>
             )}
@@ -68,13 +76,14 @@ export function Login() {
                 required
               />
             </div>
-            <Button type="submit" className="w-full" disabled={submitting}>
+            <Button type="submit" size="lg" className="w-full font-display tb-glow" disabled={submitting}>
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
               {submitting ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+        <p className="mt-5 text-center text-xs text-muted-foreground">Tiebreak · Creative Tools</p>
+      </div>
     </div>
   )
 }

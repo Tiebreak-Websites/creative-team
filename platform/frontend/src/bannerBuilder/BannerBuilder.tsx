@@ -1,11 +1,20 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronUp, Loader2, Plus, Sparkles, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Plus, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import type { Meta, RunData, Tool } from '../types'
 import { TERMINAL_STATUSES } from '../types'
 import { ApiError, getRun } from '../api'
 import { createRun } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
+import {
+  ArtDirectionModal,
+  artActiveCount,
+  composeArtDirection,
+  DEFAULT_ART,
+  isArtActive,
+  type ArtDirection,
+} from './artDirection'
+import { loadBrand } from './brand'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,6 +30,55 @@ interface ConceptCard {
   subtitle: string
   button: string
 }
+
+// Languages for the on-image copy. `cc` is the ISO country code for the
+// flag-icons set (real flags — emoji flags don't render on Windows).
+export const LOCALES = [
+  { value: 'en', label: 'English', cc: 'gb' },
+  { value: 'es', label: 'Spanish', cc: 'es' },
+  { value: 'es-419', label: 'Spanish (LatAm)', cc: 'mx' },
+  { value: 'pt', label: 'Portuguese', cc: 'pt' },
+  { value: 'sv', label: 'Swedish', cc: 'se' },
+  { value: 'ja', label: 'Japanese', cc: 'jp' },
+  { value: 'th', label: 'Thai', cc: 'th' },
+  { value: 'pl', label: 'Polish', cc: 'pl' },
+  { value: 'zh', label: 'Chinese', cc: 'cn' },
+  { value: 'ar', label: 'Arabic', cc: 'sa' },
+  { value: 'it', label: 'Italian', cc: 'it' },
+  { value: 'de', label: 'German', cc: 'de' },
+]
+
+export const MODEL_LABELS: Record<string, string> = {
+  'gpt-image-2': 'GPT-2',
+  'gpt-image-1-mini': 'GPT-1',
+}
+export const QUALITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High' }
+
+// Per-platform size groups (from the team's master size sheet). Only sizes the
+// backend supports render; any supported size not listed falls into "Other".
+const PLATFORMS: { label: string; sizes: string[] }[] = [
+  { label: 'Most used', sizes: ['1200x674', '1200x1200', '1200x800', '1200x628', '960x1200', '1080x1080', '1080x1920', '1440x1800'] },
+  { label: 'Meta · Facebook · Instagram', sizes: ['1080x1080', '1080x1350', '1080x1920', '1200x628', '1440x1800'] },
+  { label: 'X · Twitter', sizes: ['1080x1080', '1200x628'] },
+  { label: 'Google · Display', sizes: ['1200x628', '1200x1200', '1200x300', '512x128', '600x600'] },
+  { label: 'Google · Demand Gen', sizes: ['1200x628', '1200x1200', '960x1200'] },
+  { label: 'Google · Performance Max', sizes: ['1200x628', '1200x1200', '1200x300', '960x1200'] },
+  { label: 'Google · App', sizes: ['1200x628', '1200x1500', '1200x1200'] },
+  { label: 'Google · Search', sizes: ['1200x1200', '1200x628'] },
+  { label: 'Google · Video · YouTube', sizes: ['1920x1080', '1080x1920', '1080x1080', '1280x720', '300x60'] },
+  { label: 'Snapchat', sizes: ['1080x1920', '800x800', '720x1280'] },
+  { label: 'Taboola', sizes: ['1200x674'] },
+  { label: 'Outbrain', sizes: ['1200x1200'] },
+  { label: 'MGID', sizes: ['1200x800'] },
+  { label: 'AdsKeeper', sizes: ['1200x800'] },
+  { label: 'PropellerAds', sizes: ['1200x800'] },
+  { label: 'Criteo · Display', sizes: ['300x250', '728x90', '160x600', '300x600', '970x250', '320x50'] },
+  { label: 'Criteo · Native', sizes: ['600x600', '600x315', '600x500'] },
+]
+
+// Compact control button used inside the floating command bar.
+const BAR_BTN =
+  'inline-flex h-9 items-center gap-1.5 rounded-xl border border-border bg-secondary px-3 font-display text-[13px] font-medium text-foreground transition-colors hover:border-foreground/25'
 
 let uid = 0
 function blankCard(): ConceptCard {
@@ -62,14 +120,37 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     { value: 'high', label: 'High' },
     { value: 'xhigh', label: 'Extended' },
   ]
+  const [brand] = useState(loadBrand)
   const [sizes, setSizes] = useState<Set<string>>(new Set([meta.master_size]))
-  const [model, setModel] = useState(meta.models[0] ?? 'gpt-image-2')
+  const [model, setModel] = useState(
+    brand.model && meta.models.includes(brand.model) ? brand.model : meta.models[0] ?? 'gpt-image-2',
+  )
   const [quality, setQuality] = useState(
-    meta.default_quality ?? meta.qualities[meta.qualities.length - 1] ?? 'high',
+    brand.quality && meta.qualities.includes(brand.quality)
+      ? brand.quality
+      : meta.default_quality ?? meta.qualities[meta.qualities.length - 1] ?? 'high',
   )
   const [effort, setEffort] = useState(meta.default_effort ?? 'xhigh')
-  const [locale, setLocale] = useState('en')
+  const [locale, setLocale] = useState(
+    LOCALES.some((l) => l.value === brand.locale) ? (brand.locale as string) : 'en',
+  )
   const [style, setStyle] = useState('')
+  const [art, setArt] = useState<ArtDirection>({
+    ...DEFAULT_ART,
+    scene: brand.scene,
+    text: brand.text,
+    colorMood: brand.colorMood,
+  })
+  const [artOpen, setArtOpen] = useState(false)
+  const patchArt = (patch: Partial<ArtDirection>) => setArt((a) => ({ ...a, ...patch }))
+  const localeLabel = LOCALES.find((l) => l.value === locale)?.label ?? 'English'
+
+  // Sizes UI: collapsible platform groups + global search.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['Most used']))
+  const [sizeQuery, setSizeQuery] = useState('')
+
+  // Floating command bar popovers ('presets' | 'model' | null).
+  const [barPopover, setBarPopover] = useState<null | 'model'>(null)
 
   // ---- Concept cards ----
   const [cards, setCards] = useState<ConceptCard[]>([blankCard()])
@@ -83,9 +164,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   const runsRef = useRef<RunData[]>(runs)
   runsRef.current = runs
 
-  // Poll every non-terminal run until all reach a terminal status. New runs are
-  // appended (never replace the old ones). The Generate button is disabled while
-  // any run is active, so the [polling] flip is enough to re-arm the loop.
+  // Poll every non-terminal run until all reach a terminal status.
   useEffect(() => {
     if (!polling) return
     let cancelled = false
@@ -112,9 +191,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     }
   }, [polling])
 
-  // Restore previous batches after a refresh from ?runs=a,b,c. A 404 drops just
-  // that id; runs still in flight resume polling. Merges (never clobbers a run
-  // started while these fetches were in flight). Runs once on mount.
+  // Restore previous batches after a refresh from ?runs=a,b,c.
   useEffect(() => {
     const ids = readRunIdsFromUrl()
     if (ids.length === 0) return
@@ -160,6 +237,42 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     })
   }
 
+  function toggleGroup(label: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+  }
+
+  function renderSizeChip(s: string) {
+    const isMaster = s === meta.master_size
+    const on = sizes.has(s)
+    return (
+      <button
+        key={s}
+        type="button"
+        onClick={() => toggleSize(s)}
+        title={isMaster ? 'MVP — always generated first' : ''}
+        className={cn(
+          'flex items-center justify-between rounded-md border px-2.5 py-1.5 font-display text-[12px] font-semibold transition-colors',
+          on
+            ? 'border-primary/50 bg-primary/10 text-primary'
+            : 'border-border bg-secondary text-muted-foreground hover:border-foreground/25 hover:text-foreground',
+          isMaster && 'cursor-default',
+        )}
+      >
+        <span>{s}</span>
+        {isMaster && (
+          <span className="rounded bg-primary px-1 py-0.5 text-[8px] font-medium uppercase tracking-wide text-primary-foreground">
+            MVP
+          </span>
+        )}
+      </button>
+    )
+  }
+
   // ---- Cards: add / remove / reorder ----
   function updateCard(key: string, patch: Partial<ConceptCard>) {
     setCards((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)))
@@ -194,18 +307,21 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   }
 
   const canRun = cards.length > 0 && cards.every((c) => c.title.trim().length > 0)
+  const selectedSizes = Array.from(sizes)
 
   async function startRun() {
     setFormError(null)
     setFormErrors([])
     setMissing(null)
+    const composed = composeArtDirection(art, localeLabel)
+    const finalStyle = [style.trim(), composed].filter(Boolean).join(' — ')
     const payload: CampaignRunRequest = {
       model,
       quality,
       effort,
       locale: locale.trim() || 'en',
       sizes: Array.from(sizes),
-      style: style.trim() || undefined,
+      style: finalStyle || undefined,
       concepts: cards.map((c, i) => {
         const p: CampaignRunRequest['concepts'][number] = { key: `c${i + 1}`, title: c.title.trim() }
         if (c.subtitle.trim()) p.subtitle = c.subtitle.trim()
@@ -228,222 +344,368 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
 
   return (
     <div className="flex h-full min-h-0">
-      {/* ---------------- Left: brief builder ---------------- */}
-      <aside className="flex w-[420px] shrink-0 flex-col border-r border-border bg-background">
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5">
-          {missing && (
-            <Alert tone="warn">
-              A required key is missing:{' '}
-              {missing.map((s) => s.label).join(', ')}. Set it in the server <code>.env</code>.
-            </Alert>
-          )}
-          {formError && <Alert tone="err">{formError}</Alert>}
-          {formErrors.length > 0 && (
-            <Alert tone="err">
-              <div className="font-medium">Couldn't proceed:</div>
-              <ul className="mt-1 list-disc pl-4">
-                {formErrors.map((e, i) => (
-                  <li key={i}>{e}</li>
-                ))}
-              </ul>
-            </Alert>
-          )}
+      {/* ---------------- Left: sizes ---------------- */}
+      <aside className="flex w-[320px] shrink-0 flex-col bg-card">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+          <div className="flex items-center justify-end">
+            <Badge variant="soft">{sizes.size} selected</Badge>
+          </div>
 
-          {/* Campaign settings */}
-          <section className="space-y-4">
-            <SectionLabel>Campaign</SectionLabel>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Sizes</Label>
-                <Badge variant="soft">{sizes.size} selected</Badge>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {meta.sizes.map((s) => {
-                  const isMaster = s === meta.master_size
-                  const on = sizes.has(s)
-                  return (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => toggleSize(s)}
-                      title={isMaster ? 'Master — always generated first' : ''}
-                      className={cn(
-                        'flex items-center justify-between rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors',
-                        on
-                          ? 'border-primary/40 bg-primary/10 text-primary'
-                          : 'border-input text-muted-foreground hover:border-foreground/30 hover:text-foreground',
-                        isMaster && 'cursor-default',
-                      )}
-                    >
-                      <span>{s}</span>
-                      {isMaster && <span className="text-[10px] uppercase tracking-wide opacity-70">master</span>}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Model">
-                <Select value={model} onValueChange={setModel}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {meta.models.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Image quality">
-                <Select value={quality} onValueChange={setQuality}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {meta.qualities.map((q) => (
-                      <SelectItem key={q} value={q}>{q}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Thinking" hint="GPT-5.5">
-                <Select value={effort} onValueChange={setEffort}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {efforts.map((ef) => (
-                      <SelectItem key={ef.value} value={ef.value}>{ef.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Locale">
-                <Input value={locale} onChange={(e) => setLocale(e.target.value)} placeholder="en" />
-              </Field>
-            </div>
-
-            <Field label="Style" hint="optional">
-              <Input
-                value={style}
-                onChange={(e) => setStyle(e.target.value)}
-                placeholder="warm editorial, orange accents"
-              />
-            </Field>
-          </section>
-
-          {/* Concepts */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <SectionLabel>Concepts</SectionLabel>
-              <Badge variant="soft">{cards.length}/5</Badge>
-            </div>
-
-            {cards.map((c, i) => (
-              <div
-                key={c.key}
-                draggable
-                onDragStart={() => setDragIndex(i)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => onDrop(i)}
-                onDragEnd={() => setDragIndex(null)}
-                className={cn(
-                  'space-y-3 rounded-xl border border-border bg-card p-3.5 shadow-sm transition-shadow',
-                  dragIndex === i && 'opacity-60 ring-2 ring-primary/40',
-                )}
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={sizeQuery}
+              onChange={(e) => setSizeQuery(e.target.value)}
+              placeholder="Search sizes — e.g. 1080, 728x90"
+              className="h-8 w-full rounded-md border border-input bg-secondary pl-8 pr-7 text-xs text-foreground transition-colors placeholder:text-muted-foreground hover:border-foreground/25 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
+            />
+            {sizeQuery && (
+              <button
+                type="button"
+                onClick={() => setSizeQuery('')}
+                title="Clear"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-primary/10 text-xs font-bold text-primary">
-                      {i + 1}
-                    </span>
-                    Concept
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <IconBtn onClick={() => moveCard(i, -1)} disabled={i === 0} title="Move up">
-                      <ChevronUp className="h-4 w-4" />
-                    </IconBtn>
-                    <IconBtn onClick={() => moveCard(i, 1)} disabled={i === cards.length - 1} title="Move down">
-                      <ChevronDown className="h-4 w-4" />
-                    </IconBtn>
-                    {cards.length > 1 && (
-                      <IconBtn onClick={() => removeCard(c.key)} title="Remove concept">
-                        <X className="h-4 w-4" />
-                      </IconBtn>
-                    )}
-                  </div>
-                </div>
-
-                <Field label="Title">
-                  <Input
-                    value={c.title}
-                    onChange={(e) => updateCard(c.key, { title: e.target.value })}
-                    placeholder="Oil prices fell. The ringgit moved."
-                  />
-                </Field>
-                <Field label="Subtitle" hint="optional">
-                  <Textarea
-                    rows={2}
-                    value={c.subtitle}
-                    onChange={(e) => updateCard(c.key, { subtitle: e.target.value })}
-                    placeholder="Three signals, one connected story."
-                  />
-                </Field>
-                <Field label="Button" hint="optional">
-                  <Input
-                    value={c.button}
-                    onChange={(e) => updateCard(c.key, { button: e.target.value })}
-                    placeholder="Learn more"
-                  />
-                </Field>
-              </div>
-            ))}
-
-            {cards.length < 5 && (
-              <Button variant="outline" className="w-full border-dashed" onClick={addCard}>
-                <Plus className="h-4 w-4" />
-                Add concept
-              </Button>
+                <X className="h-3.5 w-3.5" />
+              </button>
             )}
-          </section>
-        </div>
+          </div>
 
-        {/* Sticky generate footer */}
-        <div className="shrink-0 border-t border-border bg-background p-4">
-          <Button className="w-full" size="lg" onClick={startRun} disabled={!canRun || running}>
-            {running ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Generating…
-              </>
-            ) : (
-              <>
-                <Sparkles className="h-4 w-4" /> Generate banners
-              </>
-            )}
-          </Button>
-          {!canRun && (
-            <p className="mt-2 text-center text-xs text-muted-foreground">
-              Give each concept a title to generate.
-            </p>
+          {sizeQuery.trim() ? (
+            (() => {
+              const q = sizeQuery.trim().toLowerCase()
+              const matches = meta.sizes.filter((s) => s.toLowerCase().includes(q))
+              return matches.length ? (
+                <div className="grid grid-cols-2 gap-2">{matches.map(renderSizeChip)}</div>
+              ) : (
+                <p className="px-1 py-1 text-xs text-muted-foreground">No sizes match “{sizeQuery}”.</p>
+              )
+            })()
+          ) : (
+            <div className="space-y-1.5">
+              {(() => {
+                const grouped = new Set(PLATFORMS.flatMap((p) => p.sizes))
+                const other = meta.sizes.filter((s) => !grouped.has(s))
+                const groups = other.length ? [...PLATFORMS, { label: 'Other', sizes: other }] : PLATFORMS
+                return groups.map((p) => {
+                  const avail = p.sizes.filter((s) => meta.sizes.includes(s))
+                  if (!avail.length) return null
+                  const open = openGroups.has(p.label)
+                  const selCount = avail.filter((s) => sizes.has(s)).length
+                  return (
+                    <div key={p.label} className="overflow-hidden rounded-lg border border-border">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(p.label)}
+                        className="flex w-full items-center justify-between bg-secondary/50 px-3 py-2 text-left transition-colors hover:bg-secondary"
+                      >
+                        <span className="text-[11px] font-medium uppercase tracking-wide text-foreground/80">
+                          {p.label}
+                        </span>
+                        <span className="flex items-center gap-2">
+                          {selCount > 0 && (
+                            <span className="rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary">
+                              {selCount}
+                            </span>
+                          )}
+                          <ChevronDown
+                            className={cn(
+                              'h-3.5 w-3.5 text-muted-foreground transition-transform',
+                              open && 'rotate-180',
+                            )}
+                          />
+                        </span>
+                      </button>
+                      {open && <div className="grid grid-cols-2 gap-2 p-2">{avail.map(renderSizeChip)}</div>}
+                    </div>
+                  )
+                })
+              })()}
+            </div>
           )}
         </div>
       </aside>
 
-      {/* ---------------- Right: results ---------------- */}
-      <section className="min-h-0 flex-1 overflow-y-auto bg-muted/30">
-        <OutputPane runs={runs} />
+      {/* ---------------- Center: results + floating command bar ---------------- */}
+      <section className="relative min-h-0 flex-1 bg-background">
+        <div className="h-full overflow-y-auto pb-56">
+          <OutputPane runs={runs} />
+        </div>
+
+        {/* click-away backdrop for the bar popovers */}
+        {barPopover && (
+          <button
+            type="button"
+            aria-hidden
+            tabIndex={-1}
+            onClick={() => setBarPopover(null)}
+            className="fixed inset-0 z-30 cursor-default"
+          />
+        )}
+
+        <div className="absolute inset-x-0 bottom-5 z-40 flex flex-col items-center gap-2 px-4">
+          {(missing || formError || formErrors.length > 0) && (
+            <div className="w-full max-w-md space-y-2">
+              {missing && (
+                <Alert tone="warn">
+                  A required key is missing: {missing.map((s) => s.label).join(', ')}. Set it in the
+                  server <code>.env</code>.
+                </Alert>
+              )}
+              {formError && <Alert tone="err">{formError}</Alert>}
+              {formErrors.length > 0 && (
+                <Alert tone="err">
+                  <div className="font-medium">Couldn't proceed:</div>
+                  <ul className="mt-1 list-disc pl-4">
+                    {formErrors.map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                </Alert>
+              )}
+            </div>
+          )}
+
+          {/* Selected sizes — surfaced in the central console */}
+          {selectedSizes.length > 0 && (
+            <div className="flex max-w-2xl flex-wrap justify-center gap-1.5">
+              {selectedSizes.map((s) => {
+                const isMaster = s === meta.master_size
+                return (
+                  <span
+                    key={s}
+                    className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2.5 pr-1.5 font-display text-[11px] font-semibold text-primary"
+                  >
+                    {s}
+                    {isMaster ? (
+                      <span className="rounded bg-primary px-1 text-[8px] uppercase text-primary-foreground">MVP</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => toggleSize(s)}
+                        title="Remove size"
+                        className="text-primary/70 hover:text-primary"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
+                  </span>
+                )
+              })}
+            </div>
+          )}
+
+          <div className="relative flex w-full max-w-3xl flex-col gap-2 rounded-2xl border border-border bg-card/95 p-2 shadow-[0_18px_44px_-14px_rgba(0,0,0,0.75)] backdrop-blur-md">
+            {/* Row 1 — prompt: full width, a bit taller */}
+            <Textarea
+              value={style}
+              onChange={(e) => setStyle(e.target.value)}
+              rows={2}
+              placeholder="Describe the banners in your own words — or use Art direction →"
+              className="w-full resize-none"
+            />
+
+            {/* Row 2 — controls + generate */}
+            <div className="flex items-center gap-2">
+            {/* Art direction */}
+            <button
+              type="button"
+              onClick={() => setArtOpen(true)}
+              className={cn(BAR_BTN, 'shrink-0', (isArtActive(art) || style.trim()) && 'border-primary/50 text-primary')}
+            >
+              <Sparkles className="h-4 w-4" />
+              <span className="hidden lg:inline">Art direction</span>
+              {artActiveCount(art) > 0 && (
+                <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                  {artActiveCount(art)}
+                </span>
+              )}
+            </button>
+
+            {/* Model & output */}
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setBarPopover((p) => (p === 'model' ? null : 'model'))}
+                className={BAR_BTN}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                <span className="hidden xl:inline">
+                  {MODEL_LABELS[model] ?? model} · {QUALITY_LABELS[quality] ?? quality}
+                </span>
+                <span className="xl:hidden">Model</span>
+                <ChevronDown
+                  className={cn('h-3.5 w-3.5 opacity-60 transition-transform', barPopover === 'model' && 'rotate-180')}
+                />
+              </button>
+              {barPopover === 'model' && (
+                <div className="absolute bottom-full left-1/2 z-50 mb-2 w-72 -translate-x-1/2 space-y-3 rounded-xl border border-border bg-popover p-3 shadow-xl">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Model">
+                      <Select value={model} onValueChange={setModel}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {meta.models.map((m) => (
+                            <SelectItem key={m} value={m}>{MODEL_LABELS[m] ?? m}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="Image quality">
+                      <Select value={quality} onValueChange={setQuality}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {meta.qualities.map((q) => (
+                            <SelectItem key={q} value={q}>{QUALITY_LABELS[q] ?? q}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
+                  <Field label="Thinking" hint="GPT-5.5">
+                    <Select value={effort} onValueChange={setEffort}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {efforts.map((ef) => (
+                          <SelectItem key={ef.value} value={ef.value}>{ef.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+              )}
+            </div>
+
+            {/* Locale — its own control, with real flags */}
+            <Select value={locale} onValueChange={setLocale}>
+              <SelectTrigger className="h-9 w-auto shrink-0 gap-1.5 rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LOCALES.map((l) => (
+                  <SelectItem key={l.value} value={l.value}>
+                    <span className="flex items-center gap-2">
+                      <img
+                        src={`https://flagcdn.com/h20/${l.cc}.png`}
+                        alt=""
+                        className="h-3.5 w-auto rounded-[2px]"
+                        loading="lazy"
+                      />
+                      {l.label}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Button
+              className={cn('ml-auto px-10 font-display', canRun && !running && 'tb-glow')}
+              size="lg"
+              onClick={startRun}
+              disabled={!canRun || running}
+            >
+              {running ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Generating…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" /> Generate banners
+                </>
+              )}
+            </Button>
+            </div>
+          </div>
+        </div>
+
+        <ArtDirectionModal
+          open={artOpen}
+          onClose={() => setArtOpen(false)}
+          art={art}
+          onChange={patchArt}
+          onReset={() => setArt(DEFAULT_ART)}
+          languageLabel={localeLabel}
+        />
       </section>
+
+      {/* ---------------- Right: concepts ---------------- */}
+      <aside className="flex w-[400px] shrink-0 flex-col bg-card">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+          <div className="flex items-center justify-end">
+            <Badge variant="soft">{cards.length}/5</Badge>
+          </div>
+
+          {cards.map((c, i) => (
+            <div
+              key={c.key}
+              draggable
+              onDragStart={() => setDragIndex(i)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => onDrop(i)}
+              onDragEnd={() => setDragIndex(null)}
+              className={cn(
+                'relative space-y-3 overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-sm transition-shadow',
+                dragIndex === i && 'opacity-60 ring-2 ring-primary/40',
+              )}
+            >
+              <span className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-primary" aria-hidden />
+              <div className="flex items-center justify-between">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-primary font-display text-xs font-bold text-primary-foreground">
+                  {i + 1}
+                </span>
+                <div className="flex items-center gap-0.5">
+                  <IconBtn onClick={() => moveCard(i, -1)} disabled={i === 0} title="Move up">
+                    <ChevronUp className="h-4 w-4" />
+                  </IconBtn>
+                  <IconBtn onClick={() => moveCard(i, 1)} disabled={i === cards.length - 1} title="Move down">
+                    <ChevronDown className="h-4 w-4" />
+                  </IconBtn>
+                  {cards.length > 1 && (
+                    <IconBtn onClick={() => removeCard(c.key)} title="Remove concept">
+                      <X className="h-4 w-4" />
+                    </IconBtn>
+                  )}
+                </div>
+              </div>
+
+              <Field label="Title">
+                <Input
+                  value={c.title}
+                  onChange={(e) => updateCard(c.key, { title: e.target.value })}
+                  placeholder="Oil prices fell. The ringgit moved."
+                />
+              </Field>
+              <Field label="Subtitle" hint="optional">
+                <Textarea
+                  rows={2}
+                  value={c.subtitle}
+                  onChange={(e) => updateCard(c.key, { subtitle: e.target.value })}
+                  placeholder="Three signals, one connected story."
+                />
+              </Field>
+              <Field label="Button" hint="optional">
+                <Input
+                  value={c.button}
+                  onChange={(e) => updateCard(c.key, { button: e.target.value })}
+                  placeholder="Learn more"
+                />
+              </Field>
+            </div>
+          ))}
+
+          {cards.length < 5 && (
+            <Button variant="outline" className="w-full border-dashed" onClick={addCard}>
+              <Plus className="h-4 w-4" />
+              Add concept
+            </Button>
+          )}
+        </div>
+      </aside>
     </div>
   )
 }
 
 // ---- small presentational helpers ----
-function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{children}</h3>
-  )
-}
-
 function Field({
   label,
   hint,
@@ -495,7 +757,7 @@ function Alert({ tone, children }: { tone: 'err' | 'warn'; children: ReactNode }
         'rounded-lg border px-3 py-2 text-sm',
         tone === 'err'
           ? 'border-destructive/40 bg-destructive/10 text-destructive'
-          : 'border-amber-500/40 bg-amber-500/10 text-amber-700',
+          : 'border-amber-400/40 bg-amber-400/10 text-amber-300',
       )}
     >
       {children}

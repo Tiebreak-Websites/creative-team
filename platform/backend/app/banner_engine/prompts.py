@@ -82,6 +82,50 @@ LAYOUT_FAMILY = {
     "960x1200":  "PORTRAIT",
 }
 
+# Additional platform export sizes. The engine renders by aspect ratio, so each
+# new size reuses the layout / button / family of the existing size with the
+# same shape — the label is just the export target. (See OPENAI_SIZE_MAP in
+# engine_core.py for the matching OpenAI generation resolution.)
+_SIZE_ALIASES = {
+    "800x800":   "1080x1080",   # 1:1 square
+    "600x600":   "1080x1080",   # 1:1 square
+    "1200x800":  "1200x628",    # ~3:2 wide
+    "1200x674":  "1920x1080",   # 16:9 landscape
+    "1280x720":  "1920x1080",   # 16:9 landscape
+    "1440x1800": "1080x1350",   # 4:5 portrait
+    "1200x1500": "1080x1350",   # 4:5 portrait
+    "720x1280":  "1080x1920",   # 9:16 tall
+}
+for _new, _base in _SIZE_ALIASES.items():
+    LAYOUT_BASE.setdefault(_new, LAYOUT_BASE[_base])
+    BUTTON_PLACEMENT.setdefault(_new, BUTTON_PLACEMENT[_base])
+    LAYOUT_FAMILY.setdefault(_new, LAYOUT_FAMILY[_base])
+
+# Display-ad slots (extreme ratios). Generated at the nearest aspect, then
+# cover-cropped to exact pixels by reshape.fit_cover (see runner). They reuse a
+# centered layout family so the crop keeps the focal content.
+DISPLAY_SIZES = {
+    "300x250", "728x90", "160x600", "300x600", "970x250",
+    "320x50", "1200x300", "512x128", "300x60", "600x315", "600x500",
+}
+_DISPLAY_ALIASES = {
+    "300x250":  "1080x1080",   # ~square (medium rectangle)
+    "728x90":   "1920x1080",   # extreme wide (leaderboard)
+    "970x250":  "1920x1080",   # billboard
+    "320x50":   "1920x1080",   # mobile leaderboard
+    "1200x300": "1920x1080",
+    "512x128":  "1920x1080",
+    "300x60":   "1920x1080",
+    "160x600":  "1080x1920",   # extreme tall (skyscraper)
+    "300x600":  "1080x1920",   # half-page
+    "600x315":  "1920x1080",   # ~1.91:1 native (Criteo)
+    "600x500":  "1080x1080",   # ~6:5 native (Criteo)
+}
+for _new, _base in _DISPLAY_ALIASES.items():
+    LAYOUT_BASE.setdefault(_new, LAYOUT_BASE[_base])
+    BUTTON_PLACEMENT.setdefault(_new, BUTTON_PLACEMENT[_base])
+    LAYOUT_FAMILY.setdefault(_new, LAYOUT_FAMILY[_base])
+
 # ---------------------------------------------------------------------------
 # System layer — fixed across every prompt
 # ---------------------------------------------------------------------------

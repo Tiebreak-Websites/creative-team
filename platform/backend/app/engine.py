@@ -12,6 +12,7 @@ from .banner_engine.prompts import (  # noqa: F401
     BUTTON_COMBOS,
     LAYOUT_BASE,
     BUTTON_PLACEMENT,
+    DISPLAY_SIZES,
 )
 from .banner_engine.engine_core import (  # noqa: F401
     generate_png,
@@ -28,5 +29,5 @@ __all__ = [
     "build_prompt", "build_recomp_prompt", "check_moderation", "validate_manifest",
     "normalize_cta", "BUTTON_COMBOS", "LAYOUT_BASE", "BUTTON_PLACEMENT",
     "generate_png", "GenError", "OPENAI_SIZE_MAP",
-    "SUPPORTED_SIZES", "MASTER_SIZE", "MODELS",
+    "SUPPORTED_SIZES", "MASTER_SIZE", "MODELS", "DISPLAY_SIZES",
 ]

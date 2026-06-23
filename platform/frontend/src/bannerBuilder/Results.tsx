@@ -1,5 +1,5 @@
-import type { CSSProperties } from 'react'
-import { Download, ExternalLink, ImageIcon, Loader2, Sparkles } from 'lucide-react'
+import type { CSSProperties, ReactNode } from 'react'
+import { Download, ExternalLink, HelpCircle, ImageIcon, Loader2, Sparkles } from 'lucide-react'
 import type { Banner, RunData } from '../types'
 import { assetUrl, zipAllUrl } from '../api'
 import { Badge } from '@/components/ui/badge'
@@ -71,12 +71,12 @@ function fmtTime(ms: number): string {
   return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
 }
 
-export function OutputPane({ runs }: { runs: RunData[] }) {
-  if (!runs.length) return <EmptyOutput />
+export function OutputPane({ runs, onHelp }: { runs: RunData[]; onHelp?: () => void }) {
+  if (!runs.length) return <EmptyOutput onHelp={onHelp} />
   const groups = buildGroups(runs)
   const firstError = runs.map((r) => r.error).find(Boolean)
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex min-h-full flex-col animate-fade-in">
       <OverviewBar runs={runs} />
       <div className="space-y-7 p-5">
         {firstError && (
@@ -110,21 +110,24 @@ function OverviewBar({ runs }: { runs: RunData[] }) {
           : 'All banners ready'
 
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-background/80 px-5 py-3 backdrop-blur">
-      <span className="flex shrink-0 items-center gap-2 text-sm font-medium">
+    <div className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-card/70 px-5 py-3 backdrop-blur-md">
+      <span className="flex shrink-0 items-center gap-2 font-display text-sm font-semibold">
         {running ? (
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
         ) : (
-          <span className={cn('h-2.5 w-2.5 rounded-full', failed ? 'bg-destructive' : 'bg-primary')} />
+          <span className={cn('h-2.5 w-2.5 rounded-full', failed ? 'bg-destructive' : 'bg-primary ring-4 ring-primary/20')} />
         )}
         {label}
       </span>
 
-      <div className="hidden h-1.5 max-w-[280px] flex-1 overflow-hidden rounded-full bg-muted sm:block">
-        <div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${pct}%` }} />
+      <div className="hidden h-1.5 max-w-[280px] flex-1 overflow-hidden rounded-full bg-secondary sm:block">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-[#3ED08E] to-[#21F1A8] transition-[width] duration-500"
+          style={{ width: `${pct}%` }}
+        />
       </div>
 
-      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+      <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
         {ready}/{total} ready
       </span>
 
@@ -149,7 +152,7 @@ function ConceptGroupBlock({ g }: { g: ConceptGroup }) {
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <h3 className="text-sm font-semibold tracking-tight">Concept {g.number}</h3>
+        <h3 className="font-display text-[15px] font-bold tracking-tight">Concept {g.number}</h3>
         {g.title && <span className="text-sm text-muted-foreground">{g.title}</span>}
         <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
           {g.running && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -182,7 +185,7 @@ function AssetCard({ b }: { b: Banner }) {
   if (b.status === 'ok' && b.url) {
     const src = assetUrl(b.url)
     return (
-      <div className="group overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md">
+      <div className="group overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md">
         <div className="relative aspect-square" style={CHECKER}>
           <img src={src} alt={b.label} loading="lazy" className="h-full w-full object-contain" />
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-foreground/45 opacity-0 transition-opacity group-hover:opacity-100">
@@ -204,9 +207,15 @@ function AssetCard({ b }: { b: Banner }) {
             </a>
           </div>
         </div>
-        <div className="flex items-center justify-between px-2.5 py-2 text-xs">
-          <span className="font-medium">{b.size}</span>
-          <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+        <div className="flex items-center justify-between border-t border-border px-2.5 py-2 text-xs">
+          <span className="font-display font-semibold">{b.size}</span>
+          <Badge
+            variant="outline"
+            className={cn(
+              'text-[10px] font-normal',
+              b.phase === 'master' ? 'border-primary/35 text-primary' : 'text-muted-foreground',
+            )}
+          >
             {tag}
           </Badge>
         </div>
@@ -222,8 +231,8 @@ function AssetCard({ b }: { b: Banner }) {
         </span>
         <span className="text-xs text-muted-foreground">{phLabel(b)}</span>
       </div>
-      <div className="flex items-center justify-between px-2.5 py-2 text-xs">
-        <span className="font-medium text-muted-foreground">{b.size}</span>
+      <div className="flex items-center justify-between border-t border-border px-2.5 py-2 text-xs">
+        <span className="font-display font-semibold text-muted-foreground">{b.size}</span>
         <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
           {tag}
         </Badge>
@@ -239,7 +248,7 @@ function StatusDot({ status }: { status: string }) {
       : status === 'running'
         ? 'animate-pulse bg-amber-500'
         : status === 'pending'
-          ? 'bg-muted-foreground/40'
+          ? 'bg-muted-foreground/70'
           : 'bg-destructive'
   return <span className={cn('h-2 w-2 rounded-full', cls)} />
 }
@@ -273,18 +282,46 @@ function statusLabel(s: string): string {
   }
 }
 
-function EmptyOutput() {
+function EmptyOutput({ onHelp }: { onHelp?: () => void }) {
   return (
-    <div className="flex h-full items-center justify-center p-8">
-      <div className="text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-background text-muted-foreground shadow-sm">
+    <div className="flex h-full items-center justify-center p-8 animate-fade-up">
+      <div className="w-full max-w-sm text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-card text-primary shadow-sm">
           <ImageIcon className="h-6 w-6" />
         </div>
-        <h3 className="text-base font-semibold">Your banners will appear here</h3>
+        <h3 className="font-display text-lg font-bold tracking-tight">Your banners will appear here</h3>
         <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
-          Fill in the brief on the left, pick your sizes, and hit Generate.
+          Three steps and you're done — the AI fills in anything you leave blank.
         </p>
+        <ol className="mx-auto mt-5 space-y-2 text-left">
+          <QuickStep n={1}>
+            Pick your <b className="font-semibold text-foreground">sizes</b> on the left
+          </QuickStep>
+          <QuickStep n={2}>
+            Add a concept with a <b className="font-semibold text-foreground">Title</b> on the right
+          </QuickStep>
+          <QuickStep n={3}>
+            Set <b className="font-semibold text-foreground">Art direction</b> (optional), then{' '}
+            <b className="font-semibold text-foreground">Generate</b>
+          </QuickStep>
+        </ol>
+        {onHelp && (
+          <Button variant="outline" size="sm" className="mt-5" onClick={onHelp}>
+            <HelpCircle className="h-4 w-4" /> How it works
+          </Button>
+        )}
       </div>
     </div>
+  )
+}
+
+function QuickStep({ n, children }: { n: number; children: ReactNode }) {
+  return (
+    <li className="flex items-center gap-3 rounded-lg border border-border bg-card/60 px-3 py-2 text-sm">
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
+        {n}
+      </span>
+      <span className="text-muted-foreground">{children}</span>
+    </li>
   )
 }

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from . import creative_director, engine
+from .banner_engine import reshape
 from .models import RunRequest
 from .settings import settings
 
@@ -358,6 +359,14 @@ def _gen_one_frame(run: Run, frame: dict):
             fr.status, fr.error = "gen_failed", f"{type(e).__name__}: {e}"
             run.touch()
             return
+
+    # Display-ad slots need EXACT pixels — cover-crop the generated frame.
+    if frame["size"] in engine.DISPLAY_SIZES:
+        try:
+            _w, _h = (int(x) for x in frame["size"].split("x"))
+            png = reshape.fit_cover(png, _w, _h)
+        except Exception:  # noqa: BLE001 — never drop a frame over reshaping
+            pass
 
     out_png = run.dir / f"{_label(frame['concept'], frame['size'])}.png"
     out_png.write_bytes(png)

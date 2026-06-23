@@ -8,3 +8,6 @@ passlib[bcrypt]>=1.7
 # passlib 1.7.x's bcrypt backend is incompatible with bcrypt 5.x
 # (raises on import: "password cannot be longer than 72 bytes"). Pin <4.1.
 bcrypt<4.1
+
+# Pillow — exact-pixel reshape (cover-crop) for display-ad export sizes.
+Pillow>=10

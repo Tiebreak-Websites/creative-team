@@ -38,6 +38,28 @@ OPENAI_SIZE_MAP = {
     "1080x1920": "1024x1536",
     "1080x1350": "1024x1536",
     "960x1200":  "1024x1536",
+    # Additional platform export sizes (mapped to the nearest OpenAI aspect).
+    "800x800":   "1024x1024",
+    "600x600":   "1024x1024",
+    "1200x800":  "1536x1024",
+    "1200x674":  "1536x1024",
+    "1280x720":  "1536x1024",
+    "1440x1800": "1024x1536",
+    "1200x1500": "1024x1536",
+    "720x1280":  "1024x1536",
+    # Display-ad slots — generated at the nearest aspect, then cover-cropped to
+    # exact pixels (see banner_engine/reshape.py + runner).
+    "300x250":   "1024x1024",
+    "728x90":    "1536x1024",
+    "970x250":   "1536x1024",
+    "320x50":    "1536x1024",
+    "1200x300":  "1536x1024",
+    "512x128":   "1536x1024",
+    "300x60":    "1536x1024",
+    "160x600":   "1024x1536",
+    "300x600":   "1024x1536",
+    "600x315":   "1536x1024",
+    "600x500":   "1024x1024",
 }
 
 OPENAI_GENERATIONS_URL = "https://api.openai.com/v1/images/generations"

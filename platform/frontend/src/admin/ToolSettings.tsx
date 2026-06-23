@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useToolConfig } from '../hooks/useToolConfig'
 import { Icon } from '../components/Icon'
 import type { Tool } from '../types'
+import { BrandSettings } from './BrandSettings'
 
 const BASE = import.meta.env.VITE_API_BASE ?? '/api'
 
@@ -54,6 +55,7 @@ export function ToolSettings({ tools }: { tools: Tool[] }) {
       </header>
       <div className="page">
         <div className="page-inner">
+          <BrandSettings />
           <div className="card">
             <label className="field" style={{ marginBottom: 0 }}>
               <span>Tool</span>
