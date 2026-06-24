@@ -5,13 +5,11 @@
 export function VersionBadge() {
   let built = ''
   try {
-    built = new Date(__APP_BUILD_TIME__).toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+    const d = new Date(__APP_BUILD_TIME__)
+    const day = d.getDate()
+    const month = d.toLocaleString('en-US', { month: 'long' })
+    const time = d.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+    built = `${day} ${month}, ${time}` // e.g. "24 June, 11:40 AM"
   } catch {
     /* ignore */
   }

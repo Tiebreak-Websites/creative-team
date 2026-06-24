@@ -73,17 +73,22 @@ Render builds and deploys. When it's live, open
 
 ## The `prod` workflow
 
-`prod` is the live branch. To release:
+`main` is the integration branch; **`prod` is the live branch**, updated only from
+`main`. To cut a release:
 
 ```powershell
+# 1. Bump platform/frontend/package.json "version" (semver: patch=fix, minor=feature,
+#    major=redesign), commit it to main.
+# 2. Promote main → prod:
 git checkout prod
-git merge main          # bring in reviewed work
-git push                # Render auto-deploys
+git merge --ff-only main
+git push                # the host auto-deploys
+git checkout main
 ```
 
-Day-to-day: do work on a feature branch → PR into `main` → when you want it live,
-merge `main` into `prod` and push. Every push to `prod` triggers a deploy; watch it
-in the Render dashboard.
+Day-to-day work goes on `main` (directly or via a short-lived branch → PR). **Never
+commit straight to `prod`.** Every push to `prod` triggers a deploy; the header
+version badge then shows the new version + when it was built (auto-updated).
 
 ---
 
