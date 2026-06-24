@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp, Loader2, Plus, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import type { Meta, RunData, Tool } from '../types'
 import { TERMINAL_STATUSES } from '../types'
@@ -15,6 +15,7 @@ import {
   type ArtDirection,
 } from './artDirection'
 import { loadBrand } from './brand'
+import { detectLocale } from './detectLocale'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -34,7 +35,6 @@ interface ConceptCard {
 // flag-icons set (real flags — emoji flags don't render on Windows).
 export const LOCALES = [
   { value: 'en', label: 'English', cc: 'gb' },
-  { value: 'es', label: 'Spanish', cc: 'es' },
   { value: 'es-419', label: 'Spanish (LatAm)', cc: 'mx' },
   { value: 'pt', label: 'Portuguese', cc: 'pt' },
   { value: 'sv', label: 'Swedish', cc: 'se' },
@@ -155,6 +155,28 @@ function writeSnapshot(runs: RunData[]) {
   }
 }
 
+// Deleted banner labels — persisted so a "trash" deletion sticks across reloads
+// even though the backend (which we re-poll) still holds the PNG. We simply
+// filter these out of everything shown.
+const DELETED_LS_KEY = 'bb:deleted'
+
+function readDeleted(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(DELETED_LS_KEY) || '[]')
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeDeleted(labels: string[]) {
+  try {
+    localStorage.setItem(DELETED_LS_KEY, JSON.stringify(labels))
+  } catch {
+    /* best-effort */
+  }
+}
+
 export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   // ---- Campaign settings ----
   const efforts = meta.thinking_efforts ?? [
@@ -175,6 +197,10 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   const [locale, setLocale] = useState(
     LOCALES.some((l) => l.value === brand.locale) ? (brand.locale as string) : 'en',
   )
+  // Auto-detect the concept language and pick the matching locale, until the
+  // user makes an explicit choice (then we stop overriding).
+  const [localeAuto, setLocaleAuto] = useState(true)
+  const [detectedLocale, setDetectedLocale] = useState<string | null>(null)
   const [style, setStyle] = useState('')
   const [art, setArt] = useState<ArtDirection>({
     ...DEFAULT_ART,
@@ -209,6 +235,24 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   useEffect(() => {
     writeSnapshot(runs)
   }, [runs])
+
+  // Trash: deleted banner labels (persisted), filtered out of what we render.
+  const [deleted, setDeleted] = useState<Set<string>>(() => new Set(readDeleted()))
+  function deleteBanner(label: string) {
+    setDeleted((prev) => {
+      const next = new Set(prev)
+      next.add(label)
+      writeDeleted([...next])
+      return next
+    })
+  }
+  const visibleRuns = useMemo(
+    () =>
+      runs
+        .map((r) => ({ ...r, banners: r.banners.filter((b) => !deleted.has(b.label)) }))
+        .filter((r) => r.banners.length > 0),
+    [runs, deleted],
+  )
 
   // Poll every non-terminal run until all reach a terminal status.
   useEffect(() => {
@@ -272,6 +316,19 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Auto-pick the locale from the typed concept text (until the user chooses).
+  useEffect(() => {
+    if (!localeAuto) return
+    const text = cards.map((c) => `${c.title} ${c.subtitle}`).join(' ')
+    const d = detectLocale(text)
+    if (d && LOCALES.some((l) => l.value === d)) {
+      setDetectedLocale(d)
+      setLocale(d)
+    } else {
+      setDetectedLocale(null)
+    }
+  }, [cards, localeAuto])
 
   const running = runs.some((r) => !TERMINAL_STATUSES.includes(r.status))
 
@@ -476,7 +533,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
       {/* ---------------- Center: results + floating command bar ---------------- */}
       <section className="relative min-h-0 flex-1 bg-background">
         <div className="h-full overflow-y-auto pb-56">
-          <OutputPane runs={runs} />
+          <OutputPane runs={visibleRuns} onDeleteBanner={deleteBanner} />
         </div>
 
         {/* click-away backdrop for the bar popovers */}
@@ -542,6 +599,27 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                   </span>
                 )
               })}
+            </div>
+          )}
+
+          {localeAuto && detectedLocale && (
+            <div className="flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur">
+              <Sparkles className="h-3 w-3 text-primary" />
+              Language auto-set to{' '}
+              <span className="font-medium text-foreground">
+                {LOCALES.find((l) => l.value === detectedLocale)?.label}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setLocaleAuto(false)
+                  setDetectedLocale(null)
+                }}
+                title="Dismiss and choose the language manually"
+                className="ml-1 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
             </div>
           )}
 
@@ -627,7 +705,14 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
             </div>
 
             {/* Locale — its own control, with real flags */}
-            <Select value={locale} onValueChange={setLocale}>
+            <Select
+              value={locale}
+              onValueChange={(v) => {
+                setLocale(v)
+                setLocaleAuto(false)
+                setDetectedLocale(null)
+              }}
+            >
               <SelectTrigger className="h-9 w-auto shrink-0 gap-1.5 rounded-xl">
                 <SelectValue />
               </SelectTrigger>

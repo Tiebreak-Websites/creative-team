@@ -1,7 +1,17 @@
-import type { CSSProperties, ReactNode } from 'react'
-import { Download, ExternalLink, HelpCircle, ImageIcon, Loader2, Sparkles } from 'lucide-react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
+import {
+  Download,
+  ExternalLink,
+  HelpCircle,
+  ImageIcon,
+  Loader2,
+  Maximize2,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
 import type { Banner, RunData } from '../types'
 import { assetUrl, versionZipUrl, zipAllUrl } from '../api'
+import { BannerLibrary, type LibraryItem } from './BannerLibrary'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -85,10 +95,48 @@ function slugify(s: string): string {
     .slice(0, 80)
 }
 
-export function OutputPane({ runs, onHelp }: { runs: RunData[]; onHelp?: () => void }) {
+export function OutputPane({
+  runs,
+  onHelp,
+  onDeleteBanner,
+}: {
+  runs: RunData[]
+  onHelp?: () => void
+  onDeleteBanner?: (label: string) => void
+}) {
+  const [libOpen, setLibOpen] = useState(false)
+  const [libIndex, setLibIndex] = useState(0)
   if (!runs.length) return <EmptyOutput onHelp={onHelp} />
   const groups = buildGroups(runs)
   const firstError = runs.map((r) => r.error).find(Boolean)
+  const okRunIds = runs.filter((r) => r.banners.some((b) => b.status === 'ok')).map((r) => r.run_id)
+
+  // Flat list of every viewable banner — powers the library / lightbox.
+  const libItems: LibraryItem[] = groups.flatMap((g) =>
+    g.banners
+      .filter((b) => b.status === 'ok' && b.url)
+      .map((b) => {
+        const slug = slugify(b.title)
+        const fileName = `v${g.number}-${b.size}${slug ? `-${slug}` : ''}`
+        const src = assetUrl(b.url as string)
+        return {
+          label: b.label,
+          src,
+          downloadHref: `${src}?download=1&name=${encodeURIComponent(fileName)}`,
+          size: b.size,
+          version: g.number,
+          title: g.title,
+        }
+      }),
+  )
+  function openLibrary(label: string) {
+    const i = libItems.findIndex((it) => it.label === label)
+    if (i >= 0) {
+      setLibIndex(i)
+      setLibOpen(true)
+    }
+  }
+
   return (
     <div className="flex min-h-full flex-col animate-fade-in">
       <OverviewBar runs={runs} />
@@ -99,9 +147,18 @@ export function OutputPane({ runs, onHelp }: { runs: RunData[]; onHelp?: () => v
           </div>
         )}
         {groups.map((g) => (
-          <ConceptGroupBlock key={g.id} g={g} />
+          <ConceptGroupBlock key={g.id} g={g} onView={openLibrary} onDelete={onDeleteBanner} />
         ))}
       </div>
+      <BannerLibrary
+        open={libOpen}
+        items={libItems}
+        index={libIndex}
+        onIndexChange={setLibIndex}
+        onClose={() => setLibOpen(false)}
+        onDelete={(label) => onDeleteBanner?.(label)}
+        downloadAllHref={okRunIds.length ? zipAllUrl(okRunIds) : undefined}
+      />
     </div>
   )
 }
@@ -162,7 +219,15 @@ function OverviewBar({ runs }: { runs: RunData[] }) {
   )
 }
 
-function ConceptGroupBlock({ g }: { g: ConceptGroup }) {
+function ConceptGroupBlock({
+  g,
+  onView,
+  onDelete,
+}: {
+  g: ConceptGroup
+  onView: (label: string) => void
+  onDelete?: (label: string) => void
+}) {
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
@@ -190,7 +255,14 @@ function ConceptGroupBlock({ g }: { g: ConceptGroup }) {
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
         {g.banners.map((b, i) => (
-          <AssetCard key={b.label} b={b} version={g.number} index={i} />
+          <AssetCard
+            key={b.label}
+            b={b}
+            version={g.number}
+            index={i}
+            onView={onView}
+            onDelete={onDelete}
+          />
         ))}
       </div>
     </section>
@@ -203,7 +275,19 @@ const CHECKER: CSSProperties = {
   backgroundSize: '16px 16px',
 }
 
-function AssetCard({ b, version, index = 0 }: { b: Banner; version: number; index?: number }) {
+function AssetCard({
+  b,
+  version,
+  index = 0,
+  onView,
+  onDelete,
+}: {
+  b: Banner
+  version: number
+  index?: number
+  onView?: (label: string) => void
+  onDelete?: (label: string) => void
+}) {
   const tag = b.phase === 'master' ? 'master' : 'recomposed'
   const delay = { animationDelay: `${Math.min(index * 40, 400)}ms` }
 
@@ -219,6 +303,16 @@ function AssetCard({ b, version, index = 0 }: { b: Banner; version: number; inde
         <div className="relative aspect-square" style={CHECKER}>
           <img src={src} alt={b.label} loading="lazy" className="h-full w-full object-contain" />
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-foreground/45 opacity-0 transition-opacity group-hover:opacity-100">
+            {onView && (
+              <button
+                type="button"
+                onClick={() => onView(b.label)}
+                title="View in library"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background/90 text-foreground shadow hover:bg-background"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
+            )}
             <a
               href={src}
               target="_blank"
@@ -235,6 +329,16 @@ function AssetCard({ b, version, index = 0 }: { b: Banner; version: number; inde
             >
               <Download className="h-4 w-4" />
             </a>
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(b.label)}
+                title="Delete banner"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background/90 text-destructive shadow hover:bg-background"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
         <div className="flex items-center justify-between border-t border-border px-2.5 py-2 text-xs">
@@ -266,9 +370,21 @@ function AssetCard({ b, version, index = 0 }: { b: Banner; version: number; inde
       </div>
       <div className="flex items-center justify-between border-t border-border px-2.5 py-2 text-xs">
         <span className="font-display font-semibold text-muted-foreground">{b.size}</span>
-        <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
-          {tag}
-        </Badge>
+        <div className="flex items-center gap-1.5">
+          <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">
+            {tag}
+          </Badge>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(b.label)}
+              title="Remove"
+              className="text-muted-foreground hover:text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
