@@ -756,10 +756,11 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
             <button
               type="button"
               onClick={() => setArtOpen(true)}
+              title="Art direction"
               className={cn(BAR_BTN, 'shrink-0', (isArtActive(art) || style.trim()) && 'border-primary/50 text-primary')}
             >
               <Sparkles className="h-4 w-4" />
-              <span className="hidden lg:inline">Art direction</span>
+              <span className="hidden 2xl:inline">Art direction</span>
               {artActiveCount(art) > 0 && (
                 <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
                   {artActiveCount(art)}
@@ -775,10 +776,10 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                 className={BAR_BTN}
               >
                 <SlidersHorizontal className="h-4 w-4" />
-                <span className="hidden xl:inline">
+                <span className="hidden 2xl:inline">
                   {MODEL_LABELS[model] ?? model} · {QUALITY_LABELS[quality] ?? quality}
                 </span>
-                <span className="xl:hidden">Model</span>
+                <span className="2xl:hidden">{QUALITY_LABELS[quality] ?? quality}</span>
                 <ChevronDown
                   className={cn('h-3.5 w-3.5 opacity-60 transition-transform', barPopover === 'model' && 'rotate-180')}
                 />
@@ -826,10 +827,11 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
               <button
                 type="button"
                 onClick={() => setBarPopover((p) => (p === 'brand' ? null : 'brand'))}
+                title={selectedBrand ? selectedBrand.name : 'Brand'}
                 className={cn(BAR_BTN, brandId && 'border-primary/50 text-primary')}
               >
                 <Tag className="h-4 w-4" />
-                <span className="hidden lg:inline">{selectedBrand ? selectedBrand.name : 'Brand'}</span>
+                <span className="hidden 2xl:inline">{selectedBrand ? selectedBrand.name : 'Brand'}</span>
                 <ChevronDown
                   className={cn(
                     'h-3.5 w-3.5 opacity-60 transition-transform',
@@ -932,7 +934,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                     className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-primary"
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                    <span className="hidden xl:inline">auto</span>
+                    <span className="hidden 2xl:inline">auto</span>
                   </span>
                 )}
                 <ChevronDown
@@ -980,7 +982,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                 </>
               ) : (
                 <>
-                  <Sparkles className="h-4 w-4" /> Generate banners
+                  <Sparkles className="h-4 w-4" /> Generate
                 </>
               )}
             </Button>
