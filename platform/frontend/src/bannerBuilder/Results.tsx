@@ -201,7 +201,7 @@ function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => voi
       <div className="hidden h-1.5 max-w-[280px] flex-1 overflow-hidden rounded-full bg-secondary sm:block">
         <div
           className={cn(
-            'h-full rounded-full bg-gradient-to-r from-[#9E181C] to-[#E71E25]',
+            'h-full rounded-full bg-gradient-to-r from-[#15803d] to-[#22c55e]',
             preRender ? 'w-2/5 animate-pulse' : 'transition-[width] duration-500',
           )}
           style={preRender ? undefined : { width: `${pct}%` }}

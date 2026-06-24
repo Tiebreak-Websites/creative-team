@@ -240,7 +240,8 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   // Brands (palette + optional corner logo). Loaded from the brands API.
   const [brands, setBrands] = useState<Brand[]>([])
   const [brandId, setBrandId] = useState<string>('')
-  const [logoCorner, setLogoCorner] = useState<'tl' | 'tr' | 'bl' | 'br'>('br')
+  // null = let the AI Builder decide placement automatically.
+  const [logoCorner, setLogoCorner] = useState<'tl' | 'tr' | 'bl' | 'br' | null>(null)
 
   // ---- Concept cards ----
   const [cards, setCards] = useState<ConceptCard[]>([blankCard()])
@@ -492,7 +493,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
       }),
       references: refs.length ? refs.map((r) => r.id) : undefined,
       brand_id: brandId || undefined,
-      logo_corner: brandId && selectedBrand?.logo_svg ? logoCorner : undefined,
+      logo_corner: brandId && selectedBrand?.logo_svg && logoCorner ? logoCorner : undefined,
     }
     try {
       const initial = await createRun(payload)
@@ -631,20 +632,17 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
 
           {/* Selected sizes — surfaced in the central console */}
           {selectedSizes.length > 0 && (
-            <div className="flex max-w-2xl flex-wrap items-center justify-center gap-1.5">
-              <span className="mr-1 font-display text-[11px] font-medium text-muted-foreground">
-                selected sizes:
-              </span>
+            <div className="flex max-w-2xl flex-wrap items-center justify-center gap-2">
               {selectedSizes.map((s) => {
                 const isMaster = s === meta.master_size
                 return (
                   <span
                     key={s}
-                    className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2.5 pr-1.5 font-display text-[11px] font-semibold text-primary"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 py-1 pl-3.5 pr-2 font-display text-[13px] font-semibold text-primary"
                   >
                     {s}
                     {isMaster ? (
-                      <span className="rounded bg-primary px-1 text-[8px] uppercase text-primary-foreground">MVP</span>
+                      <span className="rounded bg-primary px-1.5 py-0.5 text-[9px] uppercase text-primary-foreground">MVP</span>
                     ) : (
                       <button
                         type="button"
@@ -652,36 +650,12 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                         title="Remove size"
                         className="text-primary/70 hover:text-primary"
                       >
-                        <X className="h-3 w-3" />
+                        <X className="h-3.5 w-3.5" />
                       </button>
                     )}
                   </span>
                 )
               })}
-            </div>
-          )}
-
-          {refs.length > 0 && (
-            <div className="flex max-w-2xl flex-wrap items-center justify-center gap-1.5">
-              <span className="mr-1 font-display text-[11px] font-medium text-muted-foreground">
-                references:
-              </span>
-              {refs.map((r) => (
-                <span
-                  key={r.id}
-                  className="group relative inline-flex h-10 w-10 overflow-hidden rounded-md border border-border"
-                >
-                  <img src={r.url} alt="" className="h-full w-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => removeRef(r.id)}
-                    title="Remove reference"
-                    className="absolute right-0 top-0 hidden bg-foreground/60 p-0.5 text-background group-hover:block"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
             </div>
           )}
 
@@ -716,27 +690,65 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
               </div>
             )}
 
-            {/* Row 1 — prompt: full width, a bit taller, with an icon-only attach affordance */}
-            <div className="flex items-start gap-1.5">
+            {/* Row 1 — prompt + a square reference tile (matches the prompt height;
+                shows attached images, with a grid for multiples) */}
+            <div className="flex items-stretch gap-2">
               <Textarea
                 value={style}
                 onChange={(e) => setStyle(e.target.value)}
                 rows={2}
-                placeholder="Describe the banners in your own words — or use Art direction →"
+                placeholder="Describe the banners in your own words — or open the Art Director →"
                 className="w-full flex-1 resize-none"
               />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={refs.length >= 4 || refBusy}
-                title="Attach style-reference images (visual only — text is ignored). You can also drag & drop."
-                className={cn(
-                  'mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground disabled:pointer-events-none disabled:opacity-40',
-                  refs.length > 0 && 'border-primary/50 text-primary',
-                )}
-              >
-                {refBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-              </button>
+              {(() => {
+                const cellCount = refs.length + (refs.length < 4 ? 1 : 0)
+                const gridCls =
+                  cellCount <= 1
+                    ? 'grid-cols-1'
+                    : cellCount === 2
+                      ? 'grid-cols-2 grid-rows-1'
+                      : 'grid-cols-2 grid-rows-2'
+                return (
+                  <div
+                    title="Style-reference images (visual style only — text is ignored). Click or drag & drop."
+                    className={cn(
+                      'grid h-[60px] w-[60px] shrink-0 gap-0.5 self-start overflow-hidden rounded-xl border bg-secondary',
+                      gridCls,
+                      refs.length > 0 ? 'border-primary/50' : 'border-border',
+                    )}
+                  >
+                    {refs.slice(0, 4).map((r) => (
+                      <span key={r.id} className="group relative overflow-hidden bg-background">
+                        <img src={r.url} alt="" className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeRef(r.id)}
+                          title="Remove reference"
+                          className="absolute right-0.5 top-0.5 hidden rounded bg-foreground/70 p-0.5 text-background group-hover:block"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                    {refs.length < 4 && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={refBusy}
+                        title="Attach style-reference images"
+                        className="flex flex-col items-center justify-center gap-0.5 bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                      >
+                        {refBusy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <ImagePlus className={cn('h-4 w-4', refs.length > 0 && 'text-primary')} />
+                        )}
+                        {refs.length === 0 && <span className="text-[9px] font-medium">Reference</span>}
+                      </button>
+                    )}
+                  </div>
+                )
+              })()}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -756,11 +768,11 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
             <button
               type="button"
               onClick={() => setArtOpen(true)}
-              title="Art direction"
+              title="Art Director"
               className={cn(BAR_BTN, 'shrink-0', (isArtActive(art) || style.trim()) && 'border-primary/50 text-primary')}
             >
               <Sparkles className="h-4 w-4" />
-              <span className="hidden 2xl:inline">Art direction</span>
+              <span className="hidden 2xl:inline">Art Director</span>
               {artActiveCount(art) > 0 && (
                 <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
                   {artActiveCount(art)}
@@ -831,7 +843,22 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                 className={cn(BAR_BTN, brandId && 'border-primary/50 text-primary')}
               >
                 <Tag className="h-4 w-4" />
-                <span className="hidden 2xl:inline">{selectedBrand ? selectedBrand.name : 'Brand'}</span>
+                {selectedBrand ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="flex -space-x-1">
+                      {selectedBrand.colors.slice(0, 3).map((c) => (
+                        <span
+                          key={c}
+                          className="h-3.5 w-3.5 rounded-full border border-card"
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </span>
+                    <span className="hidden 2xl:inline">{selectedBrand.name}</span>
+                  </span>
+                ) : (
+                  <span className="hidden 2xl:inline">Brand</span>
+                )}
                 <ChevronDown
                   className={cn(
                     'h-3.5 w-3.5 opacity-60 transition-transform',
@@ -840,12 +867,13 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                 />
               </button>
               {barPopover === 'brand' && (
-                <div className="absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 space-y-3 rounded-xl border border-border bg-popover p-3 shadow-xl">
-                  <div className="space-y-1">
-                    <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Brand
+                <div className="absolute bottom-full left-1/2 z-50 mb-2 flex w-[480px] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
+                  {/* Left — brand catalog */}
+                  <div className="w-44 shrink-0 border-r border-border p-2">
+                    <div className="px-1 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Brands
                     </div>
-                    <div className="max-h-44 space-y-0.5 overflow-y-auto">
+                    <div className="max-h-64 space-y-0.5 overflow-y-auto">
                       <button
                         type="button"
                         onClick={() => setBrandId('')}
@@ -870,7 +898,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                             {b.colors.slice(0, 3).map((c) => (
                               <span
                                 key={c}
-                                className="h-3 w-3 rounded-full border border-border"
+                                className="h-3 w-3 rounded-full border border-card"
                                 style={{ backgroundColor: c }}
                               />
                             ))}
@@ -879,36 +907,93 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                         </button>
                       ))}
                       {brands.length === 0 && (
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                          No brands yet — add them in Settings.
-                        </div>
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">No brands available.</div>
                       )}
                     </div>
                   </div>
-                  {selectedBrand?.logo_svg && (
-                    <div className="space-y-1">
-                      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                        Logo corner
+
+                  {/* Right — selected brand: colours + logo placement */}
+                  <div className="min-w-0 flex-1 p-3">
+                    {selectedBrand ? (
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            {selectedBrand.name} · colours
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(selectedBrand.swatches?.length
+                              ? selectedBrand.swatches
+                              : selectedBrand.colors.map((h) => ({ hex: h, role: '' }))
+                            ).map((s, i) => (
+                              <span
+                                key={`${s.hex}-${i}`}
+                                title={s.hex}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card py-1 pl-1.5 pr-2"
+                              >
+                                <span
+                                  className="h-4 w-4 rounded border border-border"
+                                  style={{ backgroundColor: s.hex }}
+                                />
+                                <span className="leading-tight">
+                                  <span className="block font-mono text-[10px] font-medium text-foreground">
+                                    {s.hex.toUpperCase()}
+                                  </span>
+                                  {s.role && (
+                                    <span className="block text-[9px] text-muted-foreground">{s.role}</span>
+                                  )}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {selectedBrand.logo_svg && (
+                          <div className="space-y-1.5">
+                            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                              Logo placement
+                            </div>
+                            <div className="relative aspect-[1.6/1] w-full overflow-hidden rounded-lg border border-border bg-muted">
+                              {(['tl', 'tr', 'bl', 'br'] as const).map((c) => {
+                                const pos = {
+                                  tl: 'left-2 top-2',
+                                  tr: 'right-2 top-2',
+                                  bl: 'left-2 bottom-2',
+                                  br: 'right-2 bottom-2',
+                                }[c]
+                                const on = logoCorner === c
+                                return (
+                                  <button
+                                    key={c}
+                                    type="button"
+                                    onClick={() => setLogoCorner(on ? null : c)}
+                                    title={`Logo ${c.toUpperCase()}${on ? ' (selected — click to clear)' : ''}`}
+                                    className={cn(
+                                      'absolute flex h-8 w-8 items-center justify-center rounded-md border transition-colors',
+                                      pos,
+                                      on
+                                        ? 'border-primary bg-primary/20'
+                                        : 'border-border bg-card/70 hover:border-foreground/40',
+                                    )}
+                                  >
+                                    {on && <span className="h-3.5 w-3.5 rounded-sm bg-primary/80" />}
+                                  </button>
+                                )
+                              })}
+                              {!logoCorner && (
+                                <span className="pointer-events-none absolute inset-0 flex items-center justify-center px-10 text-center text-[11px] leading-tight text-muted-foreground">
+                                  Placement decided automatically by the AI Builder
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <div className="grid grid-cols-4 gap-1">
-                        {(['tl', 'tr', 'bl', 'br'] as const).map((c) => (
-                          <button
-                            key={c}
-                            type="button"
-                            onClick={() => setLogoCorner(c)}
-                            className={cn(
-                              'rounded-md border px-2 py-1 text-[11px] font-semibold uppercase transition-colors',
-                              logoCorner === c
-                                ? 'border-primary/50 bg-primary/10 text-primary'
-                                : 'border-border text-muted-foreground hover:text-foreground',
-                            )}
-                          >
-                            {c}
-                          </button>
-                        ))}
+                    ) : (
+                      <div className="flex h-full min-h-[140px] items-center justify-center px-6 text-center text-xs text-muted-foreground">
+                        Select a brand to see its colours and choose where the logo goes.
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </div>

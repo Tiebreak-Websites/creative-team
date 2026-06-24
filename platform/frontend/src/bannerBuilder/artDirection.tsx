@@ -6,8 +6,8 @@
 // user typed. The CTA colour is intentionally NOT a control: the director
 // always picks a high-contrast button colour itself, so we only steer the rest
 // of the palette and tell it to keep the CTA as the standout accent.
-import { useState, type ReactNode } from 'react'
-import { Check, Sparkles, X } from 'lucide-react'
+import { useState, type ComponentType, type ReactNode } from 'react'
+import { Check, Globe, Palette, Shirt, Sparkles, Users, Wand2, X } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { ColorPicker } from '@/components/ColorPicker'
@@ -162,9 +162,9 @@ export function ArtDirectionModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Art direction"
-      description="Steer the look. Everything here is optional — the AI fills in whatever you leave blank."
-      className="max-w-3xl"
+      title="Art Director"
+      description="Brief your creative director. Everything here is optional — leave a card blank and the AI decides for you."
+      className="max-w-4xl"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onReset} disabled={!isArtActive(art)}>
@@ -176,125 +176,134 @@ export function ArtDirectionModal({
         </>
       }
     >
-      <div className="space-y-6">
-        <Section title="Vibe" hint="overall look & feel">
-          <div className="flex flex-wrap gap-1.5">
+      <div className="space-y-4">
+        {/* Vibe spans the full width — it's the headline choice. */}
+        <SectionCard icon={Wand2} title="Vibe" hint="The overall look & feel">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {VIBE_PRESETS.map((p) => (
-              <Chip
+              <VibeTile
                 key={p.name}
                 active={art.vibe === p.value}
                 onClick={() => onChange({ vibe: art.vibe === p.value ? null : p.value })}
               >
                 {p.name}
-              </Chip>
+              </VibeTile>
             ))}
           </div>
-        </Section>
+        </SectionCard>
 
-        <Section title="Colour" hint="brand palette — the CTA stays auto high-contrast">
-          <div className="flex flex-wrap items-start gap-6">
-            <ColorPick label="Scene / background" value={art.scene} onChange={(v) => onChange({ scene: v })} />
-            <ColorPick label="Headline text" value={art.text} onChange={(v) => onChange({ text: v })} />
-            <div className="space-y-1.5">
-              <div className="text-xs font-medium text-muted-foreground">CTA button</div>
-              <div className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary">
-                <Sparkles className="h-3.5 w-3.5" /> Auto · high-contrast
+        <div className="grid gap-4 sm:grid-cols-2">
+          <SectionCard icon={Palette} title="Colour" hint="Brand palette — the CTA stays auto high-contrast">
+            <div className="flex flex-wrap items-start gap-5">
+              <ColorPick label="Scene / background" value={art.scene} onChange={(v) => onChange({ scene: v })} />
+              <ColorPick label="Headline text" value={art.text} onChange={(v) => onChange({ text: v })} />
+              <div className="space-y-1.5">
+                <div className="text-xs font-medium text-muted-foreground">CTA button</div>
+                <div className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary">
+                  <Sparkles className="h-3.5 w-3.5" /> Auto · high-contrast
+                </div>
+                <div className="text-[11px] text-muted-foreground">picked for max pop</div>
               </div>
-              <div className="text-[11px] text-muted-foreground">picked for max pop</div>
             </div>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {COLOR_MOODS.map((m) => (
-              <Chip
-                key={m.key}
-                active={art.colorMood === m.key}
-                onClick={() => onChange({ colorMood: art.colorMood === m.key ? null : m.key })}
-              >
-                {m.label}
-              </Chip>
-            ))}
-          </div>
-        </Section>
+            <SubRow label="Mood">
+              {COLOR_MOODS.map((m) => (
+                <Chip
+                  key={m.key}
+                  active={art.colorMood === m.key}
+                  onClick={() => onChange({ colorMood: art.colorMood === m.key ? null : m.key })}
+                >
+                  {m.label}
+                </Chip>
+              ))}
+            </SubRow>
+          </SectionCard>
 
-        <Section title="People" hint="who's in the ad">
-          <div className="flex flex-wrap gap-1.5">
-            {GENDERS.map((g) => (
-              <Chip
-                key={g.key}
-                active={art.gender === g.key}
-                onClick={() => onChange({ gender: art.gender === g.key ? null : g.key })}
-              >
-                {g.label}
-              </Chip>
-            ))}
-          </div>
-          {!noPeople && (
-            <div className="mt-3 flex flex-wrap gap-6">
-              <SubRow label="Count">
-                {COUNTS.map((c) => (
-                  <Chip
-                    key={c.key}
-                    small
-                    active={art.count === c.key}
-                    onClick={() => onChange({ count: art.count === c.key ? null : c.key })}
-                  >
-                    {c.label}
-                  </Chip>
-                ))}
-              </SubRow>
-              <SubRow label="Age">
-                {AGES.map((c) => (
-                  <Chip
-                    key={c.key}
-                    small
-                    active={art.age === c.key}
-                    onClick={() => onChange({ age: art.age === c.key ? null : c.key })}
-                  >
-                    {c.label}
-                  </Chip>
-                ))}
-              </SubRow>
-            </div>
-          )}
-        </Section>
-
-        {!noPeople && (
-          <Section title="Wardrobe" hint="what they're wearing">
+          <SectionCard icon={Users} title="People" hint="Who's in the ad">
             <div className="flex flex-wrap gap-1.5">
-              {WARDROBES.map((w) => (
-                <Chip key={w} active={art.wardrobe === w} onClick={() => onChange({ wardrobe: art.wardrobe === w ? null : w })}>
-                  {cap(w)}
+              {GENDERS.map((g) => (
+                <Chip
+                  key={g.key}
+                  active={art.gender === g.key}
+                  onClick={() => onChange({ gender: art.gender === g.key ? null : g.key })}
+                >
+                  {g.label}
                 </Chip>
               ))}
             </div>
-          </Section>
-        )}
-
-        <Section title="Local elements" hint="match the audience">
-          <button
-            type="button"
-            onClick={() => onChange({ localize: !art.localize })}
-            className={cn(
-              'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors',
-              art.localize
-                ? 'border-primary/50 bg-primary/10 text-primary'
-                : 'border-border bg-secondary text-muted-foreground hover:text-foreground',
+            {!noPeople && (
+              <div className="flex flex-wrap gap-x-6 gap-y-3">
+                <SubRow label="Count">
+                  {COUNTS.map((c) => (
+                    <Chip
+                      key={c.key}
+                      small
+                      active={art.count === c.key}
+                      onClick={() => onChange({ count: art.count === c.key ? null : c.key })}
+                    >
+                      {c.label}
+                    </Chip>
+                  ))}
+                </SubRow>
+                <SubRow label="Age">
+                  {AGES.map((c) => (
+                    <Chip
+                      key={c.key}
+                      small
+                      active={art.age === c.key}
+                      onClick={() => onChange({ age: art.age === c.key ? null : c.key })}
+                    >
+                      {c.label}
+                    </Chip>
+                  ))}
+                </SubRow>
+              </div>
             )}
-          >
-            <span
+          </SectionCard>
+
+          {!noPeople && (
+            <SectionCard icon={Shirt} title="Wardrobe" hint="What they're wearing">
+              <div className="flex flex-wrap gap-1.5">
+                {WARDROBES.map((w) => (
+                  <Chip
+                    key={w}
+                    active={art.wardrobe === w}
+                    onClick={() => onChange({ wardrobe: art.wardrobe === w ? null : w })}
+                  >
+                    {cap(w)}
+                  </Chip>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+
+          <SectionCard icon={Globe} title="Localise" hint="Match the audience">
+            <button
+              type="button"
+              onClick={() => onChange({ localize: !art.localize })}
               className={cn(
-                'flex h-4 w-4 items-center justify-center rounded border',
-                art.localize ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40',
+                'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors',
+                art.localize
+                  ? 'border-primary/50 bg-primary/10 text-primary'
+                  : 'border-border bg-secondary text-muted-foreground hover:text-foreground',
               )}
             >
-              {art.localize && <Check className="h-3 w-3" />}
-            </span>
-            Localise visuals to {languageLabel}
-          </button>
-        </Section>
+              <span
+                className={cn(
+                  'flex h-4 w-4 items-center justify-center rounded border',
+                  art.localize ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40',
+                )}
+              >
+                {art.localize && <Check className="h-3 w-3" />}
+              </span>
+              Localise visuals to {languageLabel}
+            </button>
+          </SectionCard>
+        </div>
 
+        {/* Live preview spans the full width at the bottom. */}
         <div className="rounded-xl border border-border bg-secondary/40 p-3">
-          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="mb-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <Sparkles className="h-3 w-3" />
             What the director will read
           </div>
           {preview ? (
@@ -311,15 +320,50 @@ export function ArtDirectionModal({
 // --------------------------------------------------------------------------
 // Small presentational helpers
 // --------------------------------------------------------------------------
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+/** A delineated section card: rounded border, subtle bg, icon + title + hint header. */
+function SectionCard({
+  icon: Icon,
+  title,
+  hint,
+  children,
+}: {
+  icon: ComponentType<{ className?: string }>
+  title: string
+  hint?: string
+  children: ReactNode
+}) {
   return (
-    <section className="space-y-2">
-      <div className="flex items-baseline gap-2">
-        <h3 className="font-display text-sm font-semibold text-foreground">{title}</h3>
-        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+    <section className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+      <div className="flex items-center gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon className="h-4 w-4" />
+        </span>
+        <div className="min-w-0">
+          <h3 className="font-display text-sm font-semibold leading-tight text-foreground">{title}</h3>
+          {hint && <p className="truncate text-xs text-muted-foreground">{hint}</p>}
+        </div>
       </div>
       {children}
     </section>
+  )
+}
+
+/** A larger, friendlier selectable tile for the vibe presets. */
+function VibeTile({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition-colors',
+        active
+          ? 'border-primary/60 bg-primary/10 text-primary'
+          : 'border-border bg-secondary text-muted-foreground hover:border-foreground/25 hover:text-foreground',
+      )}
+    >
+      <span className="truncate">{children}</span>
+      {active && <Check className="h-4 w-4 shrink-0" />}
+    </button>
   )
 }
 

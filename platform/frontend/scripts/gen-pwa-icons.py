@@ -1,9 +1,9 @@
 """Generate PWA icon PNGs from the Internovus brand crescent.
 
-One-off dev tool — NOT a runtime dependency. Rasterizes the crescent (from
-public/icon.svg / fav-logo.svg) with its inner "eye" cut out and a red radial
-gradient fill (#E71E25 center → #9E181C edge), on a white tile. Supersampled
-for smooth edges.
+One-off dev tool — NOT a runtime dependency. Rasterizes a red radial-gradient
+tile (#E71E25 center → #9E181C edge) with a solid WHITE crescent (from
+public/icon.svg / fav-logo.svg) painted through it; the crescent's inner "eye"
+is left as a hole so the red tile shows through. Supersampled for smooth edges.
 
 Run (needs Pillow + svg.path in the env):
     python scripts/gen-pwa-icons.py
@@ -31,11 +31,11 @@ CRESCENT = (
     "169.826 173.39C193.079 138.052 190.945 98.6883 177.689 96.1162Z"
 )
 VIEW = 300.0
-RX = 50.0                      # rounded-tile corner radius in the 300 space
+RX = 66.0                      # rounded-tile corner radius in the 300 space (iOS-style)
 INNER = (231, 30, 37)          # #E71E25
 OUTER = (158, 24, 28)          # #9E181C
-GCX, GCY, GR = 127.821, 107.439, 118.628  # gradient center + radius (from the SVG)
-GSTOP = 0.8627                 # offset where OUTER is reached
+GCX, GCY, GR = 150.0, 70.0, 280.0  # tile gradient center + radius (from the SVG)
+GSTOP = 1.0                    # offset where OUTER is reached
 SS = 4                         # supersample factor
 SAMPLES = 110                  # points sampled per path segment
 
@@ -79,7 +79,8 @@ def render(size: int, maskable: bool = False) -> Image.Image:
     scale = big / VIEW
     cs = 0.78 if maskable else 1.0  # shrink for the maskable safe zone
 
-    tile = Image.new("RGBA", (big, big), (255, 255, 255, 255))
+    # Red radial-gradient tile (rounded corners for the normal icon; full-bleed maskable).
+    tile = _gradient(256).resize((big, big), Image.LANCZOS).convert("RGBA")
     if not maskable:  # rounded tile for the normal icon; maskable stays full-bleed
         corner = Image.new("L", (big, big), 0)
         ImageDraw.Draw(corner).rounded_rectangle(
@@ -87,16 +88,17 @@ def render(size: int, maskable: bool = False) -> Image.Image:
         )
         tile.putalpha(corner)
 
-    grad = _gradient(256).resize((big, big), Image.LANCZOS).convert("RGBA")
+    # Solid white crescent painted through the mask; inner "eye" left as a hole.
+    white = Image.new("RGBA", (big, big), (255, 255, 255, 255))
 
     sub = _subpaths(CRESCENT)
     mask = Image.new("L", (big, big), 0)
     d = ImageDraw.Draw(mask)
     d.polygon(_poly(sub[0], scale, cs), fill=255)
-    if len(sub) > 1:  # cut the inner "eye"
+    if len(sub) > 1:  # cut the inner "eye" so the red tile shows through
         d.polygon(_poly(sub[1], scale, cs), fill=0)
 
-    tile.paste(grad, (0, 0), mask)
+    tile.paste(white, (0, 0), mask)
     return tile.resize((size, size), Image.LANCZOS)
 
 
