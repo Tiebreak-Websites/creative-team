@@ -1,62 +1,109 @@
-"""Generate PWA icon PNGs from the Tiebreak brand crescent.
+"""Generate PWA icon PNGs from the Internovus brand crescent.
 
-One-off dev tool — NOT a runtime dependency. Rasterizes the two crescent paths
-(from public/logo.svg) onto a near-black tile, supersampled for smooth edges.
+One-off dev tool — NOT a runtime dependency. Rasterizes the crescent (from
+public/icon.svg / fav-logo.svg) with its inner "eye" cut out and a red radial
+gradient fill (#E71E25 center → #9E181C edge), on a white tile. Supersampled
+for smooth edges.
 
 Run (needs Pillow + svg.path in the env):
     python scripts/gen-pwa-icons.py
 Outputs into public/: icon-192.png, icon-512.png, icon-maskable-512.png
-(icon.svg is hand-authored and committed separately.)
+(icon.svg is the supplied vector and is used as-is.)
 """
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 from svg.path import parse_path
 
-# Brand crescent paths (native viewBox 0..145.844 x 0..166.471), two-tone mint.
-VIEW_W, VIEW_H = 145.844, 166.471
-PATHS = [
-    ("#63ECAE",
-     "M99.2694 154.11C105.543 154.11 111.594 153.155 117.288 151.38C105 160.844 89.6126 166.471 72.9201 166.471C32.6485 166.471 0 133.737 0 93.3629V0C18.144 0 33.3667 12.5243 37.5415 29.4224C48.0188 23.5817 60.0852 20.2559 72.9201 20.2559C89.6126 20.2559 105 25.878 117.288 35.3423C111.596 33.5692 105.543 32.612 99.2694 32.612C65.8021 32.612 38.6741 59.8122 38.6741 93.3612C38.6741 126.91 65.8004 154.11 99.2694 154.11Z"),
-    ("#3ED08E",
-     "M145.844 93.5385V93.7269C145.844 94.0903 145.839 94.4503 145.83 94.8103C145.825 94.9247 145.822 95.034 145.822 95.1433C145.005 121.529 123.414 142.66 96.907 142.66C83.5402 142.66 71.4201 137.289 62.5889 128.571C64.8508 129.027 67.1899 129.259 69.5827 129.259C89.3627 129.259 105.398 113.184 105.398 93.3534C105.398 73.5231 89.3627 57.4476 69.5827 57.4476C67.408 57.4476 65.2787 57.6411 63.2097 58.0179C71.9839 49.6639 83.8506 44.5381 96.907 44.5381C123.907 44.5381 145.808 66.4678 145.844 93.5368V93.5385Z"),
-]
-BG = "#171717"          # matches index.html theme-color / dark app shell
-SS = 4                  # supersample factor → downsample with LANCZOS
-SAMPLES = 96            # points sampled per path segment
+# Brand crescent (native 300x300 viewBox; two subpaths — outer shape + inner hole).
+CRESCENT = (
+    "M263.849 131.342C252.279 162.655 217.68 221.477 161.176 252.565C161.176 252.565 "
+    "111.862 285.89 81.644 238.698C51.5385 191.618 37.2624 135.468 34.5267 118.142C31.7909 "
+    "100.816 24.6908 44.0039 76.3643 38.4124C104.785 35.2812 139.721 36.8468 172.634 "
+    "44.1157C167.242 48.3652 163.648 54.8513 163.76 62.0083C164.209 76.8816 170.837 85.8279 "
+    "186.788 86.3871C202.74 86.9462 212.738 74.8687 212.738 62.0083C212.738 59.9954 212.513 "
+    "57.9825 211.951 56.1932C223.859 61.0019 234.867 66.817 244.528 73.6386C244.64 73.5267 "
+    "279.801 88.2882 263.849 131.342ZM177.689 96.1162C148.483 90.6366 159.267 121.054 135.901 "
+    "156.392C112.76 191.954 86.699 206.827 98.2694 213.649C109.727 220.47 146.573 208.84 "
+    "169.826 173.39C193.079 138.052 190.945 98.6883 177.689 96.1162Z"
+)
+VIEW = 300.0
+RX = 50.0                      # rounded-tile corner radius in the 300 space
+INNER = (231, 30, 37)          # #E71E25
+OUTER = (158, 24, 28)          # #9E181C
+GCX, GCY, GR = 127.821, 107.439, 118.628  # gradient center + radius (from the SVG)
+GSTOP = 0.8627                 # offset where OUTER is reached
+SS = 4                         # supersample factor
+SAMPLES = 110                  # points sampled per path segment
 
 PUBLIC = Path(__file__).resolve().parent.parent / "public"
 
 
-def _polygon(d: str, scale: float, ox: float, oy: float) -> list[tuple[float, float]]:
-    pts: list[tuple[float, float]] = []
+def _subpaths(d: str) -> list[str]:
+    return [s.strip() for s in d.replace("Z", "Z|").split("|") if s.strip()]
+
+
+def _poly(d: str, scale: float, cs: float) -> list[tuple[float, float]]:
+    """Sample a subpath to points, scaled to the canvas, shrunk by `cs` about center."""
+    pts = []
     for seg in parse_path(d):
         for i in range(SAMPLES + 1):
             p = seg.point(i / SAMPLES)
-            pts.append((ox + p.real * scale, oy + p.imag * scale))
+            x = (150 + (p.real - 150) * cs) * scale
+            y = (150 + (p.imag - 150) * cs) * scale
+            pts.append((x, y))
     return pts
 
 
-def render(px: int, content_frac: float) -> Image.Image:
-    """Dark tile with the crescent occupying `content_frac` of the height."""
-    big = px * SS
-    img = Image.new("RGBA", (big, big), BG)
-    draw = ImageDraw.Draw(img)
-    scale = (content_frac * big) / VIEW_H
-    ox = (big - VIEW_W * scale) / 2
-    oy = (big - VIEW_H * scale) / 2
-    for color, d in PATHS:
-        draw.polygon(_polygon(d, scale, ox, oy), fill=color)
-    return img.resize((px, px), Image.LANCZOS)
+def _gradient(res: int) -> Image.Image:
+    """Red radial gradient computed at low res (fast), later upscaled."""
+    img = Image.new("RGB", (res, res))
+    px = img.load()
+    cx, cy, r = GCX / VIEW * res, GCY / VIEW * res, GR / VIEW * res
+    for y in range(res):
+        for x in range(res):
+            t = min(1.0, (math.hypot(x - cx, y - cy) / r) / GSTOP)
+            px[x, y] = (
+                int(INNER[0] + (OUTER[0] - INNER[0]) * t),
+                int(INNER[1] + (OUTER[1] - INNER[1]) * t),
+                int(INNER[2] + (OUTER[2] - INNER[2]) * t),
+            )
+    return img
+
+
+def render(size: int, maskable: bool = False) -> Image.Image:
+    big = size * SS
+    scale = big / VIEW
+    cs = 0.78 if maskable else 1.0  # shrink for the maskable safe zone
+
+    tile = Image.new("RGBA", (big, big), (255, 255, 255, 255))
+    if not maskable:  # rounded tile for the normal icon; maskable stays full-bleed
+        corner = Image.new("L", (big, big), 0)
+        ImageDraw.Draw(corner).rounded_rectangle(
+            [0, 0, big - 1, big - 1], radius=int(RX / VIEW * big), fill=255
+        )
+        tile.putalpha(corner)
+
+    grad = _gradient(256).resize((big, big), Image.LANCZOS).convert("RGBA")
+
+    sub = _subpaths(CRESCENT)
+    mask = Image.new("L", (big, big), 0)
+    d = ImageDraw.Draw(mask)
+    d.polygon(_poly(sub[0], scale, cs), fill=255)
+    if len(sub) > 1:  # cut the inner "eye"
+        d.polygon(_poly(sub[1], scale, cs), fill=0)
+
+    tile.paste(grad, (0, 0), mask)
+    return tile.resize((size, size), Image.LANCZOS)
 
 
 def main() -> None:
-    # Normal icons: crescent ~62% tall. Maskable: ~50% so it survives the safe-zone crop.
-    render(192, 0.62).save(PUBLIC / "icon-192.png")
-    render(512, 0.62).save(PUBLIC / "icon-512.png")
-    render(512, 0.50).save(PUBLIC / "icon-maskable-512.png")
+    render(192).save(PUBLIC / "icon-192.png")
+    render(512).save(PUBLIC / "icon-512.png")
+    render(512, maskable=True).save(PUBLIC / "icon-maskable-512.png")
     print("wrote icon-192.png, icon-512.png, icon-maskable-512.png to", PUBLIC)
 
 

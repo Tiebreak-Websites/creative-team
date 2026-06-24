@@ -2,36 +2,55 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Tiebreak — "Banner Builder" — dark + tiffany-mint theme ("Confident Display").
-   Dark-only: :root and .dark hold the same palette so it renders correctly
-   regardless of the class. Values mirror the approved style tile. */
+/* Internovus — "Creative Builder" — red brand (#E71E25 → #9E181C), light + dark.
+   Light is :root; dark is .dark (toggled on <html>). Fonts cascade from :root. */
 @layer base {
-  :root,
-  .dark {
-    --background: 0 0% 9%; /* #171717 */
-    --foreground: 150 10% 96%; /* #F2F4F3 */
-    --card: 0 0% 12%; /* #1E1E1E */
-    --card-foreground: 150 10% 96%;
-    --popover: 0 0% 12%;
-    --popover-foreground: 150 10% 96%;
-    --primary: 158 88% 54%; /* #21F1A8 tiffany mint */
-    --primary-foreground: 156 56% 6%; /* #06140E — dark text on mint */
-    --secondary: 0 0% 14%; /* #242424 */
-    --secondary-foreground: 150 10% 96%;
-    --muted: 0 0% 14%;
-    --muted-foreground: 150 4% 56%; /* #8A908D */
-    --accent: 0 0% 16%; /* hover surfaces */
-    --accent-foreground: 150 10% 96%;
-    --destructive: 349 100% 65%; /* #FF4D6A */
+  :root {
+    --background: 0 0% 100%; /* white */
+    --foreground: 0 0% 9%; /* near-black */
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 358 81% 51%; /* #E71E25 Internovus red */
+    --primary-foreground: 0 0% 100%; /* white on red */
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 0 0% 95%; /* hover surfaces */
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 18%; /* #2E2E2E */
-    --input: 0 0% 18%;
-    --ring: 158 88% 54%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 358 81% 51%;
     --radius: 0.75rem;
 
     --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     --font-display: 'Space Grotesk', 'Inter', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  }
+  .dark {
+    --background: 0 0% 9%; /* #171717 */
+    --foreground: 0 0% 96%; /* #F4F4F4 */
+    --card: 0 0% 12%; /* #1E1E1E */
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 358 82% 56%; /* brighter red on dark */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 14%; /* #242424 */
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 0% 16%; /* hover surfaces */
+    --accent-foreground: 0 0% 96%;
+    --destructive: 349 90% 62%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 18%; /* #2E2E2E */
+    --input: 0 0% 18%;
+    --ring: 358 82% 56%;
   }
 }
 
@@ -50,10 +69,10 @@
     background: hsl(var(--primary) / 0.3);
     color: hsl(var(--foreground));
   }
-  /* Dark, slim scrollbars */
+  /* Slim, theme-adaptive scrollbars */
   * {
     scrollbar-width: thin;
-    scrollbar-color: hsl(0 0% 26%) transparent;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.4) transparent;
   }
   *::-webkit-scrollbar {
     width: 10px;
@@ -64,13 +83,13 @@
     background: transparent;
   }
   *::-webkit-scrollbar-thumb {
-    background: hsl(0 0% 22%);
+    background: hsl(var(--muted-foreground) / 0.35);
     border-radius: 999px;
     border: 3px solid transparent;
     background-clip: content-box;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: hsl(0 0% 32%);
+    background: hsl(var(--muted-foreground) / 0.55);
   }
 }
 

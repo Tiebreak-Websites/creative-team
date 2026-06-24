@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Icon } from './Icon'
+import { Download } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 /**
- * "Install" affordance for the PWA. The browser fires `beforeinstallprompt`
- * when the app is installable; we stash that event and show a button that
- * triggers the native install dialog. Renders nothing when install isn't
- * offered or the app is already running standalone (installed).
+ * "Install" affordance for the PWA. The browser fires `beforeinstallprompt` when
+ * the app is installable; we stash it and show a button that triggers the native
+ * install dialog. Renders nothing when install isn't offered or the app already
+ * runs standalone (installed).
  */
 export function InstallButton() {
   const [deferred, setDeferred] = useState<any>(null)
 
   useEffect(() => {
     const onPrompt = (e: Event) => {
-      e.preventDefault() // keep the event so we can trigger it from our button
+      e.preventDefault()
       setDeferred(e)
     }
     const onInstalled = () => setDeferred(null)
@@ -25,22 +26,23 @@ export function InstallButton() {
   }, [])
 
   const standalone =
-    typeof window !== 'undefined' &&
-    window.matchMedia?.('(display-mode: standalone)').matches
+    typeof window !== 'undefined' && window.matchMedia?.('(display-mode: standalone)').matches
   if (standalone || !deferred) return null
 
   return (
-    <button
-      className="nav-item"
-      title="Install Creative Tools as a desktop app"
+    <Button
+      variant="ghost"
+      size="sm"
+      className="font-display"
+      title="Install Internovus Creative Builder as a desktop app"
       onClick={async () => {
         deferred.prompt()
         await deferred.userChoice
         setDeferred(null)
       }}
     >
-      <Icon name="download" size={16} />
-      <span className="label">Install</span>
-    </button>
+      <Download className="h-4 w-4" />
+      Install
+    </Button>
   )
 }

@@ -1,4 +1,4 @@
-/* Creative Tools service worker — minimal, dependency-free.
+/* Internovus Creative Builder service worker — minimal, dependency-free.
  *
  * Goals: satisfy PWA installability (a fetch handler) and make the installed
  * app shell load fast / survive a brief offline blip. It deliberately NEVER
@@ -8,7 +8,7 @@
  *
  * Bump CACHE to invalidate old shells on a breaking change.
  */
-const CACHE = 'creative-tools-v1'
+const CACHE = 'internovus-v1'
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/icon-192.png']
 
 self.addEventListener('install', (event) => {
