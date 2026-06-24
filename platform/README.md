@@ -46,6 +46,19 @@ Secrets are resolved at runtime from the process env first, then the repo-root `
 
 ---
 
+## Deploy (publish + installable web-app)
+
+To publish the whole app from one machine behind a **Cloudflare Tunnel** — a real
+HTTPS web address protected by the app's own login, and **installable as a desktop
+web-app (PWA)** — see [`DEPLOY.md`](DEPLOY.md). The backend serves the built SPA
+itself (`app/main._mount_frontend`), so it's a single origin: one tunnel route, no
+CORS, a `Secure` first-party session cookie (`PLATFORM_COOKIE_SECURE=true`), and the
+PWA manifest/service worker/icons served from `frontend/public/`. Optionally gate it
+further with Cloudflare Access. Deploy scaffold lives in [`deploy/`](deploy)
+(`cloudflared/config.example.yml`, `.env.production.example`).
+
+---
+
 ## Tests
 
 ```bash

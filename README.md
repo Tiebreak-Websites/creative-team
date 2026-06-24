@@ -39,3 +39,10 @@ npm run dev        # http://localhost:5173
 | [`platform/figma-plugin`](platform/figma-plugin) | Companion Figma plugin that writes results (summaries, translated pages) onto the canvas |
 
 See [`platform/README.md`](platform/README.md) for the architecture + how to add a new tool, and [`platform/figma-plugin/README.md`](platform/figma-plugin/README.md) to install the plugin.
+
+## Deploy
+
+To publish the whole app from one machine behind a Cloudflare Tunnel — a real HTTPS
+web address protected by the app's own login, and installable as a desktop web-app
+(PWA) — follow [`platform/DEPLOY.md`](platform/DEPLOY.md). (Optional: lock it down
+further with Cloudflare Access.)

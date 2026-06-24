@@ -4,8 +4,11 @@ Run locally:
     cd platform/backend
     uvicorn app.main:app --reload --port 8000
 """
-from fastapi import Depends, FastAPI
+import mimetypes
+
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from . import plugin_bridge
 from .auth import build_auth_router, require_user
@@ -16,8 +19,19 @@ from .tool_config import build_config_router
 from . import tools  # noqa: F401 — importing registers every tool plugin
 
 
+# Some hosts don't map .webmanifest; serve the PWA manifest as the correct type.
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Internal Tool Platform", version="1.0")
+    docs = settings.ENABLE_DOCS
+    app = FastAPI(
+        title="Internal Tool Platform",
+        version="1.0",
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
@@ -40,7 +54,38 @@ def create_app() -> FastAPI:
     def health():
         return {"status": "ok", "tools": len(ToolRegistry.all())}
 
+    _mount_frontend(app)
     return app
+
+
+def _mount_frontend(app: FastAPI) -> None:
+    """Serve the built React SPA so the whole app is a single origin.
+
+    When `frontend/dist` exists (a deploy after `npm run build`) the backend
+    serves its static assets and falls back to index.html for any other path —
+    so one `cloudflared` ingress rule covers both the API and the UI, and the
+    session cookie is first-party (no CORS). In local dev the dist usually does
+    not exist and Vite (:5173) serves the UI instead, so this is a no-op.
+
+    Registered last, as a GET catch-all: the explicit /api routers and FastAPI's
+    own /docs + /openapi.json are matched first; /api/* that falls through here
+    still 404s as JSON rather than being masked by index.html.
+    """
+    dist = settings.FRONTEND_DIST
+    index = dist / "index.html"
+    if not index.is_file():
+        return
+    dist_root = dist.resolve()
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        candidate = (dist_root / full_path).resolve()
+        # Path-traversal guard: only serve real files that stay inside dist.
+        if dist_root in candidate.parents and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(index)  # SPA fallback
 
 
 app = create_app()

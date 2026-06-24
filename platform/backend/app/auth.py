@@ -23,7 +23,7 @@ from fastapi import APIRouter, Body, Cookie, Depends, HTTPException, Response
 from passlib.context import CryptContext
 
 from .secrets import get_secret
-from .settings import BACKEND_DIR
+from .settings import BACKEND_DIR, settings
 
 # --- Tunables --------------------------------------------------------------
 TOKEN_TTL_SECONDS = 8 * 60 * 60  # ~8h sessions
@@ -164,7 +164,7 @@ def build_auth_router() -> APIRouter:
             value=token,
             httponly=True,
             samesite="lax",
-            secure=False,  # localhost over http; flip to True behind TLS
+            secure=settings.COOKIE_SECURE,  # True behind TLS (tunnel); see settings
             max_age=TOKEN_TTL_SECONDS,
             path="/",
         )
