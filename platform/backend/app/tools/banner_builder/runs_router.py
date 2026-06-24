@@ -8,6 +8,7 @@
 Banners are create -> sort -> download only. No Figma, no plugin.
 """
 import io
+import re
 import zipfile
 from pathlib import Path
 
@@ -21,6 +22,12 @@ from ...secrets import get_secret
 
 _OPENAI_SECRET = {"env": "OPENAI_API_KEY", "label": "OpenAI API key",
                   "docs_url": "https://platform.openai.com/api-keys", "present": False}
+
+
+def _slug(s: str) -> str:
+    """Filesystem-safe slug for download filenames (alnum + dashes, lowercased)."""
+    s = re.sub(r"[^A-Za-z0-9]+", "-", (s or "").strip()).strip("-").lower()
+    return s[:80]
 
 
 def build_router() -> APIRouter:
@@ -51,7 +58,7 @@ def build_router() -> APIRouter:
         return runner.run_to_dict(run)
 
     @router.get("/runs/{run_id}/banners/{label}.png")
-    def get_banner(run_id: str, label: str, download: int = 0):
+    def get_banner(run_id: str, label: str, download: int = 0, name: str = ""):
         run = runner.STORE.get(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
@@ -62,9 +69,11 @@ def build_router() -> APIRouter:
         if not png.exists():
             raise HTTPException(status_code=404, detail="banner not generated yet")
         disposition = "attachment" if download else "inline"
+        # Optional caller-supplied download name, e.g. v1-1200x1200-title.png
+        fname = (_slug(name) or label) + ".png"
         return FileResponse(
             str(png), media_type="image/png",
-            headers={"Content-Disposition": f'{disposition}; filename="{label}.png"'},
+            headers={"Content-Disposition": f'{disposition}; filename="{fname}"'},
         )
 
     @router.get("/runs/{run_id}/download.zip")
@@ -81,6 +90,30 @@ def build_router() -> APIRouter:
         return StreamingResponse(
             buf, media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="banners_{run_id}.zip"'},
+        )
+
+    @router.get("/runs/{run_id}/version.zip")
+    def version_zip(run_id: str, concept: str, v: int = 1, title: str = ""):
+        """Zip one banner version's ok PNGs — files named v{N}-{size}-{title}.png
+        inside a v{N}-{title}.zip archive."""
+        run = runner.STORE.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        slug = _slug(title)
+        suffix = f"-{slug}" if slug else ""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in run.frames_plan:
+                if f["concept"] != concept:
+                    continue
+                label = runner._label(f["concept"], f["size"])
+                png = run.dir / f"{label}.png"
+                if png.exists():
+                    zf.write(str(png), arcname=f"v{v}-{f['size']}{suffix}.png")
+        buf.seek(0)
+        return StreamingResponse(
+            buf, media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="v{v}{suffix}.zip"'},
         )
 
     @router.get("/download_all.zip")

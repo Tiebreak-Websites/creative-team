@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { Download, ExternalLink, HelpCircle, ImageIcon, Loader2, Sparkles } from 'lucide-react'
 import type { Banner, RunData } from '../types'
-import { assetUrl, zipAllUrl } from '../api'
+import { assetUrl, versionZipUrl, zipAllUrl } from '../api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -24,6 +24,8 @@ function sortBanners(banners: Banner[]): Banner[] {
 
 interface ConceptGroup {
   id: string
+  runId: string
+  concept: string
   number: number
   title: string
   banners: Banner[]
@@ -52,6 +54,8 @@ function buildGroups(runs: RunData[]): ConceptGroup[] {
       const genMs = bs.reduce((acc, b) => acc + (b.status === 'ok' && b.gen_ms ? b.gen_ms : 0), 0)
       groups.push({
         id: `${run.run_id}:${ck}`,
+        runId: run.run_id,
+        concept: ck,
         number: m ? parseInt(m[1], 10) : i + 1,
         title: bs.find((b) => b.title)?.title ?? '',
         banners: bs,
@@ -69,6 +73,16 @@ function fmtTime(ms: number): string {
   const s = ms / 1000
   if (s < 60) return `${s.toFixed(1)}s`
   return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
+}
+
+/** Filesystem-safe slug for download filenames. */
+function slugify(s: string): string {
+  return (s || '')
+    .trim()
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+    .slice(0, 80)
 }
 
 export function OutputPane({ runs, onHelp }: { runs: RunData[]; onHelp?: () => void }) {
@@ -122,7 +136,7 @@ function OverviewBar({ runs }: { runs: RunData[] }) {
 
       <div className="hidden h-1.5 max-w-[280px] flex-1 overflow-hidden rounded-full bg-secondary sm:block">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-[#3ED08E] to-[#21F1A8] transition-[width] duration-500"
+          className="h-full rounded-full bg-gradient-to-r from-[#9E181C] to-[#E71E25] transition-[width] duration-500"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -152,7 +166,7 @@ function ConceptGroupBlock({ g }: { g: ConceptGroup }) {
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <h3 className="font-display text-[15px] font-bold tracking-tight">Concept {g.number}</h3>
+        <h3 className="font-display text-[15px] font-bold tracking-tight">Version {g.number}</h3>
         {g.title && <span className="text-sm text-muted-foreground">{g.title}</span>}
         <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
           {g.running && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -160,13 +174,23 @@ function ConceptGroupBlock({ g }: { g: ConceptGroup }) {
             {g.ok}/{g.total} ready
           </span>
           {g.genMs > 0 && (
-            <span title="Total image render time across this concept's sizes">· {fmtTime(g.genMs)}</span>
+            <span title="Total image render time across this version's sizes">· {fmtTime(g.genMs)}</span>
+          )}
+          {g.ok > 0 && (
+            <Button asChild size="sm" variant="outline" className="h-7 px-2.5">
+              <a
+                href={versionZipUrl(g.runId, g.concept, g.number, g.title)}
+                title={`Download all sizes of v${g.number} as a zip`}
+              >
+                <Download className="h-3.5 w-3.5" /> v{g.number}
+              </a>
+            </Button>
           )}
         </span>
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
-        {g.banners.map((b) => (
-          <AssetCard key={b.label} b={b} />
+        {g.banners.map((b, i) => (
+          <AssetCard key={b.label} b={b} version={g.number} index={i} />
         ))}
       </div>
     </section>
@@ -179,13 +203,19 @@ const CHECKER: CSSProperties = {
   backgroundSize: '16px 16px',
 }
 
-function AssetCard({ b }: { b: Banner }) {
+function AssetCard({ b, version, index = 0 }: { b: Banner; version: number; index?: number }) {
   const tag = b.phase === 'master' ? 'master' : 'recomposed'
+  const delay = { animationDelay: `${Math.min(index * 40, 400)}ms` }
 
   if (b.status === 'ok' && b.url) {
     const src = assetUrl(b.url)
+    const slug = slugify(b.title)
+    const fileName = `v${version}-${b.size}${slug ? `-${slug}` : ''}`
     return (
-      <div className="group overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md">
+      <div
+        style={delay}
+        className="group animate-fade-up overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md"
+      >
         <div className="relative aspect-square" style={CHECKER}>
           <img src={src} alt={b.label} loading="lazy" className="h-full w-full object-contain" />
           <div className="absolute inset-0 flex items-center justify-center gap-2 bg-foreground/45 opacity-0 transition-opacity group-hover:opacity-100">
@@ -199,8 +229,8 @@ function AssetCard({ b }: { b: Banner }) {
               <ExternalLink className="h-4 w-4" />
             </a>
             <a
-              href={`${src}?download=1`}
-              title="Download PNG"
+              href={`${src}?download=1&name=${encodeURIComponent(fileName)}`}
+              title={`Download ${fileName}.png`}
               className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background/90 text-foreground shadow hover:bg-background"
             >
               <Download className="h-4 w-4" />
@@ -224,7 +254,10 @@ function AssetCard({ b }: { b: Banner }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-dashed border-border bg-muted/40">
+    <div
+      style={delay}
+      className="animate-fade-up overflow-hidden rounded-xl border border-dashed border-border bg-muted/40"
+    >
       <div className="flex aspect-square flex-col items-center justify-center gap-1.5 p-3 text-center">
         <span className="flex items-center gap-1.5 text-xs font-medium">
           <StatusDot status={b.status} /> {b.size}

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { HelpCircle, Settings } from 'lucide-react'
+import { HelpCircle } from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
@@ -8,7 +8,6 @@ import { LPBuilder } from './lpBuilder/LPBuilder'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { Login } from './auth/Login'
 import { UserMenu } from './auth/UserMenu'
-import { ToolSettings } from './admin/ToolSettings'
 import { Logo } from './components/Logo'
 import { ThemeToggle } from './components/ThemeToggle'
 import { InstallButton } from './components/InstallButton'
@@ -65,11 +64,9 @@ function Tab({
 
 // Two tools, no home page: Banner Builder + LP Builder (placeholder).
 function Workspace() {
-  const { user } = useAuth()
   const [page, setPage] = useState<Page>('banner')
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
-  const [view, setView] = useState<'tool' | 'settings'>('tool')
   const [helpOpen, setHelpOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -82,13 +79,8 @@ function Workspace() {
       .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
   }, [])
 
-  const isAdmin = user?.role === 'admin'
   const showBanner = page === 'banner'
-
-  function goBanner() {
-    setPage('banner')
-    setView('tool')
-  }
+  const goBanner = () => setPage('banner')
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
@@ -102,7 +94,7 @@ function Workspace() {
           <Logo className="h-8 w-auto transition-transform duration-200 group-hover:scale-[1.03]" />
         </button>
         <nav className="flex items-center gap-1">
-          <Tab active={showBanner && view === 'tool'} onClick={goBanner}>
+          <Tab active={showBanner} onClick={goBanner}>
             Banner Builder
           </Tab>
           <Tab active={page === 'lp'} onClick={() => setPage('lp')}>
@@ -115,17 +107,6 @@ function Workspace() {
             <Button variant="ghost" size="sm" className="font-display" onClick={() => setHelpOpen(true)}>
               <HelpCircle className="h-4 w-4" />
               Help
-            </Button>
-          )}
-          {showBanner && isAdmin && (
-            <Button
-              variant={view === 'settings' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="font-display"
-              onClick={() => setView(view === 'settings' ? 'tool' : 'settings')}
-            >
-              <Settings className="h-4 w-4" />
-              Settings
             </Button>
           )}
           <InstallButton />
@@ -142,10 +123,6 @@ function Workspace() {
             <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               Could not reach the backend: {loadError}.
             </div>
-          </div>
-        ) : view === 'settings' && tool ? (
-          <div className="h-full overflow-y-auto">
-            <ToolSettings tools={[tool]} />
           </div>
         ) : tool && meta ? (
           <BannerBuilder tool={tool} meta={meta} />

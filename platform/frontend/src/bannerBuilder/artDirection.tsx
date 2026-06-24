@@ -6,10 +6,11 @@
 // user typed. The CTA colour is intentionally NOT a control: the director
 // always picks a high-contrast button colour itself, so we only steer the rest
 // of the palette and tell it to keep the CTA as the standout accent.
-import { type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Check, Sparkles, X } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { ColorPicker } from '@/components/ColorPicker'
 import { cn } from '@/lib/utils'
 
 export type Gender = 'either' | 'woman' | 'man' | 'none'
@@ -75,9 +76,6 @@ const AGES: { key: AgeOpt; label: string }[] = [
   { key: 'mature', label: 'Mature' },
 ]
 const WARDROBES = ['business', 'smart casual', 'casual', 'athletic', 'formal', 'streetwear']
-
-// Suggested swatches: brand mint + neutrals + a few accents.
-const SWATCHES = ['#21F1A8', '#171717', '#0B0B0C', '#FFFFFF', '#0E1A2B', '#E5484D', '#F5A623', '#7C5CFF']
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -371,23 +369,20 @@ export function ColorPick({
   value: string | null
   onChange: (v: string | null) => void
 }) {
+  const [open, setOpen] = useState(false)
   return (
     <div className="space-y-1.5">
       <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className="flex items-center gap-2">
-        <label
-          className="relative inline-flex h-9 w-9 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-border"
+      <div className="relative flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          title="Pick a colour"
+          className="relative inline-flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg border border-border transition-transform hover:scale-105"
           style={value ? { backgroundColor: value } : undefined}
-          title="Pick a custom colour"
         >
           {!value && <span className="text-[9px] uppercase text-muted-foreground">auto</span>}
-          <input
-            type="color"
-            value={value ?? '#21F1A8'}
-            onChange={(e) => onChange(e.target.value)}
-            className="absolute inset-0 cursor-pointer opacity-0"
-          />
-        </label>
+        </button>
         {value ? (
           <>
             <code className="font-mono text-xs text-foreground/80">{value.toUpperCase()}</code>
@@ -403,21 +398,21 @@ export function ColorPick({
         ) : (
           <span className="text-xs text-muted-foreground">Auto</span>
         )}
-      </div>
-      <div className="flex flex-wrap gap-1">
-        {SWATCHES.map((s) => (
-          <button
-            key={s}
-            type="button"
-            title={s}
-            onClick={() => onChange(s)}
-            className={cn(
-              'h-5 w-5 rounded border transition-transform hover:scale-110',
-              value && value.toLowerCase() === s.toLowerCase() ? 'border-primary ring-2 ring-primary/30' : 'border-border',
-            )}
-            style={{ backgroundColor: s }}
-          />
-        ))}
+
+        {open && (
+          <>
+            <button
+              type="button"
+              aria-hidden
+              tabIndex={-1}
+              onClick={() => setOpen(false)}
+              className="fixed inset-0 z-40 cursor-default"
+            />
+            <div className="absolute left-0 top-full z-50 mt-2 rounded-xl border border-border bg-popover p-3 shadow-xl">
+              <ColorPicker value={value ?? '#E71E25'} onChange={(hex) => onChange(hex)} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

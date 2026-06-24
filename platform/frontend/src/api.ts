@@ -100,6 +100,12 @@ export function zipAllUrl(runIds: string[]): string {
   return assetUrl(`/api/tools/banner-builder/download_all.zip?ids=${runIds.join(',')}`)
 }
 
+/** Zip one banner version's sizes → v{N}-{title}.zip (files v{N}-{size}-{title}.png). */
+export function versionZipUrl(runId: string, concept: string, v: number, title: string): string {
+  const q = new URLSearchParams({ concept, v: String(v), title: title || '' })
+  return assetUrl(`/api/tools/banner-builder/runs/${runId}/version.zip?${q.toString()}`)
+}
+
 export interface SuggestRequest {
   banner_text: string
   cta?: string

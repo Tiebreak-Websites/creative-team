@@ -19,7 +19,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
@@ -114,6 +113,48 @@ function writeRunIdsToUrl(ids: string[]) {
   }
 }
 
+// Also mirror run ids + a results snapshot to localStorage so the gallery
+// survives a reload OR a tab switch (component unmount), even if the URL is
+// cleared. The backend still owns the PNGs; the snapshot lets us re-render
+// instantly and then refresh. (A backend restart can still drop the runs.)
+const RUNS_LS_KEY = 'bb:runs'
+const SNAP_LS_KEY = 'bb:runs:snapshot'
+
+function readRunIdsFromStore(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(RUNS_LS_KEY) || '[]')
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function persistRunIds(ids: string[]) {
+  writeRunIdsToUrl(ids)
+  try {
+    localStorage.setItem(RUNS_LS_KEY, JSON.stringify(ids))
+  } catch {
+    /* best-effort */
+  }
+}
+
+function readSnapshot(): RunData[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(SNAP_LS_KEY) || '[]')
+    return Array.isArray(v) ? v : []
+  } catch {
+    return []
+  }
+}
+
+function writeSnapshot(runs: RunData[]) {
+  try {
+    localStorage.setItem(SNAP_LS_KEY, JSON.stringify(runs))
+  } catch {
+    /* quota / serialization — best-effort */
+  }
+}
+
 export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   // ---- Campaign settings ----
   const efforts = meta.thinking_efforts ?? [
@@ -159,10 +200,15 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   const [formErrors, setFormErrors] = useState<string[]>([])
   const [missing, setMissing] = useState<{ env: string; label: string; docs_url: string }[] | null>(null)
 
-  const [runs, setRuns] = useState<RunData[]>([])
+  const [runs, setRuns] = useState<RunData[]>(() => readSnapshot())
   const [polling, setPolling] = useState(false)
   const runsRef = useRef<RunData[]>(runs)
   runsRef.current = runs
+
+  // Mirror runs to localStorage so a reload or tab switch restores instantly.
+  useEffect(() => {
+    writeSnapshot(runs)
+  }, [runs])
 
   // Poll every non-terminal run until all reach a terminal status.
   useEffect(() => {
@@ -191,9 +237,11 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     }
   }, [polling])
 
-  // Restore previous batches after a refresh from ?runs=a,b,c.
+  // Restore previous batches after a reload / tab switch. Ids come from the URL
+  // (?runs=) and/or localStorage; the snapshot already seeded `runs` for an
+  // instant paint, and we re-fetch here to refresh each run's status.
   useEffect(() => {
-    const ids = readRunIdsFromUrl()
+    const ids = Array.from(new Set([...readRunIdsFromUrl(), ...readRunIdsFromStore()]))
     if (ids.length === 0) return
     let alive = true
     ;(async () => {
@@ -209,14 +257,15 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
       if (restored.length) {
         setRuns((prev) => {
           const have = new Set(prev.map((r) => r.run_id))
-          const fresh = restored.filter((r) => !have.has(r.run_id))
-          return fresh.length ? [...fresh, ...prev] : prev
+          const updated = prev.map((r) => restored.find((x) => x.run_id === r.run_id) ?? r)
+          const brandNew = restored.filter((r) => !have.has(r.run_id))
+          return brandNew.length ? [...brandNew, ...updated] : updated
         })
         if (restored.some((r) => !TERMINAL_STATUSES.includes(r.status))) setPolling(true)
       }
       const keepIds = ids.filter((id) => !settled.find((s) => s.id === id && s.gone))
       const existing = runsRef.current.map((r) => r.run_id)
-      writeRunIdsToUrl([...keepIds.filter((id) => !existing.includes(id)), ...existing])
+      persistRunIds(Array.from(new Set([...keepIds, ...existing])))
     })()
     return () => {
       alive = false
@@ -334,7 +383,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
       const ids = [...runsRef.current.map((r) => r.run_id), initial.run_id]
       setRuns((prev) => [...prev, initial])
       setPolling(true)
-      writeRunIdsToUrl(ids)
+      persistRunIds(ids)
     } catch (e) {
       if (e instanceof ApiError && e.status === 424) setMissing(e.missingSecrets ?? [])
       else if (e instanceof ApiError && e.errors) setFormErrors(e.errors)
@@ -345,11 +394,9 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   return (
     <div className="flex h-full min-h-0">
       {/* ---------------- Left: sizes ---------------- */}
-      <aside className="flex w-[320px] shrink-0 flex-col bg-card">
+      <aside className="flex w-[320px] shrink-0 flex-col bg-card animate-fade-in">
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
-          <div className="flex items-center justify-end">
-            <Badge variant="soft">{sizes.size} selected</Badge>
-          </div>
+          <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Sizes</h2>
 
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -468,7 +515,10 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
 
           {/* Selected sizes — surfaced in the central console */}
           {selectedSizes.length > 0 && (
-            <div className="flex max-w-2xl flex-wrap justify-center gap-1.5">
+            <div className="flex max-w-2xl flex-wrap items-center justify-center gap-1.5">
+              <span className="mr-1 font-display text-[11px] font-medium text-muted-foreground">
+                selected sizes:
+              </span>
               {selectedSizes.map((s) => {
                 const isMaster = s === meta.master_size
                 return (
@@ -629,11 +679,9 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
       </section>
 
       {/* ---------------- Right: concepts ---------------- */}
-      <aside className="flex w-[400px] shrink-0 flex-col bg-card">
+      <aside className="flex w-[400px] shrink-0 flex-col bg-card animate-fade-in">
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
-          <div className="flex items-center justify-end">
-            <Badge variant="soft">{cards.length}/5</Badge>
-          </div>
+          <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Versions</h2>
 
           {cards.map((c, i) => (
             <div
@@ -644,14 +692,19 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
               onDrop={() => onDrop(i)}
               onDragEnd={() => setDragIndex(null)}
               className={cn(
-                'relative space-y-3 overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-sm transition-shadow',
+                'relative animate-fade-up space-y-3 overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-sm transition-shadow',
                 dragIndex === i && 'opacity-60 ring-2 ring-primary/40',
               )}
             >
               <span className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-primary" aria-hidden />
               <div className="flex items-center justify-between">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-primary font-display text-xs font-bold text-primary-foreground">
-                  {i + 1}
+                <span className="inline-flex items-center gap-2">
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-primary font-display text-xs font-bold text-primary-foreground">
+                    {i + 1}
+                  </span>
+                  <span className="font-display text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    version
+                  </span>
                 </span>
                 <div className="flex items-center gap-0.5">
                   <IconBtn onClick={() => moveCard(i, -1)} disabled={i === 0} title="Move up">
@@ -661,7 +714,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                     <ChevronDown className="h-4 w-4" />
                   </IconBtn>
                   {cards.length > 1 && (
-                    <IconBtn onClick={() => removeCard(c.key)} title="Remove concept">
+                    <IconBtn onClick={() => removeCard(c.key)} title="Remove version">
                       <X className="h-4 w-4" />
                     </IconBtn>
                   )}
@@ -696,7 +749,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
           {cards.length < 5 && (
             <Button variant="outline" className="w-full border-dashed" onClick={addCard}>
               <Plus className="h-4 w-4" />
-              Add concept
+              Add version
             </Button>
           )}
         </div>
