@@ -641,9 +641,17 @@ def _direct_run(run: Run):
     run.status = "directing"
     run.touch()
 
-    def _one(ck: str):
+    # Stable concept ordering for multi-concept divergence: each concept gets a
+    # deterministic 0-based index/total so intent.concept_angle can hand it a
+    # DISTINCT creative direction (Principle 12). Single-concept runs get "".
+    keys = list(run.concepts.keys())
+    total = len(keys)
+
+    def _one(item):
+        index, ck = item
         base = run.concepts[ck]
         card = run.cards.get(ck, {})
+        angle = intent_engine.concept_angle(run.intent, index, total)
         try:
             result = creative_director.direct_concept(
                 api_key=run.api_key, title=base.get("title", ""),
@@ -651,6 +659,7 @@ def _direct_run(run: Run):
                 style=run.style, locale=base.get("locale", "en"),
                 sizes=run.sizes, model=cfg["model"], effort=effort,
                 references=run.references, intent=run.intent,
+                concept_angle=angle,
             )
         except creative_director.DirectorError as e:
             return ck, None, str(e)
@@ -662,10 +671,9 @@ def _direct_run(run: Run):
         )
         return ck, v, None
 
-    keys = list(run.concepts.keys())
     directed_sizes, failed, errors = 0, 0, []
     with ThreadPoolExecutor(max_workers=min(4, max(1, len(keys)))) as ex:
-        for ck, v, err in ex.map(_one, keys):
+        for ck, v, err in ex.map(_one, list(enumerate(keys))):
             if v is None:
                 failed += 1
                 if err:

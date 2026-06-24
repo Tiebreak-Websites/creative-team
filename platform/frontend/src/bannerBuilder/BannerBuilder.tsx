@@ -212,7 +212,6 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   // Auto-detect the concept language and pick the matching locale, until the
   // user makes an explicit choice (then we stop overriding).
   const [localeAuto, setLocaleAuto] = useState(true)
-  const [detectedLocale, setDetectedLocale] = useState<string | null>(null)
   const [style, setStyle] = useState('')
   const [art, setArt] = useState<ArtDirection>({
     ...DEFAULT_ART,
@@ -222,18 +221,20 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   })
   const [artOpen, setArtOpen] = useState(false)
   const patchArt = (patch: Partial<ArtDirection>) => setArt((a) => ({ ...a, ...patch }))
-  const localeLabel = LOCALES.find((l) => l.value === locale)?.label ?? 'English'
+  const currentLocale = LOCALES.find((l) => l.value === locale) ?? LOCALES[0]
+  const localeLabel = currentLocale.label
 
   // Sizes UI: collapsible platform groups + global search.
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['Most used']))
   const [sizeQuery, setSizeQuery] = useState('')
 
   // Floating command bar popovers.
-  const [barPopover, setBarPopover] = useState<null | 'model' | 'brand'>(null)
+  const [barPopover, setBarPopover] = useState<null | 'model' | 'brand' | 'lang'>(null)
 
   // Style-reference images (uploaded → ids sent with the run; visual only).
   const [refs, setRefs] = useState<{ id: string; url: string }[]>([])
   const [refBusy, setRefBusy] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Brands (palette + optional corner logo). Loaded from the brands API.
@@ -345,10 +346,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     const text = cards.map((c) => `${c.title} ${c.subtitle}`).join(' ')
     const d = detectLocale(text)
     if (d && LOCALES.some((l) => l.value === d)) {
-      setDetectedLocale(d)
       setLocale(d)
-    } else {
-      setDetectedLocale(null)
     }
   }, [cards, localeAuto])
 
@@ -663,27 +661,6 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
             </div>
           )}
 
-          {localeAuto && detectedLocale && (
-            <div className="flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur">
-              <Sparkles className="h-3 w-3 text-primary" />
-              Language auto-set to{' '}
-              <span className="font-medium text-foreground">
-                {LOCALES.find((l) => l.value === detectedLocale)?.label}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setLocaleAuto(false)
-                  setDetectedLocale(null)
-                }}
-                title="Dismiss and choose the language manually"
-                className="ml-1 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          )}
-
           {refs.length > 0 && (
             <div className="flex max-w-2xl flex-wrap items-center justify-center gap-1.5">
               <span className="mr-1 font-display text-[11px] font-medium text-muted-foreground">
@@ -708,18 +685,73 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
             </div>
           )}
 
-          <div className="relative flex w-full max-w-3xl flex-col gap-2 rounded-2xl border border-border bg-card/95 p-2 shadow-[0_18px_44px_-14px_rgba(0,0,0,0.75)] backdrop-blur-md">
-            {/* Row 1 — prompt: full width, a bit taller */}
-            <Textarea
-              value={style}
-              onChange={(e) => setStyle(e.target.value)}
-              rows={2}
-              placeholder="Describe the banners in your own words — or use Art direction →"
-              className="w-full resize-none"
-            />
+          <div
+            onDragOver={(e) => {
+              e.preventDefault()
+              if (!dragOver) setDragOver(true)
+            }}
+            onDragLeave={(e) => {
+              // Only clear when the cursor actually leaves the console, not when
+              // it moves over a child element.
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragOver(false)
+              addRefs(e.dataTransfer.files)
+            }}
+            className={cn(
+              'relative flex w-full max-w-3xl flex-col gap-2 rounded-2xl border bg-card/95 p-2 shadow-[0_18px_44px_-14px_rgba(0,0,0,0.75)] backdrop-blur-md transition-colors',
+              dragOver ? 'border-primary' : 'border-border',
+            )}
+          >
+            {/* Drag-and-drop overlay — references are visual style only */}
+            {dragOver && (
+              <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-primary bg-card/95 px-4 text-center backdrop-blur-md">
+                <ImagePlus className="h-6 w-6 text-primary" />
+                <span className="font-display text-sm font-semibold text-foreground">Drop images</span>
+                <span className="text-[11px] text-muted-foreground">
+                  used as style reference only (visual style, not text)
+                </span>
+              </div>
+            )}
 
-            {/* Row 2 — controls + generate */}
-            <div className="flex items-center gap-2">
+            {/* Row 1 — prompt: full width, a bit taller, with an icon-only attach affordance */}
+            <div className="flex items-start gap-1.5">
+              <Textarea
+                value={style}
+                onChange={(e) => setStyle(e.target.value)}
+                rows={2}
+                placeholder="Describe the banners in your own words — or use Art direction →"
+                className="w-full flex-1 resize-none"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={refs.length >= 4 || refBusy}
+                title="Attach style-reference images (visual only — text is ignored). You can also drag & drop."
+                className={cn(
+                  'mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground disabled:pointer-events-none disabled:opacity-40',
+                  refs.length > 0 && 'border-primary/50 text-primary',
+                )}
+              >
+                {refBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                hidden
+                onChange={(e) => {
+                  addRefs(e.target.files)
+                  e.target.value = ''
+                }}
+              />
+            </div>
+
+            {/* Row 2 — controls + generate (wraps gracefully; Generate stays inside) */}
+            <div className="flex flex-wrap items-center gap-2">
             {/* Art direction */}
             <button
               type="button"
@@ -879,62 +911,62 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
               )}
             </div>
 
-            {/* Reference images — visual style only */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={refs.length >= 4 || refBusy}
-              title="Attach style-reference images (visual only — text is ignored)"
-              className={cn(BAR_BTN, 'shrink-0', refs.length > 0 && 'border-primary/50 text-primary')}
-            >
-              {refBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-              <span className="hidden lg:inline">Reference</span>
-              {refs.length > 0 && (
-                <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
-                  {refs.length}
-                </span>
-              )}
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              multiple
-              hidden
-              onChange={(e) => {
-                addRefs(e.target.files)
-                e.target.value = ''
-              }}
-            />
-
-            {/* Locale — its own control, with real flags */}
-            <Select
-              value={locale}
-              onValueChange={(v) => {
-                setLocale(v)
-                setLocaleAuto(false)
-                setDetectedLocale(null)
-              }}
-            >
-              <SelectTrigger className="h-9 w-auto shrink-0 gap-1.5 rounded-xl">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {LOCALES.map((l) => (
-                  <SelectItem key={l.value} value={l.value}>
-                    <span className="flex items-center gap-2">
+            {/* Language — auto-detected, click to change (real flags) */}
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setBarPopover((p) => (p === 'lang' ? null : 'lang'))}
+                title={localeAuto ? 'Language auto-detected — click to change' : 'Language'}
+                className={BAR_BTN}
+              >
+                <img
+                  src={`https://flagcdn.com/h20/${currentLocale.cc}.png`}
+                  alt=""
+                  className="h-3.5 w-auto rounded-[2px]"
+                  loading="lazy"
+                />
+                <span className="hidden lg:inline">{currentLocale.label}</span>
+                {localeAuto && (
+                  <span
+                    title="Auto-detected from your concept text"
+                    className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-primary"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    <span className="hidden xl:inline">auto</span>
+                  </span>
+                )}
+                <ChevronDown
+                  className={cn('h-3.5 w-3.5 opacity-60 transition-transform', barPopover === 'lang' && 'rotate-180')}
+                />
+              </button>
+              {barPopover === 'lang' && (
+                <div className="absolute bottom-full left-1/2 z-50 mb-2 max-h-72 w-56 -translate-x-1/2 space-y-0.5 overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-xl">
+                  {LOCALES.map((l) => (
+                    <button
+                      key={l.value}
+                      type="button"
+                      onClick={() => {
+                        setLocale(l.value)
+                        setLocaleAuto(false)
+                        setBarPopover(null)
+                      }}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                        locale === l.value ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60',
+                      )}
+                    >
                       <img
                         src={`https://flagcdn.com/h20/${l.cc}.png`}
                         alt=""
                         className="h-3.5 w-auto rounded-[2px]"
                         loading="lazy"
                       />
-                      {l.label}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                      <span className="truncate">{l.label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <Button
               className={cn('ml-auto px-10 font-display', canRun && !running && 'tb-glow')}

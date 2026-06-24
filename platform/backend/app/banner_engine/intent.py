@@ -56,6 +56,103 @@ def is_finance_intent(intent: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Multi-concept divergence (Principle 12)
+# ---------------------------------------------------------------------------
+# When a run has MORE THAN ONE concept, each concept must be a clearly DIFFERENT
+# creative direction — not a recolor or minor edit of concept 1. They may share
+# the same user copy + campaign goal, but each must differ in composition,
+# background strategy, typography treatment, subject strategy, color palette,
+# mood, and visual metaphor — recognizable on its own next to the others.
+#
+# These angle lists give a DETERMINISTIC distinct design-direction directive per
+# concept index. The creative director builds each concept's brief AROUND its
+# angle so the concepts diverge by construction rather than by chance.
+#
+# Each entry is ~1 sentence describing composition + subject + background + mood
+# for that direction. Indices 0..4 map to five distinct directions.
+CONCEPT_ANGLES_GENERAL: tuple[str, ...] = (
+    # 0 — premium human-led campaign ad
+    "Premium human-led campaign ad: a confident, aspirational real-looking "
+    "person as the hero anchoring the frame, warm cinematic key-plus-rim "
+    "lighting, an editorial premium photographic background, refined modern "
+    "type as support — a polished, trustworthy, people-first mood.",
+    # 1 — data/concept-led graphic ad
+    "Data/concept-led graphic ad: the core idea expressed as a bold abstract "
+    "visual metaphor with strong geometric composition, confident large-scale "
+    "typography carrying the message, a clean graphic/flat-design background, "
+    "little or no person — a sharp, modern, idea-first mood.",
+    # 2 — editorial/cinematic brand-story
+    "Editorial/cinematic brand-story: an atmospheric, symbolic, narrative "
+    "composition with dramatic depth and negative space, moody directional "
+    "light and a cinematic color grade, restrained typographic captioning — "
+    "an evocative, premium, story-driven mood.",
+    # 3 — bold typographic poster
+    "Bold typographic poster: type IS the hero — oversized expressive display "
+    "lettering dominating the canvas in a deliberate grid, minimal or no "
+    "imagery, a flat high-contrast color-blocked background — a punchy, "
+    "graphic, confident editorial-poster mood.",
+    # 4 — product/category-led
+    "Product/category-led: the product or category cue is central and shown "
+    "for real as the hero, set in an aspirational lifestyle context with "
+    "appetizing/desirable lighting, a styled environmental background and "
+    "supporting type — a vibrant, tactile, desire-driven mood.",
+)
+
+CONCEPT_ANGLES_FINANCE: tuple[str, ...] = (
+    # 0 — premium human-led finance ad
+    "Premium human-led finance ad: a confident investor/person as the hero "
+    "anchor in a premium market atmosphere, dark sophisticated navy/emerald "
+    "palette, warm cinematic key-plus-rim light, refined type as support — a "
+    "trustworthy, aspirational, people-first mood.",
+    # 1 — data/market-led
+    "Data/market-led ad: abstract financial graphics, charts, growth motion "
+    "and dashboard depth as the visual idea, strong typographic hierarchy "
+    "carrying the message, a clean dark dashboard-style background, little or "
+    "no person — a precise, analytical, momentum-driven mood.",
+    # 2 — editorial/cinematic finance brand-story
+    "Editorial/cinematic finance brand-story: a symbolic, atmospheric "
+    "composition with subtle market cues and dramatic premium depth, moody "
+    "directional light and a rich cinematic grade, restrained captioning — an "
+    "evocative, prestigious, story-driven mood.",
+    # 3 — bold typographic/ticker poster
+    "Bold typographic/ticker poster: the ticker or title IS the hero — "
+    "oversized expressive display lettering or a dominant ticker dominating "
+    "the canvas, minimal imagery, a flat high-contrast dark color-blocked "
+    "background — a punchy, decisive, editorial-poster mood.",
+    # 4 — category-as-investment story
+    "Category-as-investment story: the company or category referenced subtly "
+    "as the subject within a premium finance frame, the offer dramatized "
+    "through that category cue, a sophisticated market-toned background and "
+    "supporting type — a grounded, credible, opportunity-led mood.",
+)
+
+
+def concept_angle(intent: str, index: int, total: int) -> str:
+    """A deterministic distinct design-direction directive for one concept.
+
+    Returns "" when ``total <= 1`` (a single-concept run needs no divergence
+    steering). Otherwise picks the angle list by intent
+    (``CONCEPT_ANGLES_FINANCE`` if ``is_finance_intent(intent)`` else
+    ``CONCEPT_ANGLES_GENERAL``), selects ``angles[index % len(angles)]``
+    (``index`` is 0-based), and wraps it in a STRONG directive so the authored
+    brief is built AROUND a creative direction that differs from the other
+    concepts.
+    """
+    if total <= 1:
+        return ""
+    angles = CONCEPT_ANGLES_FINANCE if is_finance_intent(intent) else CONCEPT_ANGLES_GENERAL
+    angle = angles[index % len(angles)]
+    return (
+        f"Concept {index + 1} of {total} — a DISTINCT creative direction, NOT a "
+        f"variation of the other concepts. Design direction: {angle} It MUST "
+        f"differ from the other concepts in composition, background, typography "
+        f"treatment, subject strategy, color palette, mood, and visual metaphor "
+        f"— recognizable on its own, never a recolor or minor edit of another "
+        f"concept."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Per-intent keyword lexicons (lowercase). Multiword phrases are matched as
 # substrings; single tokens are matched word-boundary-ish (see _count_hits).
 # ---------------------------------------------------------------------------

@@ -155,16 +155,24 @@ def _reference_image_parts(reference_paths) -> list:
 
 
 def _build_messages(*, title, subtitle, button, style, locale, sizes,
-                    has_references=False, intent=DEFAULT_INTENT):
+                    has_references=False, intent=DEFAULT_INTENT,
+                    concept_angle=""):
     size_lines = [
         f"- {s} [{LAYOUT_FAMILY.get(s, 'TARGET')}]: {LAYOUT_BASE.get(s, '')}"
         for s in sizes
     ]
+    angle_directive = (concept_angle or "").strip()
+    angle_block = (
+        f"THIS CONCEPT'S DISTINCT CREATIVE DIRECTION (highest priority — build the "
+        f"entire brief AROUND it): {angle_directive}\n\n"
+        if angle_directive else ""
+    )
     system = (
         "You are the creative director for a HIGH-CTR paid-social ad system. A separate "
         "image model (gpt-image-2) renders each size purely from the brief you write, so "
         "your brief IS the design. Your job: a scroll-stopping ad that drives clicks — "
         "concrete and on-subject, never a generic mood piece. Think hard, then output strict JSON.\n\n"
+        f"{angle_block}"
         f"Premise: {SYSTEM_HEADER}\n\n"
         "Direct the ad like a pro:\n"
         "- Commit to exactly ONE dominant visual idea/metaphor that dramatizes the offer "
@@ -198,7 +206,13 @@ def _build_messages(*, title, subtitle, button, style, locale, sizes,
     )
     if has_references:
         system = system + "\n\n" + REFERENCE_STYLE_RULE
-    parts = [f'Title (verbatim, never paraphrase): "{title}"']
+    parts = []
+    if angle_directive:
+        parts.append(
+            "This concept's distinct creative direction (build the brief AROUND "
+            f"it, do NOT make it a variation of another concept): {angle_directive}"
+        )
+    parts.append(f'Title (verbatim, never paraphrase): "{title}"')
     if subtitle:
         parts.append(f"Supporting message: {subtitle}")
     if button:
@@ -265,7 +279,7 @@ def _normalize(data: dict) -> dict:
 # ---------------------------------------------------------------------------
 def direct_concept(*, api_key, title, subtitle="", button="", style="", locale="en",
                    sizes, model="gpt-5.5", effort="high", timeout=600,
-                   references=None, intent=DEFAULT_INTENT) -> dict:
+                   references=None, intent=DEFAULT_INTENT, concept_angle="") -> dict:
     """Ask GPT-5.5 to art-direct one concept across all requested sizes.
 
     timeout defaults to 600s so an "xhigh" (Extended) reasoning pass finishes
@@ -292,6 +306,7 @@ def direct_concept(*, api_key, title, subtitle="", button="", style="", locale="
         title=title, subtitle=subtitle or "", button=button or "",
         style=style or "", locale=locale or "en", sizes=sizes,
         has_references=bool(image_parts), intent=intent,
+        concept_angle=concept_angle or "",
     )
     # When style references are attached, the user turn becomes multimodal: the
     # text part plus one input_image part per reference. Otherwise a plain string.
