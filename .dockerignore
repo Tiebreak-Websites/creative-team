@@ -1,0 +1,15 @@
+# Keep the Docker build context small and free of secrets / artifacts.
+.git
+.claude
+**/node_modules
+**/.venv
+**/__pycache__
+**/dist
+**/.runs
+**/.cache
+**/.secret_key
+*.log
+**/*.log
+.env
+.env.*
+!.env.production.example

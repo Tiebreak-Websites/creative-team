@@ -30,6 +30,24 @@ class Settings:
         "PLATFORM_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,null"
     ).split(",") if o.strip()]
 
+    # Behind TLS (a Cloudflare Tunnel / any HTTPS reverse proxy) the session
+    # cookie must be Secure or browsers drop it. Local http dev keeps it False
+    # so the cookie still sets over plain localhost. Set true on a deploy.
+    COOKIE_SECURE = _env("PLATFORM_COOKIE_SECURE", "false").lower() in ("1", "true", "yes", "on")
+
+    # Interactive API docs (/docs, /redoc, /openapi.json). Handy locally; turn
+    # OFF on a public deploy so an anonymous visitor only sees the login page.
+    ENABLE_DOCS = _env("PLATFORM_DOCS", "true").lower() in ("1", "true", "yes", "on")
+
+    # --- Built frontend (single-origin deploy) -----------------------------
+    # Vite `npm run build` output. When this dir exists the backend serves the
+    # React SPA itself, so the whole app is one origin: one tunnel route, the
+    # session cookie is first-party, and no CORS is needed. In local dev the
+    # dist usually doesn't exist and Vite (:5173) serves the UI instead.
+    FRONTEND_DIST = Path(_env(
+        "PLATFORM_FRONTEND_DIST", str(PLATFORM_DIR / "frontend" / "dist")
+    ))
+
     # --- Bundled Figma scripts (qa + translate, run as subprocesses) -------
     # The qa/translate scripts resolve their shared <base>/qa/.cache dir from
     # their own file location, so the qa/scripts + translate/scripts nesting

@@ -1,0 +1,24 @@
+# Cloudflare Tunnel config — copy to your cloudflared dir and fill the blanks.
+#
+#   Windows default location:  C:\Users\<you>\.cloudflared\config.yml
+#   (cloudflared looks there automatically; or pass --config <path>.)
+#
+# This routes ONE public hostname through the named tunnel to the local backend,
+# which serves both the API and the built React SPA (single origin). See
+# ../../DEPLOY.md for the full step-by-step.
+
+# The tunnel's UUID, printed by `cloudflared tunnel create <name>`.
+tunnel: 00000000-0000-0000-0000-000000000000
+
+# The credentials file `cloudflared tunnel create` wrote (NOT a secret to commit).
+credentials-file: C:\Users\<you>\.cloudflared\00000000-0000-0000-0000-000000000000.json
+
+# Ingress rules are matched top-to-bottom; the last must be a catch-all.
+ingress:
+  # Your public hostname → the local app. Must match the DNS route you create
+  # (`cloudflared tunnel route dns <name> tools.<your-domain>`) AND the domain
+  # you protect with a Cloudflare Access policy.
+  - hostname: tools.example.com
+    service: http://127.0.0.1:8000
+  # Anything else gets a 404 instead of being proxied.
+  - service: http_status:404

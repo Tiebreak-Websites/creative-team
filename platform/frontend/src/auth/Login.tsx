@@ -4,7 +4,7 @@ import { useAuth } from './AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { BrandMark } from '@/components/BrandMark'
+import { Logo } from '@/components/Logo'
 
 export function Login() {
   const { login } = useAuth()
@@ -28,7 +28,7 @@ export function Login() {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-6">
-      {/* Ambient mint glow */}
+      {/* Ambient brand glow */}
       <div
         aria-hidden
         className="pointer-events-none absolute left-1/2 top-1/2 h-[560px] w-[560px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-[0.07] blur-[130px]"
@@ -37,12 +37,8 @@ export function Login() {
       <div className="relative z-10 w-full max-w-sm animate-fade-up">
         <div className="rounded-2xl border border-border bg-card p-9 shadow-[0_24px_60px_-28px_rgba(0,0,0,0.8)]">
           <div className="flex flex-col items-center text-center">
-            <BrandMark size={44} />
-            <span className="mt-4 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-              tiebreak
-            </span>
-            <h1 className="mt-1 font-display text-2xl font-bold tracking-tight">Banner Builder</h1>
-            <p className="mt-1.5 text-sm text-muted-foreground">Sign in to continue</p>
+            <Logo className="h-11 w-auto" />
+            <p className="mt-5 text-sm text-muted-foreground">Sign in to continue</p>
           </div>
 
           <form onSubmit={onSubmit} className="mt-7 space-y-4">
@@ -60,7 +56,7 @@ export function Login() {
                 autoFocus
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@tiebreak.dev"
+                placeholder="you@internovus.com"
                 required
               />
             </div>
@@ -82,7 +78,7 @@ export function Login() {
             </Button>
           </form>
         </div>
-        <p className="mt-5 text-center text-xs text-muted-foreground">Tiebreak · Creative Tools</p>
+        <p className="mt-5 text-center text-xs text-muted-foreground">Internovus · Creative Builder</p>
       </div>
     </div>
   )

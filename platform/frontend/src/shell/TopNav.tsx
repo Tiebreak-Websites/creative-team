@@ -1,4 +1,5 @@
 import { Icon } from '../components/Icon'
+import { InstallButton } from '../components/InstallButton'
 import type { Tool } from '../types'
 import { useAuth } from '../auth/AuthContext'
 import { UserMenu } from '../auth/UserMenu'
@@ -45,6 +46,7 @@ export function TopNav({
         })}
       </nav>
       <div className="nav-right">
+        <InstallButton />
         {user?.role === 'admin' && (
           <button className="nav-item" onClick={onOpenSettings} title="Tool settings (admin)">
             <Icon name="wrench" size={16} />

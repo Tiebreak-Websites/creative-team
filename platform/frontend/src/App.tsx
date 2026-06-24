@@ -8,7 +8,9 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import { Login } from './auth/Login'
 import { UserMenu } from './auth/UserMenu'
 import { ToolSettings } from './admin/ToolSettings'
-import { BrandMark } from './components/BrandMark'
+import { Logo } from './components/Logo'
+import { ThemeToggle } from './components/ThemeToggle'
+import { InstallButton } from './components/InstallButton'
 import { Button } from '@/components/ui/button'
 
 export function App() {
@@ -60,17 +62,9 @@ function Workspace() {
           type="button"
           className="group flex items-center gap-3"
           onClick={() => setView('tool')}
-          title="Banner Builder"
+          title="Internovus Creative Builder"
         >
-          <BrandMark size={30} className="transition-transform duration-200 group-hover:scale-105" />
-          <span className="flex flex-col items-start leading-none">
-            <span className="font-display text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-              tiebreak
-            </span>
-            <span className="font-display text-[17px] font-bold tracking-tight text-foreground">
-              Banner Builder
-            </span>
-          </span>
+          <Logo className="h-8 w-auto transition-transform duration-200 group-hover:scale-[1.03]" />
         </button>
         <div className="ml-auto flex items-center gap-2">
           <Button variant="ghost" size="sm" className="font-display" onClick={() => setHelpOpen(true)}>
@@ -88,6 +82,8 @@ function Workspace() {
               Settings
             </Button>
           )}
+          <InstallButton />
+          <ThemeToggle />
           <UserMenu />
         </div>
       </header>
@@ -96,7 +92,7 @@ function Workspace() {
         {loadError ? (
           <div className="p-6">
             <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              Could not reach the backend: {loadError}. Is it running on port 8001?
+              Could not reach the backend: {loadError}.
             </div>
           </div>
         ) : view === 'settings' && tool ? (
