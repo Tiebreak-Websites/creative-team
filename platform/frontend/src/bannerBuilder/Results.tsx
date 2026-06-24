@@ -171,6 +171,10 @@ function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => voi
   const ready = runs.reduce((a, r) => a + r.completed, 0)
   const pct = total ? Math.round((ready / total) * 100) : 0
   const running = runs.some((r) => RUNNING.includes(r.status))
+  // Pre-render phases (queued/classifying/art-direction) finish no frames for a
+  // while — at Extended effort the director alone can take a couple of minutes.
+  // Show an animated indeterminate bar so it reads as "working", not frozen at 0%.
+  const preRender = running && ready === 0
   const failed = runs.some((r) => r.status === 'failed')
   const directed = runs.some((r) => r.director?.used)
   const okRunIds = runs.filter((r) => r.banners.some((b) => b.status === 'ok')).map((r) => r.run_id)
@@ -196,13 +200,16 @@ function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => voi
 
       <div className="hidden h-1.5 max-w-[280px] flex-1 overflow-hidden rounded-full bg-secondary sm:block">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-[#9E181C] to-[#E71E25] transition-[width] duration-500"
-          style={{ width: `${pct}%` }}
+          className={cn(
+            'h-full rounded-full bg-gradient-to-r from-[#9E181C] to-[#E71E25]',
+            preRender ? 'w-2/5 animate-pulse' : 'transition-[width] duration-500',
+          )}
+          style={preRender ? undefined : { width: `${pct}%` }}
         />
       </div>
 
       <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
-        {ready}/{total} ready
+        {preRender ? 'preparing…' : `${ready}/${total} ready`}
       </span>
 
       {running && onCancel && (

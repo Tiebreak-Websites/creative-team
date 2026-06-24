@@ -58,7 +58,10 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
             "creativeDirector": {
                 "enabled": True,
                 "model": "gpt-5.5",
-                "effort": "xhigh",  # max "Extended" thinking; none|minimal|low|medium|high|xhigh
+                # "high" by default: Extended (xhigh) art-direction can take ~2+ min
+                # before the first image renders, which reads as "stuck". High is much
+                # faster and still strong. Bump to xhigh here (or per-run) for max quality.
+                "effort": "high",  # none|minimal|low|medium|high|xhigh
             },
         },
     },

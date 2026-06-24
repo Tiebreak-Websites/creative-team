@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from pathlib import Path
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -48,6 +49,41 @@ BRANDS_PATH = BRANDS_DIR / "brands.json"
 
 _HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 _MAX_COLORS = 12
+
+# Bundled brand assets (logos), committed under the app package so they ship in
+# the Docker image and survive the ephemeral cloud disk.
+_ASSETS = Path(__file__).resolve().parent / "assets" / "brands"
+
+
+def _asset(*parts: str) -> Optional[str]:
+    """Read a committed brand asset (e.g. an SVG logo) as text, or None."""
+    try:
+        return (_ASSETS.joinpath(*parts)).read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+# --- Built-in brands ---------------------------------------------------------
+# Hard-coded, always-present brands. Unlike stored brands they survive restarts
+# and the ephemeral cloud disk, so a team brand is "just there". They appear in
+# the Brands tab and the run's brand selector exactly like stored brands, but
+# can't be edited or deleted. `swatches` carries human-readable colour roles for
+# the showcase card; `colors` stays the canonical palette fed to the art director.
+BUILTIN_BRANDS: List[dict] = [
+    {
+        "id": "braintrade",
+        "name": "BrainTrade",
+        "colors": ["#FF7532", "#070851", "#F1F5F1"],
+        "swatches": [
+            {"hex": "#FF7532", "role": "Primary · CTA"},
+            {"hex": "#070851", "role": "Background"},
+            {"hex": "#F1F5F1", "role": "Warm white"},
+        ],
+        "logo_svg": _asset("braintrade", "bt2-l.svg"),
+        "builtin": True,
+    },
+]
+_BUILTIN_IDS = {b["id"] for b in BUILTIN_BRANDS}
 
 
 # --- Storage ----------------------------------------------------------------
@@ -68,14 +104,18 @@ def _save(brands: List[dict]) -> None:
 
 
 def list_brands() -> List[dict]:
-    """Every stored brand (empty list when none/unreadable)."""
-    return _load()
+    """Built-in brands first, then any admin-stored brands (deduped by id)."""
+    stored = [b for b in _load() if b.get("id") not in _BUILTIN_IDS]
+    return [*BUILTIN_BRANDS, *stored]
 
 
 def get_brand(brand_id: str) -> Optional[dict]:
-    """One brand by id, or None."""
+    """One brand by id (built-in or stored), or None."""
     if not brand_id:
         return None
+    for b in BUILTIN_BRANDS:
+        if b.get("id") == brand_id:
+            return b
     for b in _load():
         if b.get("id") == brand_id:
             return b
@@ -107,12 +147,17 @@ def _clean_logo(logo_svg: Any) -> Optional[str]:
 
 def _public(brand: dict) -> dict:
     """The Brand shape returned to clients (stable key order)."""
-    return {
+    out: dict = {
         "id": brand.get("id"),
         "name": brand.get("name", ""),
         "colors": brand.get("colors", []) or [],
         "logo_svg": brand.get("logo_svg"),
+        "builtin": bool(brand.get("builtin")),
     }
+    # Built-ins may annotate each colour with a human role (CTA / Background / …).
+    if brand.get("swatches"):
+        out["swatches"] = brand["swatches"]
+    return out
 
 
 def _validate_name(name: Any) -> str:
@@ -149,6 +194,8 @@ def build_brands_router() -> APIRouter:
     @router.put("/brands/{brand_id}")
     def update_brand(brand_id: str, payload: dict = Body(default={}),
                      _admin: dict = Depends(require_admin)):
+        if brand_id in _BUILTIN_IDS:
+            raise HTTPException(status_code=403, detail="Built-in brands can't be edited.")
         brands = _load()
         for b in brands:
             if b.get("id") == brand_id:
@@ -165,6 +212,8 @@ def build_brands_router() -> APIRouter:
 
     @router.delete("/brands/{brand_id}", status_code=204)
     def delete_brand(brand_id: str, _admin: dict = Depends(require_admin)):
+        if brand_id in _BUILTIN_IDS:
+            raise HTTPException(status_code=403, detail="Built-in brands can't be deleted.")
         brands = _load()
         kept = [b for b in brands if b.get("id") != brand_id]
         if len(kept) == len(brands):

@@ -89,7 +89,7 @@ export function BrandsSettings() {
           </div>
         ) : (
           brands.map((brand) =>
-            editingId === brand.id ? (
+            editingId === brand.id && !brand.builtin ? (
               <BrandForm
                 key={brand.id}
                 initial={brand}
@@ -105,11 +105,16 @@ export function BrandsSettings() {
               <BrandCard
                 key={brand.id}
                 brand={brand}
-                onEdit={() => setEditingId(brand.id)}
-                onDelete={async () => {
-                  await deleteBrand(brand.id)
-                  await refresh()
-                }}
+                // Built-in brands ship with the app — not editable/deletable.
+                onEdit={brand.builtin ? undefined : () => setEditingId(brand.id)}
+                onDelete={
+                  brand.builtin
+                    ? undefined
+                    : async () => {
+                        await deleteBrand(brand.id)
+                        await refresh()
+                      }
+                }
               />
             ),
           )
@@ -134,20 +139,25 @@ export function BrandsSettings() {
   )
 }
 
-/** A read-only brand card: name, palette swatches, logo preview, edit/delete. */
+/**
+ * A read-only brand showcase card: logo, name (+ "Built-in" badge), and the
+ * palette as role-labelled swatches when available. Edit/Delete render only
+ * when their handlers are passed (built-in brands omit them).
+ */
 function BrandCard({
   brand,
   onEdit,
   onDelete,
 }: {
   brand: Brand
-  onEdit: () => void
-  onDelete: () => Promise<void>
+  onEdit?: () => void
+  onDelete?: () => Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   async function remove() {
+    if (!onDelete) return
     setErr(null)
     setBusy(true)
     try {
@@ -158,24 +168,50 @@ function BrandCard({
     }
   }
 
+  // Prefer role-annotated swatches (built-ins); fall back to the raw palette.
+  const swatches =
+    brand.swatches && brand.swatches.length
+      ? brand.swatches
+      : brand.colors.map((hex) => ({ hex, role: '' }))
+
   return (
     <div className="rounded-xl border border-border bg-background p-4 shadow-sm">
       <div className="flex items-start gap-4">
-        <LogoPreview svg={brand.logo_svg} className="h-14 w-14 shrink-0" />
+        <LogoPreview svg={brand.logo_svg} className="h-20 w-20 shrink-0" />
 
         <div className="min-w-0 flex-1">
-          <div className="truncate font-display text-sm font-semibold text-foreground">
-            {brand.name || 'Untitled brand'}
+          <div className="flex items-center gap-2">
+            <span className="truncate font-display text-sm font-semibold text-foreground">
+              {brand.name || 'Untitled brand'}
+            </span>
+            {brand.builtin && (
+              <span className="shrink-0 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                Built-in
+              </span>
+            )}
           </div>
-          {brand.colors.length > 0 ? (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {brand.colors.map((c, i) => (
+
+          {swatches.length > 0 ? (
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {swatches.map((s, i) => (
                 <span
-                  key={`${c}-${i}`}
-                  title={c}
-                  className="h-6 w-6 rounded-md border border-border"
-                  style={{ backgroundColor: c }}
-                />
+                  key={`${s.hex}-${i}`}
+                  title={s.hex}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card py-1 pl-1.5 pr-2.5"
+                >
+                  <span
+                    className="h-5 w-5 rounded-md border border-border"
+                    style={{ backgroundColor: s.hex }}
+                  />
+                  <span className="leading-tight">
+                    <span className="block font-mono text-[11px] font-medium text-foreground">
+                      {s.hex.toUpperCase()}
+                    </span>
+                    {s.role && (
+                      <span className="block text-[10px] text-muted-foreground">{s.role}</span>
+                    )}
+                  </span>
+                </span>
               ))}
             </div>
           ) : (
@@ -183,15 +219,21 @@ function BrandCard({
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
-          <Button size="sm" variant="outline" onClick={onEdit} disabled={busy}>
-            <Pencil className="h-4 w-4" /> Edit
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => void remove()} disabled={busy}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-            Delete
-          </Button>
-        </div>
+        {(onEdit || onDelete) && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            {onEdit && (
+              <Button size="sm" variant="outline" onClick={onEdit} disabled={busy}>
+                <Pencil className="h-4 w-4" /> Edit
+              </Button>
+            )}
+            {onDelete && (
+              <Button size="sm" variant="ghost" onClick={() => void remove()} disabled={busy}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Delete
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {err && (

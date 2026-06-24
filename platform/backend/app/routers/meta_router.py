@@ -35,5 +35,9 @@ def meta():
         "qualities": QUALITIES,
         "default_quality": opts.get("defaultQuality") if opts.get("defaultQuality") in QUALITIES else "high",
         "thinking_efforts": THINKING_EFFORTS,
-        "default_effort": cd.get("effort") or "xhigh",
+        # Default to "High", not "Extended": Extended (xhigh) art-direction can
+        # take ~2+ min before the first image, which reads as "stuck". High is
+        # the director's own default and is markedly faster. Users can still pick
+        # Extended explicitly. Admin can override via creativeDirector.effort.
+        "default_effort": cd.get("effort") or "high",
     }

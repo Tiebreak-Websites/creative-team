@@ -46,17 +46,17 @@ interface ConceptCard {
 // Languages for the on-image copy. `cc` is the ISO country code for the
 // flag-icons set (real flags — emoji flags don't render on Windows).
 export const LOCALES = [
-  { value: 'en', label: 'English', cc: 'gb' },
-  { value: 'es-419', label: 'Spanish (LatAm)', cc: 'mx' },
-  { value: 'pt', label: 'Portuguese', cc: 'pt' },
-  { value: 'sv', label: 'Swedish', cc: 'se' },
-  { value: 'ja', label: 'Japanese', cc: 'jp' },
-  { value: 'th', label: 'Thai', cc: 'th' },
-  { value: 'pl', label: 'Polish', cc: 'pl' },
-  { value: 'zh', label: 'Chinese', cc: 'cn' },
-  { value: 'ar', label: 'Arabic', cc: 'sa' },
-  { value: 'it', label: 'Italian', cc: 'it' },
-  { value: 'de', label: 'German', cc: 'de' },
+  { value: 'en', label: 'English', short: 'EN', cc: 'gb' },
+  { value: 'es-419', label: 'Spanish (LatAm)', short: 'ES', cc: 'mx' },
+  { value: 'pt', label: 'Portuguese', short: 'PT', cc: 'pt' },
+  { value: 'sv', label: 'Swedish', short: 'SV', cc: 'se' },
+  { value: 'ja', label: 'Japanese', short: 'JA', cc: 'jp' },
+  { value: 'th', label: 'Thai', short: 'TH', cc: 'th' },
+  { value: 'pl', label: 'Polish', short: 'PL', cc: 'pl' },
+  { value: 'zh', label: 'Chinese', short: 'ZH', cc: 'cn' },
+  { value: 'ar', label: 'Arabic', short: 'AR', cc: 'sa' },
+  { value: 'it', label: 'Italian', short: 'IT', cc: 'it' },
+  { value: 'de', label: 'German', short: 'DE', cc: 'de' },
 ]
 
 export const MODEL_LABELS: Record<string, string> = {
@@ -205,7 +205,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
       ? brand.quality
       : meta.default_quality ?? meta.qualities[meta.qualities.length - 1] ?? 'high',
   )
-  const [effort, setEffort] = useState(meta.default_effort ?? 'xhigh')
+  const [effort, setEffort] = useState(meta.default_effort ?? 'high')
   const [locale, setLocale] = useState(
     LOCALES.some((l) => l.value === brand.locale) ? (brand.locale as string) : 'en',
   )
@@ -750,8 +750,8 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
               />
             </div>
 
-            {/* Row 2 — controls + generate (wraps gracefully; Generate stays inside) */}
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Row 2 — controls + generate, kept on a single line inside the console */}
+            <div className="flex flex-nowrap items-center gap-2">
             {/* Art direction */}
             <button
               type="button"
@@ -925,7 +925,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                   className="h-3.5 w-auto rounded-[2px]"
                   loading="lazy"
                 />
-                <span className="hidden lg:inline">{currentLocale.label}</span>
+                <span className="font-semibold">{currentLocale.short}</span>
                 {localeAuto && (
                   <span
                     title="Auto-detected from your concept text"
@@ -969,7 +969,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
             </div>
 
             <Button
-              className={cn('ml-auto px-10 font-display', canRun && !running && 'tb-glow')}
+              className={cn('ml-auto shrink-0 px-6 font-display', canRun && !running && 'tb-glow')}
               size="lg"
               onClick={startRun}
               disabled={!canRun || running}

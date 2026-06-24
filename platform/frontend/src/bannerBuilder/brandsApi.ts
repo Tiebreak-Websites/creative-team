@@ -7,12 +7,22 @@ const BASE = import.meta.env.VITE_API_BASE ?? '/api'
 
 const BRANDS_URL = `${BASE}/tools/banner-builder/brands`
 
+/** One palette colour with an optional human role (e.g. "Primary · CTA"). */
+export interface BrandSwatch {
+  hex: string
+  role: string
+}
+
 /** A reusable brand: a name, an ordered palette, and an optional inline SVG logo. */
 export interface Brand {
   id: string
   name: string
   colors: string[]
   logo_svg: string | null
+  /** Built-in brands ship with the app: always present, not editable/deletable. */
+  builtin?: boolean
+  /** Optional role-annotated palette (built-ins) for the showcase card. */
+  swatches?: BrandSwatch[]
 }
 
 /** Fields accepted when creating a brand. */
