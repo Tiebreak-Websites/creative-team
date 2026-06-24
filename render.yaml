@@ -1,0 +1,33 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# In Render: New → Blueprint → connect this repo → it provisions a web service
+# that builds the Dockerfile and AUTO-DEPLOYS on every push to `prod`.
+# After the first apply, set the secret env vars (sync:false) in the dashboard.
+services:
+  - type: web
+    name: creative-team
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    branch: prod          # the live branch — push here to release
+    plan: free            # free tier: HTTPS *.onrender.com, spins down when idle
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: PLATFORM_COOKIE_SECURE
+        value: "true"
+      - key: PLATFORM_DOCS
+        value: "false"
+      - key: ADMIN_EMAIL
+        value: creative.operations@tiebreak.solutions
+      # Secrets — set these in the Render dashboard (sync:false keeps them out of git):
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: FIGMA_API_KEY
+        sync: false
+      # Stable JWT signing key so sessions survive restarts (Render generates + persists it):
+      - key: PLATFORM_SECRET_KEY
+        generateValue: true

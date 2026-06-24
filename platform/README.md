@@ -46,16 +46,16 @@ Secrets are resolved at runtime from the process env first, then the repo-root `
 
 ---
 
-## Deploy (publish + installable web-app)
+## Deploy (push-to-`prod` cloud host + installable web-app)
 
-To publish the whole app from one machine behind a **Cloudflare Tunnel** — a real
-HTTPS web address protected by the app's own login, and **installable as a desktop
-web-app (PWA)** — see [`DEPLOY.md`](DEPLOY.md). The backend serves the built SPA
-itself (`app/main._mount_frontend`), so it's a single origin: one tunnel route, no
-CORS, a `Secure` first-party session cookie (`PLATFORM_COOKIE_SECURE=true`), and the
-PWA manifest/service worker/icons served from `frontend/public/`. Optionally gate it
-further with Cloudflare Access. Deploy scaffold lives in [`deploy/`](deploy)
-(`cloudflared/config.example.yml`, `.env.production.example`).
+The live site runs as **one Docker container** (backend serves the built SPA via
+`app/main._mount_frontend`, so it's single-origin: API at `/api/*`, UI everywhere
+else, no CORS, `Secure` cookie) on a cloud host that **auto-deploys on every push to
+`prod`**. See [`DEPLOY.md`](DEPLOY.md). Config: [`../Dockerfile`](../Dockerfile),
+[`../render.yaml`](../render.yaml). The Python backend can't run on Cloudflare
+serverless, so the whole app is containerized (Render/Railway/Fly). It's also
+installable as a desktop web-app (PWA) from the live URL (manifest/SW/icons in
+`frontend/public/`). A Cloudflare-Tunnel self-host path remains in [`deploy/`](deploy).
 
 ---
 

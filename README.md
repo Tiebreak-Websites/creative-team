@@ -42,7 +42,8 @@ See [`platform/README.md`](platform/README.md) for the architecture + how to add
 
 ## Deploy
 
-To publish the whole app from one machine behind a Cloudflare Tunnel — a real HTTPS
-web address protected by the app's own login, and installable as a desktop web-app
-(PWA) — follow [`platform/DEPLOY.md`](platform/DEPLOY.md). (Optional: lock it down
-further with Cloudflare Access.)
+The live site runs as one Docker container (backend serves the SPA — single origin)
+on a cloud host that **auto-deploys on every push to the `prod` branch**, secured by
+the app's own login. Config: [`Dockerfile`](Dockerfile), [`render.yaml`](render.yaml).
+Full walkthrough in [`platform/DEPLOY.md`](platform/DEPLOY.md). It's also installable
+as a desktop web-app (PWA) from the live URL.
