@@ -34,7 +34,7 @@ export function InstallButton() {
       variant="ghost"
       size="sm"
       className="font-display"
-      title="Install Internovus Creative Builder as a desktop app"
+      title="Install Internovus - Creative Builder as a desktop app"
       onClick={async () => {
         deferred.prompt()
         await deferred.userChoice

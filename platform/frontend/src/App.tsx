@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { HelpCircle, Settings } from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
 import { HelpModal } from './bannerBuilder/HelpModal'
+import { LPBuilder } from './lpBuilder/LPBuilder'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { Login } from './auth/Login'
 import { UserMenu } from './auth/UserMenu'
@@ -11,6 +12,7 @@ import { ToolSettings } from './admin/ToolSettings'
 import { Logo } from './components/Logo'
 import { ThemeToggle } from './components/ThemeToggle'
 import { InstallButton } from './components/InstallButton'
+import { VersionBadge } from './components/VersionBadge'
 import { Button } from '@/components/ui/button'
 
 export function App() {
@@ -35,9 +37,36 @@ function Gate() {
   return <Workspace />
 }
 
-// Single-purpose app: the Banner Builder. No home page, no tool switcher.
+type Page = 'banner' | 'lp'
+
+function Tab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-md px-3 py-1.5 font-display text-sm font-medium transition-colors ${
+        active
+          ? 'bg-secondary text-foreground'
+          : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+// Two tools, no home page: Banner Builder + LP Builder (placeholder).
 function Workspace() {
   const { user } = useAuth()
+  const [page, setPage] = useState<Page>('banner')
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [view, setView] = useState<'tool' | 'settings'>('tool')
@@ -54,24 +83,41 @@ function Workspace() {
   }, [])
 
   const isAdmin = user?.role === 'admin'
+  const showBanner = page === 'banner'
+
+  function goBanner() {
+    setPage('banner')
+    setView('tool')
+  }
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      <header className="flex h-16 shrink-0 items-center gap-3 bg-card/70 px-5 backdrop-blur-md">
+      <header className="flex h-16 shrink-0 items-center gap-3 bg-card/70 px-5 backdrop-blur-md sm:gap-5">
         <button
           type="button"
-          className="group flex items-center gap-3"
-          onClick={() => setView('tool')}
-          title="Internovus Creative Builder"
+          className="group flex items-center"
+          onClick={goBanner}
+          title="Internovus - Creative Builder"
         >
           <Logo className="h-8 w-auto transition-transform duration-200 group-hover:scale-[1.03]" />
         </button>
+        <nav className="flex items-center gap-1">
+          <Tab active={showBanner && view === 'tool'} onClick={goBanner}>
+            Banner Builder
+          </Tab>
+          <Tab active={page === 'lp'} onClick={() => setPage('lp')}>
+            LP Builder
+          </Tab>
+        </nav>
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="font-display" onClick={() => setHelpOpen(true)}>
-            <HelpCircle className="h-4 w-4" />
-            Help
-          </Button>
-          {isAdmin && (
+          <VersionBadge />
+          {showBanner && (
+            <Button variant="ghost" size="sm" className="font-display" onClick={() => setHelpOpen(true)}>
+              <HelpCircle className="h-4 w-4" />
+              Help
+            </Button>
+          )}
+          {showBanner && isAdmin && (
             <Button
               variant={view === 'settings' ? 'secondary' : 'ghost'}
               size="sm"
@@ -89,7 +135,9 @@ function Workspace() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-hidden">
-        {loadError ? (
+        {page === 'lp' ? (
+          <LPBuilder />
+        ) : loadError ? (
           <div className="p-6">
             <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               Could not reach the backend: {loadError}.

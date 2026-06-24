@@ -1,7 +1,7 @@
 {
-  "name": "Internovus Creative Builder",
+  "name": "Internovus - Creative Builder",
   "short_name": "Internovus",
-  "description": "Internovus Creative Builder — banners, Figma QA, creative summaries, translation.",
+  "description": "Internovus - Creative Builder — generate on-brand banners and landing pages.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

@@ -14,6 +14,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    // Injected at build time so the header can show the version + when it was built.
+    define: {
+      __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? '0.0.0'),
+      __APP_BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    },
     resolve: {
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
       // Pin a single React instance so Vite's pre-bundled deps (Radix UI) don't

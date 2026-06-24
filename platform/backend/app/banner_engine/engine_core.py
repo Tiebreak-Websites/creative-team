@@ -168,8 +168,10 @@ def generate_png(*, api_key, prompt, mode, openai_size, model="gpt-image-2",
                  max_retries=4, base_backoff=8, sleep=time.sleep, on_attempt=None):
     """Generate (mode='gen') or recompose (mode='edit') one PNG; return raw bytes.
 
-    Owns the 429 exponential-backoff retry loop:
-        wait = base_backoff * 2**(attempt-1)   ->  8, 16, 32, 64 ...
+    Owns the exponential-backoff retry loop for 429 (rate limit) and 5xx
+    (transient OpenAI server errors):
+        429 wait = base_backoff * 2**(attempt-1)  ->  8, 16, 32, 64 ...
+        5xx wait = 3 * 2**(attempt-1)             ->  3, 6, 12, 24 ...
     Raises GenError(status, message) on terminal failure. Does NOT write to the
     filesystem, does NOT paint, does NOT exit.
 
@@ -193,8 +195,14 @@ def generate_png(*, api_key, prompt, mode, openai_size, model="gpt-image-2",
                                            model, quality, timeout)
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
-            if e.code == 429 and attempt < max_retries:
-                sleep(base_backoff * (2 ** (attempt - 1)))
+            # Retry rate limits (429) AND transient server errors (5xx). OpenAI's
+            # own 500 body says "you can retry your request" — a single transient
+            # 500 should not fail the whole banner. 429 needs a longer cool-off;
+            # 5xx can retry sooner.
+            retryable = e.code == 429 or 500 <= e.code < 600
+            if retryable and attempt < max_retries:
+                wait = base_backoff if e.code == 429 else 3
+                sleep(wait * (2 ** (attempt - 1)))
                 continue
             status = "edit_http_error" if is_edit else "gen_http_error"
             raise GenError(status, f"HTTP {e.code}: {body[:300]}")

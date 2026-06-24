@@ -1,13 +1,15 @@
-# Creative Tools
+# Internovus - Creative Builder
 
-An internal web platform for the team's creative tools — generate banners, QA Figma landing pages, write creative summaries, and translate Figma pages, all from the browser. FastAPI backend + React (Vite) frontend, with a companion Figma plugin for writing results back onto the canvas.
+Internovus's in-house web app for generating creative assets from the browser.
+Light/dark themed and installable as a desktop web-app (PWA). FastAPI backend +
+React (Vite) frontend.
 
 ## Tools
 
 - **Banner Builder** — generate on-brand ad banners with OpenAI `gpt-image-2`; multi-concept, multi-size, download as PNG.
-- **Figma QA** — paste a Figma LP URL → parity / placeholder / overflow / CTA / regulator-phrase checks (+ optional AI tone), and post findings as Figma comments.
-- **Creative Summary** — paste a Figma LP URL → a short bilingual summary of what it promotes; place it on the canvas via the Figma plugin.
-- **Translate** — extract a Figma page's text → translate into locales → preview / download; create translated pages via the Figma plugin.
+- **LP Builder** — landing-page generation (in progress).
+
+The backend also bundles Figma helpers (QA, Creative Summary, Translate) used via the companion Figma plugin; they aren't surfaced in the current two-tool UI.
 
 ## Run it locally
 
@@ -35,7 +37,7 @@ npm run dev        # http://localhost:5173
 | Path | What it is |
 | --- | --- |
 | [`platform/backend`](platform/backend) | FastAPI app + tool plugins; the bundled banner engine (`app/banner_engine/`) and Figma scripts (`figma_scripts/`) |
-| [`platform/frontend`](platform/frontend) | React dashboard — top-nav shell + per-tool UIs |
+| [`platform/frontend`](platform/frontend) | React app — top nav (Banner Builder + LP Builder), light/dark theme, PWA |
 | [`platform/figma-plugin`](platform/figma-plugin) | Companion Figma plugin that writes results (summaries, translated pages) onto the canvas |
 
 See [`platform/README.md`](platform/README.md) for the architecture + how to add a new tool, and [`platform/figma-plugin/README.md`](platform/figma-plugin/README.md) to install the plugin.
