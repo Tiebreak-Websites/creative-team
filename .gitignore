@@ -16,8 +16,10 @@ dist/
 
 # Platform runtime (generated, not source)
 platform/backend/.runs/
+platform/backend/config/
 platform/backend/figma_scripts/qa/.cache/
 .cache/
+*.uvicorn*.log
 
 # Claude Code personal settings (local only)
 .claude/settings.local.json

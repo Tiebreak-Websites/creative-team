@@ -28,4 +28,11 @@ class RunRequest(BaseModel):
     locale: str = "en"
     sizes: List[str] = Field(default_factory=lambda: ["1200x1200"])
     style: Optional[str] = None          # optional look / brand vibe
+    # Style-only reference images (ids from POST /references). The creative
+    # director uses them for palette/composition/mood/lighting ONLY — never copy.
+    references: List[str] = Field(default_factory=list)
+    # Optional brand: folds the brand palette into the art direction, and (when a
+    # raster logo + logo_corner are set) composites the logo onto each finished PNG.
+    brand_id: Optional[str] = None
+    logo_corner: Optional[str] = None    # 'tl' | 'tr' | 'bl' | 'br'
     concepts: List[ConceptIn]

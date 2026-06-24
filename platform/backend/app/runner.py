@@ -12,6 +12,7 @@ users can't oversaturate the rate limit.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import uuid
@@ -21,10 +22,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from . import creative_director, engine
-from .banner_engine import reshape
+from . import brands as brands_store
+from . import creative_director, engine, references as references_store
+from .banner_engine import logo_overlay, reshape
 from .models import RunRequest
 from .settings import settings
+
+log = logging.getLogger(__name__)
 
 TOOL_ID = "banner-builder"
 
@@ -83,6 +87,13 @@ class Run:
     cards: Dict[str, dict] = field(default_factory=dict)   # key -> {title, subtitle, button}
     size_briefs: Dict[str, Dict[str, str]] = field(default_factory=dict)  # concept -> {size -> brief}
     director: dict = field(default_factory=dict)           # summary surfaced in the API
+    references: List[str] = field(default_factory=list)    # local paths, style-only (never serialized)
+    cancelled: bool = False            # set by cancel(); checked between frames + phases
+    # Resolved raster brand logo to composite onto each PNG, or None. corner is
+    # one of 'tl','tr','bl','br'. logo: API-surfaced status of the overlay step.
+    logo_raster: Optional[bytes] = None
+    logo_corner: Optional[str] = None
+    logo: dict = field(default_factory=dict)
 
     def touch(self):
         self.updated_at = _now()
@@ -275,6 +286,61 @@ def _build_plan(concepts: Dict[str, dict], sizes: List[str]) -> List[dict]:
     return plan
 
 
+_VALID_CORNERS = {"tl", "tr", "bl", "br"}
+
+
+def _resolve_brand(req: RunRequest):
+    """Resolve req.brand_id -> (style_with_brand, logo_raster, logo_corner, logo_status).
+
+    Folds the brand palette into the campaign style text (so the director keeps
+    the design on-brand) and decodes the logo to raster bytes when a corner is
+    requested. SVG logos can't be rasterized here (no rasterizer in the slim
+    image) — colors still apply; the pixel overlay is deferred with a clear note.
+    Never raises: a bad/missing brand degrades to "no brand".
+    """
+    style = (req.style or "").strip()
+    corner = req.logo_corner if req.logo_corner in _VALID_CORNERS else None
+    logo_status = {"requested": bool(req.brand_id), "applied": False,
+                   "corner": corner, "reason": None}
+
+    if not req.brand_id:
+        return style, None, None, {"requested": False, "applied": False,
+                                   "corner": None, "reason": None}
+
+    brand = None
+    try:
+        brand = brands_store.get_brand(req.brand_id)
+    except Exception:  # noqa: BLE001 — a storage hiccup must not break a run
+        brand = None
+    if not brand:
+        logo_status["reason"] = "brand not found"
+        return style, None, None, logo_status
+
+    # Fold the palette into the art-direction text.
+    colors = [c for c in (brand.get("colors") or []) if isinstance(c, str)]
+    if colors:
+        brand_line = (f"Brand palette: {', '.join(colors)}; keep the design on-brand "
+                      f"using these brand colors.")
+        style = f"{style} {brand_line}".strip() if style else brand_line
+
+    if not corner:
+        logo_status["reason"] = "no logo_corner requested"
+        return style, None, None, logo_status
+
+    kind, raster = logo_overlay.decode_logo(brand.get("logo_svg"))
+    if kind == "raster" and raster:
+        logo_status["reason"] = None
+        return style, raster, corner, logo_status
+    if kind == "svg":
+        # No SVG rasterizer in python:3.12-slim — apply colors, skip the overlay.
+        logo_status["reason"] = "svg logo not rasterized (no rasterizer installed); colors applied"
+        log.info("banner-builder: SVG brand logo for brand %s not overlaid "
+                 "(no rasterizer); TODO add cairosvg/resvg to enable.", req.brand_id)
+        return style, None, None, logo_status
+    logo_status["reason"] = "no usable logo on brand"
+    return style, None, None, logo_status
+
+
 def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
                          sizes: List[str], api_key: str) -> Run:
     run_id = "r_" + uuid.uuid4().hex[:12]
@@ -293,12 +359,26 @@ def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
         c.key: {"title": c.title, "subtitle": c.subtitle or "", "button": c.button or ""}
         for c in req.concepts
     }
+    # Brand palette folds into the style text; a raster logo is composited later.
+    style, logo_raster, logo_corner, logo_status = _resolve_brand(req)
+    # The deterministic template brief (the director's fallback) is built from the
+    # style; re-synthesize it with the brand-augmented style so brand colors reach
+    # the fallback path too. The director path reads run.style directly.
+    if style and style != (req.style or "").strip():
+        for c in req.concepts:
+            ck = c.key
+            if ck in concepts:
+                concepts[ck]["creative_brief"] = _synthesize_brief(c.subtitle or "", style)
+    # Resolve style-only reference images to existing local paths (drop unknowns).
+    ref_paths = references_store.resolve_paths(req.references)
     run = Run(
         id=run_id, status="queued", model=req.model, quality=req.quality,
         sizes=sizes, concepts=concepts, frames_plan=plan,
         frame_results=frame_results, dir=run_dir,
         created_at=now, updated_at=now, api_key=api_key,
-        style=req.style or "", effort=req.effort, cards=cards,
+        style=style, effort=req.effort, cards=cards,
+        references=ref_paths, logo_raster=logo_raster, logo_corner=logo_corner,
+        logo=logo_status,
     )
     STORE.add(run)
     _RUN_POOL.submit(execute_run, run_id)
@@ -310,6 +390,12 @@ def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
 # ---------------------------------------------------------------------------
 def _gen_one_frame(run: Run, frame: dict):
     fr = run.fr(frame["concept"], frame["size"])
+    # Cancellation barrier: a frame still pending when cancel landed is left
+    # untouched (status stays "pending"/marked cancelled) and never calls OpenAI.
+    if run.cancelled:
+        if fr.status == "pending":
+            fr.status, fr.error = "cancelled", "run cancelled"
+        return
     base = run.concepts[frame["concept"]]
     # Per-size creative brief from the GPT-5.5 director if present, else the base
     # (deterministic template) brief — so a frame is never left without direction.
@@ -368,6 +454,15 @@ def _gen_one_frame(run: Run, frame: dict):
         except Exception:  # noqa: BLE001 — never drop a frame over reshaping
             pass
 
+    # Composite the brand logo (raster only) into the chosen corner. Best-effort:
+    # a failure leaves the un-overlaid banner rather than dropping the frame.
+    if run.logo_raster and run.logo_corner:
+        try:
+            png = logo_overlay.composite_logo_corner(png, run.logo_raster, run.logo_corner)
+            run.logo["applied"] = True
+        except Exception as e:  # noqa: BLE001
+            run.logo.setdefault("reason", f"overlay failed: {type(e).__name__}: {e}")
+
     out_png = run.dir / f"{_label(frame['concept'], frame['size'])}.png"
     out_png.write_bytes(png)
     fr.status, fr.gen_ms, fr.bytes, fr.png_path = "ok", int((time.time() - t0) * 1000), len(png), str(out_png)
@@ -382,6 +477,10 @@ def _run_phase(run: Run, frames: List[dict]):
 
 
 def _finalize(run: Run) -> str:
+    # A cancelled run is terminal as "cancelled" regardless of partial output;
+    # any banners that finished before the cancel are kept on disk.
+    if run.cancelled:
+        return "cancelled"
     statuses = [fr.status for fr in run.frame_results.values()]
     ok = sum(1 for s in statuses if s == "ok")
     if ok == 0:
@@ -389,6 +488,33 @@ def _finalize(run: Run) -> str:
     if ok == len(statuses):
         return "completed"
     return "partial"
+
+
+def _mark_unfinished_cancelled(run: Run):
+    """Flag every not-yet-finished frame as cancelled (finished 'ok' kept)."""
+    for fr in run.frame_results.values():
+        if fr.status in ("pending", "running"):
+            fr.status, fr.error = "cancelled", "run cancelled"
+
+
+def cancel(run_id: str) -> bool:
+    """Request cancellation of a run. Returns False if the run is unknown.
+
+    Sets a flag the master loop AND the recompose loop check between frames and
+    between phases; already-finished banners are left intact. Idempotent — a
+    terminal run simply stays terminal.
+    """
+    run = STORE.get(run_id)
+    if run is None:
+        return False
+    run.cancelled = True
+    # If the run already settled, don't reopen it; otherwise reflect cancelled
+    # immediately so a fast poll sees it without waiting for the next barrier.
+    if run.status not in TERMINAL:
+        _mark_unfinished_cancelled(run)
+        run.status = "cancelled"
+    run.touch()
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +605,7 @@ def _direct_run(run: Run):
                 subtitle=card.get("subtitle", ""), button=card.get("button", ""),
                 style=run.style, locale=base.get("locale", "en"),
                 sizes=run.sizes, model=cfg["model"], effort=effort,
+                references=run.references,
             )
         except creative_director.DirectorError as e:
             return ck, None, str(e)
@@ -523,15 +650,27 @@ def execute_run(run_id: str):
     if run is None:
         return
     try:
+        # Cancel barrier — check before each phase so a cancel between phases
+        # stops the run promptly with already-finished banners intact.
+        if run.cancelled:
+            _finish_cancelled(run)
+            return
+
         # Phase 0 — GPT-5.5 creative direction (per-size briefs). Best-effort:
         # any failure falls back to the deterministic template brief.
         _direct_run(run)
+        if run.cancelled:
+            _finish_cancelled(run)
+            return
 
         # Phase 1 — masters (parallel), then BARRIER.
         run.status = "running_master"
         run.touch()
         master_frames = [f for f in run.frames_plan if f["phase"] == "master"]
         _run_phase(run, master_frames)
+        if run.cancelled:
+            _finish_cancelled(run)
+            return
 
         ok_masters = {f["concept"] for f in master_frames
                       if run.fr(f["concept"], f["size"]).status == "ok"}
@@ -550,7 +689,7 @@ def execute_run(run_id: str):
             else:
                 fr = run.fr(f["concept"], f["size"])
                 fr.status, fr.error = "master_missing", "master generation failed"
-        if runnable:
+        if runnable and not run.cancelled:
             run.status = "running_recomp"
             run.touch()
             _run_phase(run, runnable)
@@ -562,11 +701,19 @@ def execute_run(run_id: str):
         run.touch()
 
 
+def _finish_cancelled(run: Run):
+    """Settle a run that was cancelled mid-flight: mark unfinished frames and
+    set the terminal 'cancelled' status (finished banners are kept)."""
+    _mark_unfinished_cancelled(run)
+    run.status = "cancelled"
+    run.touch()
+
+
 # ---------------------------------------------------------------------------
 # Serialization for the API
 # ---------------------------------------------------------------------------
 def _counts(run: Run) -> dict:
-    c = {"ok": 0, "failed": 0, "pending": 0, "running": 0}
+    c = {"ok": 0, "failed": 0, "pending": 0, "running": 0, "cancelled": 0}
     for fr in run.frame_results.values():
         if fr.status == "ok":
             c["ok"] += 1
@@ -574,6 +721,8 @@ def _counts(run: Run) -> dict:
             c["pending"] += 1
         elif fr.status in ("running",):
             c["running"] += 1
+        elif fr.status == "cancelled":
+            c["cancelled"] += 1
         else:
             c["failed"] += 1
     return c
@@ -595,10 +744,12 @@ def run_to_dict(run: Run) -> dict:
         })
     return {
         "run_id": run.id, "status": run.status, "error": run.error,
+        "cancelled": run.cancelled,
         "total": len(run.frames_plan),
         "completed": sum(1 for fr in run.frame_results.values() if fr.status == "ok"),
         "counts": _counts(run),
         "created_at": run.created_at, "updated_at": run.updated_at,
         "director": run.director,
+        "logo": run.logo or None,
         "banners": banners,
     }

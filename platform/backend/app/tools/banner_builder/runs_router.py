@@ -11,11 +11,14 @@ import io
 import re
 import zipfile
 from pathlib import Path
+from typing import List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
+from ... import references as references_store
 from ... import runner
+from ...brands import build_brands_router
 from ...creative_director import VALID_EFFORTS
 from ...models import RunRequest
 from ...secrets import get_secret
@@ -56,6 +59,32 @@ def build_router() -> APIRouter:
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
         return runner.run_to_dict(run)
+
+    @router.post("/runs/{run_id}/cancel")
+    def cancel_run(run_id: str):
+        # Flags the run; the runner stops between frames and between phases,
+        # leaving already-finished banners intact. 404 if the run is unknown.
+        if not runner.cancel(run_id):
+            raise HTTPException(status_code=404, detail="run not found")
+        return {"status": "cancelled"}
+
+    @router.post("/references")
+    async def upload_references(files: List[UploadFile] = File(...)):
+        """Save 1-4 style-only reference images (png/jpg/webp, ~8MB each).
+
+        Returns {"ids":[...]} — pass them back as RunRequest.references. The
+        creative director uses them for palette/composition/mood/lighting ONLY
+        and ignores any text/copy in them.
+        """
+        items = []
+        for f in files:
+            data = await f.read()
+            items.append((data, f.content_type or "", f.filename or ""))
+        try:
+            ids = references_store.save_references(items)
+        except references_store.ReferenceError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        return {"ids": ids}
 
     @router.get("/runs/{run_id}/banners/{label}.png")
     def get_banner(run_id: str, label: str, download: int = 0, name: str = ""):
@@ -135,5 +164,9 @@ def build_router() -> APIRouter:
             buf, media_type="application/zip",
             headers={"Content-Disposition": 'attachment; filename="banners.zip"'},
         )
+
+    # Brands CRUD lives under this same prefix (/api/tools/banner-builder/brands).
+    # GET is any logged-in user; writes self-gate with require_admin.
+    router.include_router(build_brands_router())
 
     return router

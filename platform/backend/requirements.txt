@@ -9,5 +9,9 @@ passlib[bcrypt]>=1.7
 # (raises on import: "password cannot be longer than 72 bytes"). Pin <4.1.
 bcrypt<4.1
 
-# Pillow — exact-pixel reshape (cover-crop) for display-ad export sizes.
+# Pillow — exact-pixel reshape (cover-crop) for display-ad export sizes, and
+# raster brand-logo compositing onto finished banners.
 Pillow>=10
+
+# Multipart form parsing — POST /references uploads style reference images.
+python-multipart>=0.0.9
