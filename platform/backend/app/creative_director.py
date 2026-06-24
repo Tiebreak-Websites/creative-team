@@ -30,10 +30,11 @@ import os
 import urllib.error
 import urllib.request
 
+from .banner_engine import prompts
+from .banner_engine.intent import DEFAULT_INTENT, INTENT_DIRECTION
 from .banner_engine.prompts import (
     BRAND_DEFENCE_LINE,
     BUTTON_COMBOS,
-    HARD_NEGATIVES,
     LAYOUT_BASE,
     LAYOUT_FAMILY,
     SYSTEM_HEADER,
@@ -153,7 +154,8 @@ def _reference_image_parts(reference_paths) -> list:
     return parts
 
 
-def _build_messages(*, title, subtitle, button, style, locale, sizes, has_references=False):
+def _build_messages(*, title, subtitle, button, style, locale, sizes,
+                    has_references=False, intent=DEFAULT_INTENT):
     size_lines = [
         f"- {s} [{LAYOUT_FAMILY.get(s, 'TARGET')}]: {LAYOUT_BASE.get(s, '')}"
         for s in sizes
@@ -187,12 +189,11 @@ def _build_messages(*, title, subtitle, button, style, locale, sizes, has_refere
         "subject-right'; use full-bleed, centered or paneled layouts as the idea demands. "
         "Within ONE concept keep all sizes consistent (same subject, palette, hook treatment), "
         "varying only the crop per aspect.\n"
-        "- For finance/investing strike a credible 'smart money' tone — aspirational and "
-        "trustworthy; never gambling, luck, or get-rich-quick.\n"
+        f"- Campaign art direction for this intent: {INTENT_DIRECTION[intent]}\n"
         "- hook_phrase MUST be copied verbatim (case-insensitive) from the Title; it is the type-hero.\n"
         "- Each creative_brief is free prose (~300-450 chars): concept, medium, hero subject, "
         "composition, palette, lighting, mood — concrete and art-directed. No bullet lists, no archetype names.\n\n"
-        f"Boundaries: {HARD_NEGATIVES}\n\n"
+        f"Boundaries: {prompts.hard_negatives_for(intent)}\n\n"
         f"{BRAND_DEFENCE_LINE}"
     )
     if has_references:
@@ -264,7 +265,7 @@ def _normalize(data: dict) -> dict:
 # ---------------------------------------------------------------------------
 def direct_concept(*, api_key, title, subtitle="", button="", style="", locale="en",
                    sizes, model="gpt-5.5", effort="high", timeout=600,
-                   references=None) -> dict:
+                   references=None, intent=DEFAULT_INTENT) -> dict:
     """Ask GPT-5.5 to art-direct one concept across all requested sizes.
 
     timeout defaults to 600s so an "xhigh" (Extended) reasoning pass finishes
@@ -283,12 +284,14 @@ def direct_concept(*, api_key, title, subtitle="", button="", style="", locale="
     if not api_key:
         raise DirectorError("missing OPENAI_API_KEY")
     effort = effort if effort in VALID_EFFORTS else "high"
+    # Defensive: an unknown intent must never KeyError into the fallback path.
+    intent = intent if intent in INTENT_DIRECTION else DEFAULT_INTENT
     sizes = list(sizes)
     image_parts = _reference_image_parts(references)
     system, user = _build_messages(
         title=title, subtitle=subtitle or "", button=button or "",
         style=style or "", locale=locale or "en", sizes=sizes,
-        has_references=bool(image_parts),
+        has_references=bool(image_parts), intent=intent,
     )
     # When style references are attached, the user turn becomes multimodal: the
     # text part plus one input_image part per reference. Otherwise a plain string.

@@ -24,6 +24,7 @@ from typing import Dict, List, Optional
 
 from . import brands as brands_store
 from . import creative_director, engine, references as references_store
+from .banner_engine import intent as intent_engine
 from .banner_engine import logo_overlay, reshape
 from .models import RunRequest
 from .settings import settings
@@ -84,6 +85,8 @@ class Run:
     error: Optional[str] = None
     style: str = ""                    # campaign look/vibe (fed to the director)
     effort: Optional[str] = None       # per-run GPT-5.5 thinking effort (None -> admin default)
+    intent: str = "general_ad"         # heuristic campaign intent (steers director + negatives)
+    intent_meta: dict = field(default_factory=dict)  # {source, intent, confidence, ambiguous}
     cards: Dict[str, dict] = field(default_factory=dict)   # key -> {title, subtitle, button}
     size_briefs: Dict[str, Dict[str, str]] = field(default_factory=dict)  # concept -> {size -> brief}
     director: dict = field(default_factory=dict)           # summary surfaced in the API
@@ -407,9 +410,10 @@ def _gen_one_frame(run: Run, frame: dict):
     try:
         if frame["mode"] == "edit":
             prompt = engine.build_recomp_prompt(
-                concept, engine.MASTER_SIZE, frame["size"], art_direction=brief)
+                concept, engine.MASTER_SIZE, frame["size"], art_direction=brief,
+                intent=run.intent)
         else:
-            prompt = engine.build_prompt(concept, frame["size"])
+            prompt = engine.build_prompt(concept, frame["size"], intent=run.intent)
     except Exception as e:  # noqa: BLE001
         fr.status, fr.error = "prompt_failed", f"{type(e).__name__}: {e}"
         run.touch()
@@ -518,6 +522,47 @@ def cancel(run_id: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Campaign intent classification (heuristic) — Phase 0a
+# ---------------------------------------------------------------------------
+def _classify_campaign(run: Run):
+    """Heuristically classify the campaign intent from the run's copy + style.
+
+    Sets run.intent (one of intent_engine.INTENTS) and run.intent_meta. Pure
+    heuristic — no LLM call. NEVER raises: any failure degrades to the safe
+    'general_ad' default so the live path stays backward compatible.
+    """
+    run.status = "classifying"
+    run.touch()
+    try:
+        cards = [
+            {
+                "title": c.get("title", ""),
+                "subtitle": c.get("subtitle", ""),
+                "button": c.get("button", ""),
+            }
+            for c in run.cards.values()
+        ]
+        intent, confidence, ambiguous = intent_engine.classify_heuristic(cards, run.style or "")
+        run.intent = intent
+        run.intent_meta = {
+            "source": "heuristic",
+            "intent": intent,
+            "confidence": confidence,
+            "ambiguous": ambiguous,
+        }
+    except Exception as e:  # noqa: BLE001 — classification must never break a run
+        run.intent = "general_ad"
+        run.intent_meta = {
+            "source": "heuristic",
+            "intent": "general_ad",
+            "confidence": 0.0,
+            "ambiguous": True,
+            "error": f"{type(e).__name__}: {e}",
+        }
+    run.touch()
+
+
+# ---------------------------------------------------------------------------
 # Creative direction (GPT-5.5) — Phase 0
 # ---------------------------------------------------------------------------
 def _director_config() -> dict:
@@ -605,7 +650,7 @@ def _direct_run(run: Run):
                 subtitle=card.get("subtitle", ""), button=card.get("button", ""),
                 style=run.style, locale=base.get("locale", "en"),
                 sizes=run.sizes, model=cfg["model"], effort=effort,
-                references=run.references,
+                references=run.references, intent=run.intent,
             )
         except creative_director.DirectorError as e:
             return ck, None, str(e)
@@ -652,6 +697,13 @@ def execute_run(run_id: str):
     try:
         # Cancel barrier — check before each phase so a cancel between phases
         # stops the run promptly with already-finished banners intact.
+        if run.cancelled:
+            _finish_cancelled(run)
+            return
+
+        # Phase 0a — heuristic campaign-intent classification (no LLM). Steers the
+        # director + per-frame negatives. Never raises (defaults to general_ad).
+        _classify_campaign(run)
         if run.cancelled:
             _finish_cancelled(run)
             return
@@ -749,6 +801,8 @@ def run_to_dict(run: Run) -> dict:
         "completed": sum(1 for fr in run.frame_results.values() if fr.status == "ok"),
         "counts": _counts(run),
         "created_at": run.created_at, "updated_at": run.updated_at,
+        "intent": run.intent,
+        "intent_meta": run.intent_meta,
         "director": run.director,
         "logo": run.logo or None,
         "banners": banners,

@@ -49,15 +49,18 @@ _APPROVED_BG_HEXES = {bg.upper() for bg, _ in BUTTON_COMBOS}
 # Aspect + safe zones + legibility only — the COMPOSITION (where the subject sits,
 # full-bleed vs paneled) is the creative direction's choice, so concepts vary
 # instead of all converging on one "headline-left / subject-right" template.
+# Aspect + safe zones + an INTEGRATED-composition default (one campaign visual with
+# shared lighting/palette/depth, the headline/ticker dominant), plus a per-format
+# adaptation note. Hard vertical split-panels only happen if the direction asks.
 LAYOUT_BASE = {
-    "1200x1200": "Aspect 1:1 square. The headline is the dominant text block in its own high-contrast, fully legible zone; the hero subject/visual gets a separate zone with clear separation. Composition (subject left/right/centered/full-bleed with a text overlay panel) is the creative direction's choice. Generous breathing room; keep text ~6% clear of every edge.",
-    "1080x1080": "Aspect 1:1 square. The headline is the dominant text block in its own high-contrast, fully legible zone; the hero subject/visual gets a separate zone with clear separation. Composition (subject left/right/centered/full-bleed with a text overlay panel) is the creative direction's choice. Generous breathing room; keep text ~6% clear of every edge.",
-    "1200x628":  "Aspect 1.91:1 wide banner. Headline block and hero subject share the frame — split or overlay per the creative direction. Headline stays large and legible; 12% safe top+bottom.",
-    "1080x1920": "Aspect 9:16 tall. Headline in the upper area with the hero subject filling the lower two-thirds, OR a full-bleed subject with a headline overlay — per the creative direction. Mobile safe top 8% + bottom 12%; 10% safe left+right.",
-    "1080x1350": "Aspect 4:5 portrait. Headline prominent with the hero subject in a separate zone, or full-bleed with overlay — per the creative direction. Editorial, premium; 10% safe left+right.",
-    "960x1200":  "Aspect 4:5 portrait. Headline prominent with the hero subject in a separate zone, or full-bleed with overlay — per the creative direction. Editorial, premium; 10% safe left+right.",
-    "1920x1080": "Aspect 16:9 landscape. Headline block and hero subject share the frame — split or overlay per the creative direction. Cinematic, wide; headline large and legible.",
-    "1200x960":  "Aspect 5:4 mild-wide. Headline block and hero subject share the frame — split or overlay per the creative direction. Headline large and legible.",
+    "1200x1200": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge.",
+    "1080x1080": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge.",
+    "1200x628":  "Aspect 1.91:1 wide banner. ONE integrated composition (subject, type and background share lighting and depth — not pasted blocks): compressed but readable, fewer elements, a strong left-to-right reading flow. Headline/ticker dominant and legible. Avoid hard split-panels unless requested; 12% safe top+bottom.",
+    "1080x1920": "Aspect 9:16 tall. ONE integrated composition with a STACKED hierarchy — headline/ticker toward the top, the hero subject/scene filling below, with breathing room between. Subject, type and background share one lighting and palette (not pasted blocks). Mobile safe top 8% + bottom 12%; 10% safe left+right.",
+    "1080x1350": "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker prominent toward the top, hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right.",
+    "960x1200":  "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker prominent toward the top, hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right.",
+    "1920x1080": "Aspect 16:9 landscape. ONE integrated cinematic composition — compressed, fewer elements, strong left-to-right flow; subject and background share lighting and depth (not pasted blocks). Headline/ticker dominant and legible. Avoid hard split-panels unless requested.",
+    "1200x960":  "Aspect 5:4 mild-wide. ONE integrated composition — headline/ticker dominant and legible, subject and background sharing lighting and depth (not pasted blocks). Avoid hard split-panels unless requested.",
 }
 
 BUTTON_PLACEMENT = {
@@ -108,6 +111,8 @@ DISPLAY_SIZES = {
     "300x250", "728x90", "160x600", "300x600", "970x250",
     "320x50", "1200x300", "512x128", "300x60", "600x315", "600x500",
 }
+# Tiny slots where body / secondary copy is unreadable — show only the key line.
+_TINY_SLOTS = {"320x50", "300x60", "728x90", "512x128"}
 _DISPLAY_ALIASES = {
     "300x250":  "1080x1080",   # ~square (medium rectangle)
     "728x90":   "1920x1080",   # extreme wide (leaderboard)
@@ -138,25 +143,74 @@ SYSTEM_HEADER = (
     "generic stock template."
 )
 
-HARD_NEGATIVES = (
+# Always-on negatives (every intent). The invented-numbers / fake-logos invariant
+# lives HERE so the finance unlock below can never leak fabricated data.
+HARD_NEGATIVES_BASE = (
     "Avoid the tells of cheap AI/stock creative unless the direction explicitly calls "
     "for them: watercolor or ink-wash gradient backgrounds; glowing bokeh particle "
-    "dust; abstract swooshes or wave lines; candlestick or line stock-market charts "
-    "ANYWHERE (including as props on papers, screens, tablets or walls); and the "
-    "generic corporate stock-photo trope — a suited person seated at a desk, hand on "
-    "chin, frowning at paperwork or a laptop. Commit to ONE dominant idea — do not "
-    "stack competing metaphors or props (no symbol soup). A human subject should FACE "
-    "THE VIEWER with confident, aspirational posture and eye contact, never look down "
-    "at props. For finance/investing: NO gambling or luck symbolism (dice, casino "
-    "chips, roulette, slot machines, lottery or scratch cards) and NO get-rich-quick "
-    "imagery (cash rain, money piles, luxury-car flexing) — both are off-message and a "
-    "compliance risk. Never include: real or identifiable individuals or celebrities (a "
-    "generic, fictional model is fine and encouraged), real company logos, brand "
-    "wordmarks or trademarked packaging, fake or garbled UI text and invented numbers "
-    "inside screens or charts, recognizable real-world landmarks or architecture (use "
-    "generic), watermarks, or AI artifacts (warped or asymmetric faces and eyes, "
+    "dust; abstract swooshes or wave lines; and the generic corporate stock-photo "
+    "trope — a suited person seated at a desk, hand on chin, frowning at paperwork or "
+    "a laptop. Commit to ONE dominant idea — do not stack competing metaphors or props "
+    "(no symbol soup). A human subject should FACE THE VIEWER with confident, "
+    "aspirational posture and eye contact, never look down at props. Never include: "
+    "real or identifiable individuals or celebrities (a generic, fictional model is "
+    "fine and encouraged), real company logos, brand wordmarks or trademarked "
+    "packaging, INVENTED numbers, fake performance data, percentages, prices, fake "
+    "tickers with real symbols, or fabricated claims unless the user provided that "
+    "exact text, garbled UI text, recognizable real-world landmarks or architecture "
+    "(use generic), watermarks, or AI artifacts (warped or asymmetric faces and eyes, "
     "malformed hands/fingers/teeth, melted or duplicated text, misspelled words, "
     "stripped or wrong diacritics)."
+)
+
+# Non-finance intents: market/trading graphics are off-concept and stay banned.
+NON_FINANCE_MARKET_BAN = (
+    " Do NOT add stock-market charts, candlestick or line tickers, trading dashboards "
+    "or financial UI ANYWHERE (including as props on papers, screens, tablets or "
+    "walls) — they are off-concept here."
+)
+
+# Finance/investment intents: premium financial visual language is unlocked, but kept
+# ABSTRACT and non-readable so the invented-numbers invariant (in BASE) still holds.
+FINANCE_ALLOW = (
+    " This is a finance/investment ad — premium financial visual language is "
+    "ENCOURAGED: subtle abstract market graphics, non-specific candlestick or line "
+    "motifs as background texture (never a readable real chart), clean upward growth "
+    "arrows and growth-direction cues, percentage-style UI accents, fintech dashboard "
+    "atmosphere, data-grid depth, deep premium fintech backgrounds — always as "
+    "atmosphere supporting the hero, never the hero itself. Palette: dark navy / deep "
+    "blue / emerald / black, strong contrast, cinematic commercial lighting, bold "
+    "dominant title or ticker. NEVER render readable invented numbers, performance "
+    "figures, prices, fake tickers' data, fake logos or implied claims — keep all "
+    "market graphics abstract and non-readable. NO gambling or luck symbolism (dice, "
+    "casino chips, roulette, slot machines, lottery or scratch cards) and NO "
+    "get-rich-quick imagery (cash rain, money piles, luxury-car flexing). Avoid "
+    "literal supermarket/store/shelf scenes, flat corporate brochure looks, and cheap "
+    "trading-signal aesthetics."
+)
+
+# Intent groups that unlock the finance visual language (mirrors intent.FINANCE_INTENTS).
+_FINANCE_INTENTS = frozenset({"investment_ad", "finance_ad", "trading_education_ad"})
+
+
+def hard_negatives_for(intent: str = "general_ad") -> str:
+    """Negatives tuned to campaign intent: finance/investment intents unlock premium
+    market visuals; every other intent keeps the strict market-graphics ban. The
+    invented-numbers / fake-logos invariant (BASE) applies regardless of intent."""
+    tail = FINANCE_ALLOW if intent in _FINANCE_INTENTS else NON_FINANCE_MARKET_BAN
+    return HARD_NEGATIVES_BASE + tail
+
+
+# Back-compat: existing importers of HARD_NEGATIVES keep today's strict behavior.
+HARD_NEGATIVES = HARD_NEGATIVES_BASE + NON_FINANCE_MARKET_BAN
+
+# Copy contract — render only the user's provided copy, invent nothing.
+COPY_CONTRACT = (
+    "Copy contract: render ONLY the provided copy, exactly as written — no paraphrase, "
+    "no translation unless requested. Add NO other words, labels, captions, taglines, "
+    "fake buttons, fake logos, disclaimers, price tags, percentages, ticker tapes with "
+    "invented symbols, or UI text. No invented numbers anywhere unless they appear in "
+    "the copy above."
 )
 
 BRAND_DEFENCE_LINE = (
@@ -249,6 +303,11 @@ def layout_lock(size: str, has_cta: bool) -> str:
             f"Unsupported size: {size}. Supported: {sorted(LAYOUT_BASE.keys())}"
         )
     base = LAYOUT_BASE[size]
+    if size in _TINY_SLOTS:
+        base += (
+            " Tiny slot — render ONLY the most important line (the ticker or headline); "
+            "omit body and secondary copy; ensure it reads in 1-2 seconds."
+        )
     if has_cta:
         return f"{base} CTA button placed {BUTTON_PLACEMENT[size]}."
     return base
@@ -264,12 +323,16 @@ def _validate_button_combo(combo) -> Optional[str]:
     return None
 
 
-def build_prompt(concept: dict, size: str) -> str:
+def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
     """Compose the OpenAI generation prompt for one (concept, size).
 
-    System layer first (premise + hard negatives + layout + verbatim title +
-    hook directive), then Claude's creative_brief paragraph, then optional
-    CTA button line, then conditional typography/RTL rules.
+    System layer first (premise + intent-tuned hard negatives + layout + verbatim
+    title + hook directive + copy contract), then the creative_brief paragraph,
+    then optional CTA button line, then conditional typography/RTL rules.
+
+    `intent` is the campaign intent (see banner_engine.intent.INTENTS); it selects
+    the negatives ruleset (finance intents unlock premium market visuals). Defaults
+    to the strict 'general_ad' so callers that don't pass it keep today's behavior.
 
     Required concept fields: title, hook_phrase, creative_brief.
     Optional: locale (default 'en'), cta + button_combo (paired).
@@ -295,7 +358,7 @@ def build_prompt(concept: dict, size: str) -> str:
 
     sections = [
         SYSTEM_HEADER,
-        HARD_NEGATIVES,
+        hard_negatives_for(intent),
         layout_lock(size, has_cta=has_cta),
         hierarchy_rule(has_cta=has_cta),
         f'Title (verbatim, render exactly as written): "{title}"',
@@ -303,6 +366,7 @@ def build_prompt(concept: dict, size: str) -> str:
         "the type-hero of the composition; its treatment is specified in the "
         "creative direction below.",
         BRAND_DEFENCE_LINE,
+        COPY_CONTRACT,
         "Creative direction: " + brief.strip(),
     ]
 
@@ -329,7 +393,8 @@ def build_prompt(concept: dict, size: str) -> str:
 
 
 def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
-                        art_direction: Optional[str] = None) -> str:
+                        art_direction: Optional[str] = None,
+                        intent: str = "general_ad") -> str:
     """Compose a recomposition prompt for /v1/images/edits.
 
     Sent with the MVP master image attached. Preserves the title, hook, button,
@@ -395,16 +460,19 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
     if art_direction and art_direction.strip():
         sections.append("Art direction for this format: " + art_direction.strip())
 
+    # Finance intents may keep abstract market texture from the master; non-finance
+    # recomps must not drift into a generic candlestick-chart template.
+    chart_clause = "" if intent in _FINANCE_INTENTS else " or generic candlestick-chart template"
     sections += [
         "PRESERVE (reposition, do not remove):\n" + "\n".join(preserve),
 
         BRAND_DEFENCE_LINE,
+        COPY_CONTRACT,
 
         f"Constraints: exactly {target_size} px. No new content. No watermarks. "
         "NO HARD SPLIT-PANEL. Keep it a real ad: no fake UI text or invented numbers, "
         "no real brand logos or wordmarks, no recognizable real landmarks, no AI "
-        "artifacts; do not drift into the watercolor/bokeh/abstract-swoosh or generic "
-        "candlestick-chart template.",
+        f"artifacts; do not drift into the watercolor/bokeh/abstract-swoosh{chart_clause}.",
     ]
     if is_rtl(locale):
         sections.append("RTL composition: keep mirrored direction; hook + copy block on the right.")

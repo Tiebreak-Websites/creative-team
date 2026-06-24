@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-const RUNNING = ['queued', 'directing', 'running_master', 'running_recomp']
+const RUNNING = ['queued', 'classifying', 'directing', 'running_master', 'running_recomp', 'evaluating']
 
 /** Sort a concept's banners: master first, then by pixel area ascending. */
 function sortBanners(banners: Banner[]): Banner[] {
@@ -426,8 +426,12 @@ function statusLabel(s: string): string {
   switch (s) {
     case 'queued':
       return 'Queued…'
+    case 'classifying':
+      return 'Reading the brief…'
     case 'directing':
       return 'Art-directing with GPT-5.5…'
+    case 'evaluating':
+      return 'Reviewing the result…'
     case 'running_master':
       return 'Rendering master concepts…'
     case 'running_recomp':
