@@ -104,7 +104,7 @@ export function OutputPane({
 }: {
   runs: RunData[]
   onHelp?: () => void
-  onDeleteBanner?: (label: string) => void
+  onDeleteBanner?: (runId: string, label: string) => void
   onCancel?: () => void
 }) {
   const [libOpen, setLibOpen] = useState(false)
@@ -124,6 +124,7 @@ export function OutputPane({
         const src = assetUrl(b.url as string)
         return {
           label: b.label,
+          runId: g.runId,
           src,
           downloadHref: `${src}?download=1&name=${encodeURIComponent(fileName)}`,
           size: b.size,
@@ -159,7 +160,7 @@ export function OutputPane({
         index={libIndex}
         onIndexChange={setLibIndex}
         onClose={() => setLibOpen(false)}
-        onDelete={(label) => onDeleteBanner?.(label)}
+        onDelete={(runId, label) => onDeleteBanner?.(runId, label)}
         downloadAllHref={okRunIds.length ? zipAllUrl(okRunIds) : undefined}
       />
     </div>
@@ -247,8 +248,10 @@ function ConceptGroupBlock({
 }: {
   g: ConceptGroup
   onView: (label: string) => void
-  onDelete?: (label: string) => void
+  onDelete?: (runId: string, label: string) => void
 }) {
+  // Bind this group's run id so a deletion is scoped to the right run.
+  const onDeleteLabel = onDelete ? (label: string) => onDelete(g.runId, label) : undefined
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
@@ -282,7 +285,7 @@ function ConceptGroupBlock({
             version={g.number}
             index={i}
             onView={onView}
-            onDelete={onDelete}
+            onDelete={onDeleteLabel}
           />
         ))}
       </div>

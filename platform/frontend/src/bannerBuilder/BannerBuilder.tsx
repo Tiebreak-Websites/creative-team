@@ -260,12 +260,18 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     writeSnapshot(runs)
   }, [runs])
 
-  // Trash: deleted banner labels (persisted), filtered out of what we render.
+  // Trash: deleted banners (persisted), filtered out of what we render. Keyed
+  // PER-RUN: banner labels (concept__size, e.g. "c1__1200x1200") repeat across
+  // runs, so a bare-label key would hide every future run's same-size banner —
+  // that was the "generates but shows nothing" bug. Old bare-label entries from
+  // before this fix simply never match the new runId-scoped key, so any earlier
+  // poisoned state clears itself.
   const [deleted, setDeleted] = useState<Set<string>>(() => new Set(readDeleted()))
-  function deleteBanner(label: string) {
+  const deletedKey = (runId: string, label: string) => `${runId}__${label}`
+  function deleteBanner(runId: string, label: string) {
     setDeleted((prev) => {
       const next = new Set(prev)
-      next.add(label)
+      next.add(deletedKey(runId, label))
       writeDeleted([...next])
       return next
     })
@@ -273,8 +279,13 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   const visibleRuns = useMemo(
     () =>
       runs
-        .map((r) => ({ ...r, banners: r.banners.filter((b) => !deleted.has(b.label)) }))
-        .filter((r) => r.banners.length > 0),
+        .map((r) => ({
+          ...r,
+          banners: r.banners.filter((b) => !deleted.has(deletedKey(r.run_id, b.label))),
+        }))
+        // Keep a run visible while it's still active even if it has no banners
+        // yet, so progress always shows; hide only finished, fully-emptied runs.
+        .filter((r) => r.banners.length > 0 || !TERMINAL_STATUSES.includes(r.status)),
     [runs, deleted],
   )
 

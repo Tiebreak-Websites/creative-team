@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export interface LibraryItem {
-  label: string // unique id
+  label: string // banner label (concept__size) — NOT unique across runs
+  runId: string // owning run, so a delete is scoped to the right run
   src: string // full-size image URL (ready to use)
   downloadHref: string // href that downloads this single PNG (already correctly named)
   size: string // e.g. "1200x1200"
@@ -41,7 +42,7 @@ export function BannerLibrary({
   index: number
   onIndexChange: (i: number) => void
   onClose: () => void
-  onDelete: (label: string) => void
+  onDelete: (runId: string, label: string) => void
   downloadAllHref?: string
 }): JSX.Element | null {
   const count = items.length
@@ -145,7 +146,7 @@ export function BannerLibrary({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => onDelete(current.label)}
+            onClick={() => onDelete(current.runId, current.label)}
             title="Delete this banner"
             className="text-destructive hover:border-destructive hover:text-destructive"
           >
