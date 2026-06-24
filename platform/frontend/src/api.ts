@@ -106,6 +106,26 @@ export function versionZipUrl(runId: string, concept: string, v: number, title: 
   return assetUrl(`/api/tools/banner-builder/runs/${runId}/version.zip?${q.toString()}`)
 }
 
+/** Cancel an in-progress run; the runner stops between frames and settles to `cancelled`. */
+export async function cancelRun(runId: string): Promise<void> {
+  await fetch(`${BASE}/tools/banner-builder/runs/${runId}/cancel`, { method: 'POST' }).catch(() => {})
+}
+
+/** Upload 1–4 style-reference images; returns server ids to pass in the run payload. */
+export async function uploadReferences(files: File[]): Promise<string[]> {
+  const fd = new FormData()
+  files.forEach((f) => fd.append('files', f))
+  const r = await fetch(`${BASE}/tools/banner-builder/references`, { method: 'POST', body: fd })
+  if (!r.ok) {
+    const body = await asJson(r)
+    throw new ApiError(
+      r.status,
+      typeof body.detail === 'string' ? body.detail : `Upload failed (HTTP ${r.status})`,
+    )
+  }
+  return (await r.json()).ids ?? []
+}
+
 export interface SuggestRequest {
   banner_text: string
   cta?: string

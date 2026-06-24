@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { HelpCircle } from 'lucide-react'
+import { HelpCircle, Settings } from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
@@ -12,6 +12,7 @@ import { Logo } from './components/Logo'
 import { ThemeToggle } from './components/ThemeToggle'
 import { InstallButton } from './components/InstallButton'
 import { VersionBadge } from './components/VersionBadge'
+import { BrandsSettings } from './admin/BrandsSettings'
 import { Button } from '@/components/ui/button'
 
 export function App() {
@@ -63,8 +64,11 @@ function Tab({
 }
 
 // Two tools, no home page: Banner Builder + LP Builder (placeholder).
+// Admins also get a Settings surface (Brands).
 function Workspace() {
+  const { user } = useAuth()
   const [page, setPage] = useState<Page>('banner')
+  const [view, setView] = useState<'tool' | 'settings'>('tool')
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -79,8 +83,17 @@ function Workspace() {
       .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
   }, [])
 
-  const showBanner = page === 'banner'
-  const goBanner = () => setPage('banner')
+  const isAdmin = user?.role === 'admin'
+  const bannerActive = page === 'banner' && view === 'tool'
+  const lpActive = page === 'lp' && view === 'tool'
+  function goBanner() {
+    setPage('banner')
+    setView('tool')
+  }
+  function goLp() {
+    setPage('lp')
+    setView('tool')
+  }
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
@@ -94,19 +107,30 @@ function Workspace() {
           <Logo className="h-8 w-auto transition-transform duration-200 group-hover:scale-[1.03]" />
         </button>
         <nav className="flex items-center gap-1">
-          <Tab active={showBanner} onClick={goBanner}>
+          <Tab active={bannerActive} onClick={goBanner}>
             Banner Builder
           </Tab>
-          <Tab active={page === 'lp'} onClick={() => setPage('lp')}>
+          <Tab active={lpActive} onClick={goLp}>
             LP Builder
           </Tab>
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <VersionBadge />
-          {showBanner && (
+          {bannerActive && (
             <Button variant="ghost" size="sm" className="font-display" onClick={() => setHelpOpen(true)}>
               <HelpCircle className="h-4 w-4" />
               Help
+            </Button>
+          )}
+          {isAdmin && (
+            <Button
+              variant={view === 'settings' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="font-display"
+              onClick={() => setView((v) => (v === 'settings' ? 'tool' : 'settings'))}
+            >
+              <Settings className="h-4 w-4" />
+              Settings
             </Button>
           )}
           <InstallButton />
@@ -116,7 +140,11 @@ function Workspace() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-hidden">
-        {page === 'lp' ? (
+        {view === 'settings' ? (
+          <div className="h-full overflow-y-auto">
+            <BrandsSettings />
+          </div>
+        ) : page === 'lp' ? (
           <LPBuilder />
         ) : loadError ? (
           <div className="p-6">

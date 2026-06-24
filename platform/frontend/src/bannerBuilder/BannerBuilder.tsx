@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronUp, Loader2, Plus, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronUp,
+  ImagePlus,
+  Loader2,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  Tag,
+  X,
+} from 'lucide-react'
 import type { Meta, RunData, Tool } from '../types'
 import { TERMINAL_STATUSES } from '../types'
-import { ApiError, getRun } from '../api'
+import { ApiError, cancelRun, getRun, uploadReferences } from '../api'
 import { createRun } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
@@ -16,6 +27,7 @@ import {
 } from './artDirection'
 import { loadBrand } from './brand'
 import { detectLocale } from './detectLocale'
+import { listBrands, type Brand } from './brandsApi'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -216,8 +228,18 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['Most used']))
   const [sizeQuery, setSizeQuery] = useState('')
 
-  // Floating command bar popovers ('presets' | 'model' | null).
-  const [barPopover, setBarPopover] = useState<null | 'model'>(null)
+  // Floating command bar popovers.
+  const [barPopover, setBarPopover] = useState<null | 'model' | 'brand'>(null)
+
+  // Style-reference images (uploaded → ids sent with the run; visual only).
+  const [refs, setRefs] = useState<{ id: string; url: string }[]>([])
+  const [refBusy, setRefBusy] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Brands (palette + optional corner logo). Loaded from the brands API.
+  const [brands, setBrands] = useState<Brand[]>([])
+  const [brandId, setBrandId] = useState<string>('')
+  const [logoCorner, setLogoCorner] = useState<'tl' | 'tr' | 'bl' | 'br'>('br')
 
   // ---- Concept cards ----
   const [cards, setCards] = useState<ConceptCard[]>([blankCard()])
@@ -330,6 +352,13 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     }
   }, [cards, localeAuto])
 
+  // Load brands once for the brand selector.
+  useEffect(() => {
+    listBrands()
+      .then(setBrands)
+      .catch(() => {})
+  }, [])
+
   const running = runs.some((r) => !TERMINAL_STATUSES.includes(r.status))
 
   // ---- Sizes ----
@@ -414,6 +443,35 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
 
   const canRun = cards.length > 0 && cards.every((c) => c.title.trim().length > 0)
   const selectedSizes = Array.from(sizes)
+  const selectedBrand = brands.find((b) => b.id === brandId)
+
+  // Cancel every still-running batch; polling picks up the `cancelled` status.
+  function cancelRuns() {
+    runsRef.current
+      .filter((r) => !TERMINAL_STATUSES.includes(r.status))
+      .forEach((r) => cancelRun(r.run_id))
+  }
+
+  // Upload dropped/picked reference images (max 4); store ids + local previews.
+  async function addRefs(files: FileList | null) {
+    if (!files || !files.length) return
+    const list = Array.from(files).slice(0, 4 - refs.length)
+    if (!list.length) return
+    setRefBusy(true)
+    try {
+      const ids = await uploadReferences(list)
+      setRefs((prev) =>
+        [...prev, ...ids.map((id, i) => ({ id, url: URL.createObjectURL(list[i]) }))].slice(0, 4),
+      )
+    } catch {
+      /* upload failure is non-fatal — the run just won't include those refs */
+    } finally {
+      setRefBusy(false)
+    }
+  }
+  function removeRef(id: string) {
+    setRefs((prev) => prev.filter((r) => r.id !== id))
+  }
 
   async function startRun() {
     setFormError(null)
@@ -434,6 +492,9 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
         if (c.button.trim()) p.button = c.button.trim()
         return p
       }),
+      references: refs.length ? refs.map((r) => r.id) : undefined,
+      brand_id: brandId || undefined,
+      logo_corner: brandId && selectedBrand?.logo_svg ? logoCorner : undefined,
     }
     try {
       const initial = await createRun(payload)
@@ -533,7 +594,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
       {/* ---------------- Center: results + floating command bar ---------------- */}
       <section className="relative min-h-0 flex-1 bg-background">
         <div className="h-full overflow-y-auto pb-56">
-          <OutputPane runs={visibleRuns} onDeleteBanner={deleteBanner} />
+          <OutputPane runs={visibleRuns} onDeleteBanner={deleteBanner} onCancel={cancelRuns} />
         </div>
 
         {/* click-away backdrop for the bar popovers */}
@@ -623,6 +684,30 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
             </div>
           )}
 
+          {refs.length > 0 && (
+            <div className="flex max-w-2xl flex-wrap items-center justify-center gap-1.5">
+              <span className="mr-1 font-display text-[11px] font-medium text-muted-foreground">
+                references:
+              </span>
+              {refs.map((r) => (
+                <span
+                  key={r.id}
+                  className="group relative inline-flex h-10 w-10 overflow-hidden rounded-md border border-border"
+                >
+                  <img src={r.url} alt="" className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeRef(r.id)}
+                    title="Remove reference"
+                    className="absolute right-0 top-0 hidden bg-foreground/60 p-0.5 text-background group-hover:block"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
           <div className="relative flex w-full max-w-3xl flex-col gap-2 rounded-2xl border border-border bg-card/95 p-2 shadow-[0_18px_44px_-14px_rgba(0,0,0,0.75)] backdrop-blur-md">
             {/* Row 1 — prompt: full width, a bit taller */}
             <Textarea
@@ -703,6 +788,124 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                 </div>
               )}
             </div>
+
+            {/* Brand — palette + optional corner logo */}
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setBarPopover((p) => (p === 'brand' ? null : 'brand'))}
+                className={cn(BAR_BTN, brandId && 'border-primary/50 text-primary')}
+              >
+                <Tag className="h-4 w-4" />
+                <span className="hidden lg:inline">{selectedBrand ? selectedBrand.name : 'Brand'}</span>
+                <ChevronDown
+                  className={cn(
+                    'h-3.5 w-3.5 opacity-60 transition-transform',
+                    barPopover === 'brand' && 'rotate-180',
+                  )}
+                />
+              </button>
+              {barPopover === 'brand' && (
+                <div className="absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 space-y-3 rounded-xl border border-border bg-popover p-3 shadow-xl">
+                  <div className="space-y-1">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Brand
+                    </div>
+                    <div className="max-h-44 space-y-0.5 overflow-y-auto">
+                      <button
+                        type="button"
+                        onClick={() => setBrandId('')}
+                        className={cn(
+                          'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                          !brandId ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60',
+                        )}
+                      >
+                        None
+                      </button>
+                      {brands.map((b) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => setBrandId(b.id)}
+                          className={cn(
+                            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                            brandId === b.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60',
+                          )}
+                        >
+                          <span className="flex -space-x-1">
+                            {b.colors.slice(0, 3).map((c) => (
+                              <span
+                                key={c}
+                                className="h-3 w-3 rounded-full border border-border"
+                                style={{ backgroundColor: c }}
+                              />
+                            ))}
+                          </span>
+                          <span className="truncate">{b.name}</span>
+                        </button>
+                      ))}
+                      {brands.length === 0 && (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                          No brands yet — add them in Settings.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {selectedBrand?.logo_svg && (
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Logo corner
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {(['tl', 'tr', 'bl', 'br'] as const).map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => setLogoCorner(c)}
+                            className={cn(
+                              'rounded-md border px-2 py-1 text-[11px] font-semibold uppercase transition-colors',
+                              logoCorner === c
+                                ? 'border-primary/50 bg-primary/10 text-primary'
+                                : 'border-border text-muted-foreground hover:text-foreground',
+                            )}
+                          >
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Reference images — visual style only */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={refs.length >= 4 || refBusy}
+              title="Attach style-reference images (visual only — text is ignored)"
+              className={cn(BAR_BTN, 'shrink-0', refs.length > 0 && 'border-primary/50 text-primary')}
+            >
+              {refBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+              <span className="hidden lg:inline">Reference</span>
+              {refs.length > 0 && (
+                <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                  {refs.length}
+                </span>
+              )}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              hidden
+              onChange={(e) => {
+                addRefs(e.target.files)
+                e.target.value = ''
+              }}
+            />
 
             {/* Locale — its own control, with real flags */}
             <Select

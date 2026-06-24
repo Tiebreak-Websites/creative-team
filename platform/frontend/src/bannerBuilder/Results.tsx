@@ -8,6 +8,7 @@ import {
   Maximize2,
   Sparkles,
   Trash2,
+  X,
 } from 'lucide-react'
 import type { Banner, RunData } from '../types'
 import { assetUrl, versionZipUrl, zipAllUrl } from '../api'
@@ -99,10 +100,12 @@ export function OutputPane({
   runs,
   onHelp,
   onDeleteBanner,
+  onCancel,
 }: {
   runs: RunData[]
   onHelp?: () => void
   onDeleteBanner?: (label: string) => void
+  onCancel?: () => void
 }) {
   const [libOpen, setLibOpen] = useState(false)
   const [libIndex, setLibIndex] = useState(0)
@@ -139,7 +142,7 @@ export function OutputPane({
 
   return (
     <div className="flex min-h-full flex-col animate-fade-in">
-      <OverviewBar runs={runs} />
+      <OverviewBar runs={runs} onCancel={onCancel} />
       <div className="space-y-7 p-5">
         {firstError && (
           <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -163,7 +166,7 @@ export function OutputPane({
   )
 }
 
-function OverviewBar({ runs }: { runs: RunData[] }) {
+function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => void }) {
   const total = runs.reduce((a, r) => a + r.total, 0)
   const ready = runs.reduce((a, r) => a + r.completed, 0)
   const pct = total ? Math.round((ready / total) * 100) : 0
@@ -201,6 +204,17 @@ function OverviewBar({ runs }: { runs: RunData[] }) {
       <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
         {ready}/{total} ready
       </span>
+
+      {running && onCancel && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0 gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
+          onClick={onCancel}
+        >
+          <X className="h-4 w-4" /> Cancel
+        </Button>
+      )}
 
       {directed && (
         <Badge variant="soft" className="shrink-0 gap-1">
