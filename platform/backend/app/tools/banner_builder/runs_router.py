@@ -207,6 +207,19 @@ def build_router() -> APIRouter:
             headers={"Content-Disposition": 'attachment; filename="banners-selected.zip"'},
         )
 
+    @router.get("/storage")
+    def storage():
+        """Usage of the banner artifact disk (PLATFORM_ARTIFACT_DIR) — powers the
+        header storage indicator. Returns bytes for used / total / free."""
+        import shutil
+        try:
+            root = runner.settings.ARTIFACT_ROOT
+            root.mkdir(parents=True, exist_ok=True)
+            total, used, free = shutil.disk_usage(root)
+            return {"used_bytes": int(used), "total_bytes": int(total), "free_bytes": int(free)}
+        except Exception:  # noqa: BLE001
+            return {"used_bytes": 0, "total_bytes": 0, "free_bytes": 0}
+
     # Brands CRUD lives under this same prefix (/api/tools/banner-builder/brands).
     # GET is any logged-in user; writes self-gate with require_admin.
     router.include_router(build_brands_router())

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { HelpCircle, RefreshCw, Settings } from 'lucide-react'
+import { HardDrive, HelpCircle, RefreshCw, Settings } from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
@@ -14,6 +14,7 @@ import { InstallButton } from './components/InstallButton'
 import { VersionBadge } from './components/VersionBadge'
 import { BrandsSettings } from './admin/BrandsSettings'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 export function App() {
   return (
@@ -65,6 +66,44 @@ function UpdatePrompt() {
     >
       <RefreshCw className="h-4 w-4" /> New version available — reload
     </button>
+  )
+}
+
+/** Compact disk-usage gauge for the header — the shared banner artifact disk. */
+function StorageBadge() {
+  const [s, setS] = useState<{ used_bytes: number; total_bytes: number; free_bytes: number } | null>(null)
+  useEffect(() => {
+    const load = () =>
+      fetch('/api/tools/banner-builder/storage')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => d && setS(d))
+        .catch(() => {})
+    load()
+    const iv = window.setInterval(load, 60_000)
+    window.addEventListener('focus', load)
+    return () => {
+      window.clearInterval(iv)
+      window.removeEventListener('focus', load)
+    }
+  }, [])
+  if (!s || !s.total_bytes) return null
+  const pct = Math.min(100, Math.round((s.used_bytes / s.total_bytes) * 100))
+  const human = (b: number) =>
+    b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${Math.round(b / 1e6)} MB` : `${Math.round(b / 1e3)} KB`
+  const bar = pct >= 90 ? 'bg-destructive' : pct >= 75 ? 'bg-amber-500' : 'bg-primary'
+  return (
+    <div
+      className="hidden items-center gap-1.5 rounded-md border border-border bg-secondary/50 px-2 py-1 sm:flex"
+      title={`Banner storage — ${human(s.used_bytes)} of ${human(s.total_bytes)} used · ${human(s.free_bytes)} free`}
+    >
+      <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
+      <div className="h-1.5 w-14 overflow-hidden rounded-full bg-secondary">
+        <div className={cn('h-full rounded-full transition-all', bar)} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-[11px] tabular-nums text-muted-foreground">
+        {human(s.used_bytes)}/{human(s.total_bytes)}
+      </span>
+    </div>
   )
 }
 
@@ -160,6 +199,7 @@ function Workspace() {
           </Tab>
         </nav>
         <div className="ml-auto flex items-center gap-2">
+          <StorageBadge />
           <VersionBadge />
           {bannerActive && (
             <Button variant="ghost" size="sm" className="font-display" onClick={() => setHelpOpen(true)}>
