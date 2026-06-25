@@ -164,8 +164,8 @@ def post_images_edits(api_key, prompt, master_png_path, openai_size, model, qual
 
 
 def generate_png(*, api_key, prompt, mode, openai_size, model="gpt-image-2",
-                 quality="medium", master_png_path=None, timeout=540,
-                 max_retries=4, base_backoff=8, sleep=time.sleep, on_attempt=None):
+                 quality="medium", master_png_path=None, timeout=120,
+                 max_retries=2, base_backoff=8, sleep=time.sleep, on_attempt=None):
     """Generate (mode='gen') or recompose (mode='edit') one PNG; return raw bytes.
 
     Owns the exponential-backoff retry loop for 429 (rate limit) and 5xx

@@ -51,16 +51,34 @@ def create_app() -> FastAPI:
     mount_tool_routers(app, dependencies=protected)
 
     # Restore persisted banner runs from the durable disk (PLATFORM_ARTIFACT_DIR)
-    # so the gallery survives restarts/redeploys. Never fatal.
+    # so the gallery survives restarts/redeploys. Run in a BACKGROUND thread so a
+    # slow/large disk scan can't delay startup and fail the health check (which
+    # would trigger a restart loop). Never fatal.
     try:
+        import threading as _threading
         from . import runner as _banner_runner
-        _banner_runner.rehydrate_runs()
+        _threading.Thread(target=_banner_runner.rehydrate_runs, daemon=True,
+                          name="bb-rehydrate").start()
     except Exception:  # noqa: BLE001
         pass
 
     @app.get("/api/health")
     def health():
         return {"status": "ok", "tools": len(ToolRegistry.all())}
+
+    @app.get("/api/app-build")
+    def app_build():
+        """The deployed SPA's content-hashed bundle name. The frontend polls this
+        to detect a NEW deploy and offer a reload, so users never get stuck on a
+        stale cached bundle. /api/* is network-only in the service worker, so this
+        is always fresh."""
+        import re
+        try:
+            html = (settings.FRONTEND_DIST / "index.html").read_text(encoding="utf-8")
+            m = re.search(r"assets/index-[\w.-]+\.js", html)
+            return {"bundle": m.group(0) if m else None}
+        except Exception:  # noqa: BLE001
+            return {"bundle": None}
 
     _mount_frontend(app)
     return app

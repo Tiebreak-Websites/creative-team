@@ -36,8 +36,10 @@ TOOL_ID = "banner-builder"
 
 # Hard ceiling on concurrent OpenAI image calls across ALL runs/users.
 _OPENAI_SEM = threading.BoundedSemaphore(settings.OPENAI_CONCURRENCY)
-# Pool that runs the per-run orchestration so POST /run returns immediately.
-_RUN_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="bb-run")
+# Each run orchestrates on its OWN daemon thread (see create_and_start_run), NOT a
+# small fixed pool — otherwise a few slow/stuck runs saturate the pool and every
+# later run sits in 'queued' forever (an endless frontend spinner). Actual OpenAI
+# concurrency stays capped by _OPENAI_SEM above.
 
 # Terminal run states the frontend stops polling on.
 TERMINAL = {"completed", "partial", "failed", "cancelled"}
@@ -385,7 +387,8 @@ def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
         logo=logo_status,
     )
     STORE.add(run)
-    _RUN_POOL.submit(execute_run, run_id)
+    threading.Thread(target=execute_run, args=(run_id,), daemon=True,
+                     name=f"bb-run-{run_id}").start()
     return run
 
 
@@ -469,7 +472,12 @@ def _gen_one_frame(run: Run, frame: dict):
             run.logo.setdefault("reason", f"overlay failed: {type(e).__name__}: {e}")
 
     out_png = run.dir / f"{_label(frame['concept'], frame['size'])}.png"
-    out_png.write_bytes(png)
+    try:
+        out_png.write_bytes(png)
+    except Exception as e:  # noqa: BLE001 — a disk failure must FAIL the frame, never strand it as "running"
+        fr.status, fr.error = "gen_failed", f"disk write failed: {type(e).__name__}: {e}"
+        run.touch()
+        return
     fr.status, fr.gen_ms, fr.bytes, fr.png_path = "ok", int((time.time() - t0) * 1000), len(png), str(out_png)
     run.touch()
 
@@ -761,10 +769,15 @@ def execute_run(run_id: str):
         run.status, run.error = "failed", f"{type(e).__name__}: {e}"
         run.touch()
     finally:
-        # Persist every terminal run (completed/partial/failed/cancelled) so its
-        # banners + metadata survive a restart/redeploy (see _persist).
-        if run.status in TERMINAL:
-            _persist(run)
+        # Guarantee terminality: a worker must NEVER leave a run in a non-terminal
+        # state — that is exactly what produces an endless frontend spinner. If we
+        # somehow exit without a terminal status, force 'failed' so the run settles
+        # and the UI stops polling.
+        if run.status not in TERMINAL:
+            run.status, run.error = "failed", run.error or "run did not finish"
+            run.touch()
+        # Persist the terminal run so its banners + metadata survive a restart.
+        _persist(run)
 
 
 def _finish_cancelled(run: Run):

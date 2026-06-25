@@ -278,7 +278,7 @@ def _normalize(data: dict) -> dict:
 # Public entry point
 # ---------------------------------------------------------------------------
 def direct_concept(*, api_key, title, subtitle="", button="", style="", locale="en",
-                   sizes, model="gpt-5.5", effort="high", timeout=600,
+                   sizes, model="gpt-5.5", effort="high", timeout=150,
                    references=None, intent=DEFAULT_INTENT, concept_angle="") -> dict:
     """Ask GPT-5.5 to art-direct one concept across all requested sizes.
 

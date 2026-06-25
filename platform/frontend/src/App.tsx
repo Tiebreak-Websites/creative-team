@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { HelpCircle, Settings } from 'lucide-react'
+import { HelpCircle, RefreshCw, Settings } from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
@@ -19,7 +19,52 @@ export function App() {
   return (
     <AuthProvider>
       <Gate />
+      <UpdatePrompt />
     </AuthProvider>
+  )
+}
+
+/**
+ * Detects a new deploy so users are never stuck on a stale cached bundle (the
+ * cause of "the spinner runs forever after an update"). The backend's
+ * /api/app-build returns the deployed SPA's content-hashed bundle name; /api/* is
+ * network-only in the service worker, so it's always fresh. When it changes, we
+ * surface a one-click reload. Checked on focus and every couple of minutes.
+ */
+function UpdatePrompt() {
+  const [stale, setStale] = useState(false)
+  useEffect(() => {
+    let baseline: string | null = null
+    let cancelled = false
+    const fetchBundle = (): Promise<string | null> =>
+      fetch('/api/app-build', { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((d) => (d?.bundle as string) ?? null)
+        .catch(() => null)
+    fetchBundle().then((b) => {
+      baseline = b
+    })
+    const check = async () => {
+      const b = await fetchBundle()
+      if (!cancelled && b && baseline && b !== baseline) setStale(true)
+    }
+    const iv = window.setInterval(check, 120_000)
+    window.addEventListener('focus', check)
+    return () => {
+      cancelled = true
+      window.clearInterval(iv)
+      window.removeEventListener('focus', check)
+    }
+  }, [])
+  if (!stale) return null
+  return (
+    <button
+      type="button"
+      onClick={() => window.location.reload()}
+      className="animate-fade-up fixed bottom-4 left-1/2 z-[100] inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-primary/50 bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-lg hover:bg-primary/90"
+    >
+      <RefreshCw className="h-4 w-4" /> New version available — reload
+    </button>
   )
 }
 

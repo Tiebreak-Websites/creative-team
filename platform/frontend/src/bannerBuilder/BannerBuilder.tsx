@@ -455,11 +455,17 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   const selectedSizes = Array.from(sizes)
   const selectedBrand = brands.find((b) => b.id === brandId)
 
-  // Cancel every still-running batch; polling picks up the `cancelled` status.
+  // Stop every still-running batch. We ask the backend to cancel AND optimistically
+  // settle the run locally so the user is NEVER trapped in the spinner — even if the
+  // backend is slow or wedged, `running` flips false immediately and they can start a
+  // new generation. (A reload re-fetches real status, so finished banners aren't lost.)
   function cancelRuns() {
-    runsRef.current
-      .filter((r) => !TERMINAL_STATUSES.includes(r.status))
-      .forEach((r) => cancelRun(r.run_id))
+    const active = runsRef.current.filter((r) => !TERMINAL_STATUSES.includes(r.status))
+    active.forEach((r) => cancelRun(r.run_id))
+    setRuns((prev) =>
+      prev.map((r) => (TERMINAL_STATUSES.includes(r.status) ? r : { ...r, status: 'cancelled' })),
+    )
+    setPolling(false)
   }
 
   // Upload dropped/picked reference images (max 4); store ids + local previews.
