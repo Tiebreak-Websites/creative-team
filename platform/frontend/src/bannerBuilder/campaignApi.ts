@@ -64,5 +64,9 @@ export async function createRun(payload: CampaignRunRequest): Promise<RunData> {
     const errors = body.detail?.errors ?? [String(body.detail ?? 'Validation failed')]
     throw new ApiError(422, 'Validation failed.', { errors })
   }
+  if (r.status === 429) {
+    const errors = body.detail?.errors ?? ['Too many runs in a short time. Please wait a moment, then try again.']
+    throw new ApiError(429, 'Rate limited.', { errors })
+  }
   throw new ApiError(r.status, `Run failed (HTTP ${r.status}).`)
 }

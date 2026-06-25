@@ -18,6 +18,7 @@ import re
 import threading
 import time
 import uuid
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -134,6 +135,61 @@ class RunStore:
 
 
 STORE = RunStore()
+
+
+# --- Abuse / cost guards on the expensive /run endpoint --------------------
+# All in-memory (single-process, mirrors the in-memory RunStore). A per-user
+# sliding window caps how many runs one account can start; a short idempotency
+# window collapses accidental duplicate submits (double-click / network retry)
+# into the same run so they don't double the OpenAI spend.
+_GUARD_LOCK = threading.Lock()
+_USER_RUN_TIMES: Dict[str, deque] = {}
+_IDEMPOTENCY: Dict[str, tuple] = {}   # key -> (timestamp, run_id)
+_RATE_MAX = 30                        # max runs ...
+_RATE_WINDOW = 600.0                  # ... per 10 minutes, per user
+_IDEMP_TTL = 25.0                     # seconds an identical request maps to one run
+
+
+def idempotency_key(user_key: str, req: RunRequest) -> str:
+    """Stable key for an identical request from the same user (dedupe submits)."""
+    payload = {
+        "u": user_key,
+        "concepts": [(c.title or "", c.subtitle or "", c.button or "") for c in req.concepts],
+        "sizes": sorted(req.sizes or []),
+        "style": req.style or "",
+        "model": req.model, "quality": req.quality,
+        "effort": req.effort or "", "locale": req.locale or "",
+        "brand_id": getattr(req, "brand_id", "") or "",
+    }
+    return json.dumps(payload, sort_keys=True, ensure_ascii=False)
+
+
+def idempotent_run(key: str) -> Optional[str]:
+    """The run_id of an identical request seen within the TTL, else None."""
+    now = time.time()
+    with _GUARD_LOCK:
+        for k in [k for k, (ts, _) in _IDEMPOTENCY.items() if now - ts > _IDEMP_TTL]:
+            _IDEMPOTENCY.pop(k, None)
+        hit = _IDEMPOTENCY.get(key)
+        return hit[1] if hit else None
+
+
+def remember_run(key: str, run_id: str) -> None:
+    with _GUARD_LOCK:
+        _IDEMPOTENCY[key] = (time.time(), run_id)
+
+
+def rate_limit_ok(user_key: str) -> bool:
+    """Record a run attempt; False when the user is over the sliding-window budget."""
+    now = time.time()
+    with _GUARD_LOCK:
+        dq = _USER_RUN_TIMES.setdefault(user_key, deque())
+        while dq and now - dq[0] > _RATE_WINDOW:
+            dq.popleft()
+        if len(dq) >= _RATE_MAX:
+            return False
+        dq.append(now)
+        return True
 
 
 # ---------------------------------------------------------------------------

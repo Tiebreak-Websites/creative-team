@@ -531,9 +531,12 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   }
 
   return (
-    <div className="flex h-full min-h-0">
+    // Desktop-first 3-pane console. Panes use responsive widths (full at xl); on
+    // anything narrower than fits, the row scrolls horizontally rather than
+    // overlapping, so every pane stays reachable.
+    <div className="flex h-full min-h-0 overflow-x-auto">
       {/* ---------------- Left: sizes ---------------- */}
-      <aside className="flex w-[320px] shrink-0 flex-col bg-card animate-fade-in">
+      <aside className="flex w-[280px] shrink-0 flex-col bg-card animate-fade-in xl:w-[320px]">
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
           <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Sizes</h2>
 
@@ -615,7 +618,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       </aside>
 
       {/* ---------------- Center: results + floating command bar ---------------- */}
-      <section className="relative min-h-0 flex-1 bg-background">
+      <section className="relative min-h-0 min-w-0 flex-1 bg-background">
         <div className="h-full overflow-y-auto pb-56">
           <OutputPane runs={visibleRuns} onDeleteBanner={deleteBanner} onCancel={cancelRuns} />
         </div>
@@ -898,7 +901,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
                 />
               </button>
               {barPopover === 'brand' && (
-                <div className="absolute bottom-full left-1/2 z-50 mb-2 flex w-[480px] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
+                <div className="absolute bottom-full left-1/2 z-50 mb-2 flex w-[480px] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
                   {/* Left — brand catalog */}
                   <div className="w-44 shrink-0 border-r border-border p-2">
                     <div className="px-1 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -1131,7 +1134,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       </section>
 
       {/* ---------------- Right: concepts ---------------- */}
-      <aside className="flex w-[400px] shrink-0 flex-col bg-card animate-fade-in">
+      <aside className="flex w-[340px] shrink-0 flex-col bg-card animate-fade-in xl:w-[400px]">
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
           <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Versions</h2>
 

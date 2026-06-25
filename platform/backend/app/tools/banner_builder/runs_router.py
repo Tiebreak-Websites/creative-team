@@ -13,9 +13,10 @@ import zipfile
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
+from ...auth import require_user
 from ... import references as references_store
 from ... import runner
 from ...brands import build_brands_router
@@ -37,7 +38,7 @@ def build_router() -> APIRouter:
     router = APIRouter()
 
     @router.post("/run")
-    def create_run(req: RunRequest):
+    def create_run(req: RunRequest, user: dict = Depends(require_user)):
         api_key = get_secret("OPENAI_API_KEY")
         if not api_key:
             return JSONResponse(status_code=424, content={"missing_secrets": [_OPENAI_SECRET]})
@@ -50,7 +51,22 @@ def build_router() -> APIRouter:
         errors, concepts, sizes = runner.validate_request(req)
         if errors:
             raise HTTPException(status_code=422, detail={"errors": errors})
+        # Collapse an accidental duplicate submit (double-click / network retry)
+        # into the same run, and cap how many runs one account can fire (cost).
+        user_key = (user or {}).get("email") or "user"
+        idem = runner.idempotency_key(user_key, req)
+        existing_id = runner.idempotent_run(idem)
+        if existing_id:
+            existing = runner.STORE.get(existing_id)
+            if existing is not None:
+                return JSONResponse(status_code=202, content=runner.run_to_dict(existing))
+        if not runner.rate_limit_ok(user_key):
+            raise HTTPException(
+                status_code=429,
+                detail={"errors": ["You've started a lot of runs in a short time. Please wait a minute, then try again."]},
+            )
         run = runner.create_and_start_run(req, concepts, sizes, api_key)
+        runner.remember_run(idem, run.run_id)
         return JSONResponse(status_code=202, content=runner.run_to_dict(run))
 
     @router.get("/runs")

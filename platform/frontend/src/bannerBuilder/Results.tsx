@@ -202,7 +202,13 @@ export function OutputPane({
             role="alert"
             className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
           >
-            Something went wrong with a generation: {firstError}
+            <div className="font-medium">A generation ran into a problem.</div>
+            <details className="mt-1">
+              <summary className="cursor-pointer select-none text-xs opacity-80 hover:opacity-100">
+                Show details
+              </summary>
+              <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs opacity-90">{firstError}</p>
+            </details>
           </div>
         )}
         {groups.map((g) => (
@@ -264,7 +270,7 @@ function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => voi
       <div className="hidden h-1.5 max-w-[280px] flex-1 overflow-hidden rounded-full bg-secondary sm:block">
         <div
           className={cn(
-            'h-full rounded-full bg-gradient-to-r from-[#15803d] to-[#22c55e]',
+            'h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400',
             preRender ? 'w-2/5 animate-pulse' : 'transition-[width] duration-500',
           )}
           style={preRender ? undefined : { width: `${pct}%` }}
@@ -439,6 +445,11 @@ function AssetCard({
           <span className="font-display font-semibold">{b.size}</span>
           <Badge
             variant="outline"
+            title={
+              b.phase === 'master'
+                ? 'The square master is generated first and seeds every other size'
+                : undefined
+            }
             className={cn(
               'text-[10px] font-normal',
               b.phase === 'master' ? 'border-primary/35 text-primary' : 'text-muted-foreground',

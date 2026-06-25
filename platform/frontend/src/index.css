@@ -43,7 +43,7 @@
     --secondary: 0 0% 14%; /* #242424 */
     --secondary-foreground: 0 0% 96%;
     --muted: 0 0% 14%;
-    --muted-foreground: 0 0% 60%;
+    --muted-foreground: 0 0% 66%; /* bumped from 60% for AA contrast on dark muted/accent */
     --accent: 0 0% 16%; /* hover surfaces */
     --accent-foreground: 0 0% 96%;
     --destructive: 349 90% 62%;

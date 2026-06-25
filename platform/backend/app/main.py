@@ -23,19 +23,48 @@ from . import tools  # noqa: F401 — importing registers every tool plugin
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 # Content-Security-Policy scoped to exactly what the SPA loads: same-origin code,
-# Google Fonts (stylesheet + font files), inline theme bootstrap + React inline
-# styles ('unsafe-inline'), and images from self / data: / blob: / any https
-# (brand SVGs as data URIs, flag icons, generated banner PNGs). `frame-ancestors
-# 'none'` blocks clickjacking; `connect-src 'self'` keeps API calls same-origin.
-_CSP = (
-    "default-src 'self'; "
-    "img-src 'self' data: blob: https:; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-    "font-src 'self' https://fonts.gstatic.com data:; "
-    "script-src 'self' 'unsafe-inline'; "
-    "connect-src 'self'; "
-    "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
-)
+# Google Fonts (stylesheet + font files), and images from self / data: / blob: /
+# any https (brand SVGs as data URIs, flag icons, generated banner PNGs).
+# `frame-ancestors 'none'` blocks clickjacking; `connect-src 'self'` keeps API
+# calls same-origin. script-src refuses inline JS via 'unsafe-inline' and instead
+# allows only the no-flash theme bootstrap by its sha256 hash (see below); style-src
+# keeps 'unsafe-inline' because React sets dynamic inline styles that can't be hashed.
+def _inline_script_hashes() -> list:
+    """sha256 CSP hashes of the inline <script> blocks in the BUILT index.html.
+
+    Read as bytes (no newline translation) from the actual served file, so the
+    hash always matches what the browser computes. Empty in dev (no dist), where
+    Vite serves the HTML and script-src falls back to 'unsafe-inline'."""
+    import re
+    import hashlib
+    import base64
+    try:
+        html = (settings.FRONTEND_DIST / "index.html").read_bytes().decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001
+        return []
+    out = []
+    # Inline scripts only: <script> with NO src attribute (the bundle has src).
+    for m in re.finditer(r"<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)</script>", html):
+        digest = hashlib.sha256(m.group(1).encode("utf-8")).digest()
+        out.append("'sha256-" + base64.b64encode(digest).decode("ascii") + "'")
+    return out
+
+
+def _build_csp() -> str:
+    hashes = _inline_script_hashes()
+    script_src = ("'self' " + " ".join(hashes)) if hashes else "'self' 'unsafe-inline'"
+    return (
+        "default-src 'self'; "
+        "img-src 'self' data: blob: https:; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        f"script-src {script_src}; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    )
+
+
+_CSP = _build_csp()
 
 # A 40 MB ceiling on any request body. The only sizeable input is the 1–4 style
 # reference images; this stops a single huge/streamed body from buffering into RAM.
