@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { HardDrive, HelpCircle, RefreshCw, Settings } from 'lucide-react'
+import { HardDrive, HelpCircle, Library, RefreshCw } from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
@@ -201,12 +201,6 @@ function Workspace() {
         <div className="ml-auto flex items-center gap-2">
           <StorageBadge />
           <VersionBadge />
-          {bannerActive && (
-            <Button variant="ghost" size="sm" className="font-display" onClick={() => setHelpOpen(true)}>
-              <HelpCircle className="h-4 w-4" />
-              Help
-            </Button>
-          )}
           {isAdmin && (
             <Button
               variant={view === 'settings' ? 'secondary' : 'ghost'}
@@ -214,11 +208,21 @@ function Workspace() {
               className="font-display"
               onClick={() => setView((v) => (v === 'settings' ? 'tool' : 'settings'))}
             >
-              <Settings className="h-4 w-4" />
-              Settings
+              <Library className="h-4 w-4" />
+              Catalog
             </Button>
           )}
           <InstallButton />
+          {bannerActive && (
+            <Button
+              variant="ghost"
+              size="icon"
+              title="How it works"
+              onClick={() => setHelpOpen(true)}
+            >
+              <HelpCircle className="h-4 w-4" />
+            </Button>
+          )}
           <ThemeToggle />
           <UserMenu />
         </div>
