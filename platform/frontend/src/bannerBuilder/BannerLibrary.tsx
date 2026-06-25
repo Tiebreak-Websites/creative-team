@@ -174,7 +174,13 @@ export function BannerLibrary({
       </div>
 
       {/* Stage */}
-      <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center px-4 py-5 sm:px-16">
+      <div
+        className="relative z-10 flex min-h-0 flex-1 items-center justify-center px-4 py-5 sm:px-16"
+        onClick={(e) => {
+          // Click the empty area around the banner (not the image or the arrows) closes.
+          if (e.target === e.currentTarget) onClose()
+        }}
+      >
         <button
           type="button"
           onClick={() => onIndexChange(Math.max(safeIndex - 1, 0))}
