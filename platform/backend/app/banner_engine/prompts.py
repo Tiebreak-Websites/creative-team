@@ -57,8 +57,8 @@ LAYOUT_BASE = {
     "1080x1080": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge. Alignment follows the subject: if the hero subject/person is centered in the frame, CENTER the headline, supporting copy AND the CTA button horizontally too (a symmetric, centered composition); only left-align the copy block when the subject sits clearly to one side.",
     "1200x628":  "Aspect 1.91:1 wide banner. ONE integrated composition (subject, type and background share lighting and depth — not pasted blocks): compressed but readable, fewer elements, a strong left-to-right reading flow. Headline/ticker dominant and legible. Avoid hard split-panels unless requested; 12% safe top+bottom.",
     "1080x1920": "Aspect 9:16 tall. ONE integrated composition with a STACKED hierarchy — headline/ticker toward the top, the hero subject/scene filling below, with breathing room between. Subject, type and background share one lighting and palette (not pasted blocks). Mobile safe top 8% + bottom 12%; 10% safe left+right.",
-    "1080x1350": "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker prominent toward the top, hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right.",
-    "960x1200":  "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker prominent toward the top, hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right.",
+    "1080x1350": "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker prominent in the upper area but FULLY inside the top safe margin (never touching or bleeding off the top edge), hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right, and keep the whole headline ~12% clear of the TOP and BOTTOM edges (the export is cropped there).",
+    "960x1200":  "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker prominent in the upper area but FULLY inside the top safe margin (never touching or bleeding off the top edge), hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right, and keep the whole headline ~12% clear of the TOP and BOTTOM edges (the export is cropped there).",
     "1920x1080": "Aspect 16:9 landscape. ONE integrated cinematic composition — compressed, fewer elements, strong left-to-right flow; subject and background share lighting and depth (not pasted blocks). Headline/ticker dominant and legible. Avoid hard split-panels unless requested.",
     "1200x960":  "Aspect 5:4 mild-wide. ONE integrated composition — headline/ticker dominant and legible, subject and background sharing lighting and depth (not pasted blocks). Avoid hard split-panels unless requested.",
 }
@@ -323,44 +323,50 @@ def _crop_info(size: str) -> tuple:
 
 
 def _crop_safe_note(size: str) -> str:
-    """A sentence telling the model exactly how much of each edge the exact-size
-    crop removes, so it keeps the headline + button inside the surviving band."""
+    """A forceful instruction: how much of each edge the exact-size crop removes,
+    and that the WHOLE headline + button must be sized/placed inside the surviving
+    band — text touching a cropped edge gets sliced (the #1 recomp defect)."""
     pct, axis = _crop_info(size)
-    if pct < 8:
+    if pct < 4:
         return ""
+    m = pct + 6  # clearance — generous, because the model places text imprecisely
     if axis == "vertical":
         return (
-            f"EXACT-SIZE CROP: the final export is center-cropped to this aspect, "
-            f"removing roughly the top {pct}% and bottom {pct}% of the frame. Keep "
-            f"the headline AND the CTA button within the central horizontal band — at "
-            f"least {pct + 5}% clear of the top and bottom edges. Put NOTHING important "
-            f"(no text, no button) in the top/bottom margins; they are cropped away."
+            f"⚠ EXACT-SIZE CROP (do not ignore): the export is center-cropped to this "
+            f"aspect, which SLICES OFF the top ~{pct}% and bottom ~{pct}% of whatever you "
+            f"draw. So EVERY line of the headline and the ENTIRE CTA button must sit fully "
+            f"inside the central ~{100 - 2 * m}% of the height — at least {m}% clear of the "
+            f"TOP edge and {m}% clear of the BOTTOM edge. SIZE the headline so its top line "
+            f"starts BELOW the top {m}% and its baseline ends ABOVE the bottom {m}%; if it "
+            f"won't fit, make it smaller — never let a single letter reach the top or bottom "
+            f"edge. Keep the top and bottom margins as clean background only."
         )
     return (
-        f"EXACT-SIZE CROP: the final export is center-cropped to this aspect, "
-        f"removing roughly the left {pct}% and right {pct}% of the frame. Keep the "
-        f"headline AND the CTA button within the central vertical band — at least "
-        f"{pct + 5}% clear of the left and right edges. Put NOTHING important in the "
-        f"side margins; they are cropped away."
+        f"⚠ EXACT-SIZE CROP (do not ignore): the export is center-cropped to this aspect, "
+        f"which SLICES OFF the left ~{pct}% and right ~{pct}% of whatever you draw. So the "
+        f"whole headline and the ENTIRE CTA button must sit fully inside the central "
+        f"~{100 - 2 * m}% of the width — at least {m}% clear of the LEFT and RIGHT edges. "
+        f"Never let a letter or the button reach a side edge; keep the side margins clean."
     )
 
 
 def button_placement(size: str) -> str:
-    """Crop-aware CTA placement: for sizes that get heavily cover-cropped, the
-    button must sit inside the surviving central band, not against a cropped edge."""
+    """Crop-aware CTA placement: for sizes that get cover-cropped, the button must
+    sit inside the surviving central band, not against a cropped edge."""
     base = BUTTON_PLACEMENT.get(size, "bottom-left, aligned with the copy block")
     pct, axis = _crop_info(size)
-    if pct < 8:
+    if pct < 4:
         return base
+    m = pct + 6
     if axis == "vertical":
         # Top+bottom are cropped — a bottom-anchored button would be sliced.
         return (
             "inside the central band, beside or just beneath the headline, fully "
-            f"{pct + 5}% clear of the TOP and BOTTOM edges — never touching the bottom "
-            "edge, which gets cropped"
+            f"{m}% clear of the TOP and BOTTOM edges — never touching the bottom edge, "
+            "which gets cropped"
         )
     # Left+right cropped — keep the usual vertical placement but off the sides.
-    return f"{base}, but pulled fully {pct + 5}% clear of the LEFT and RIGHT edges (they get cropped)"
+    return f"{base}, but pulled fully {m}% clear of the LEFT and RIGHT edges (they get cropped)"
 
 
 def layout_lock(size: str, has_cta: bool) -> str:
