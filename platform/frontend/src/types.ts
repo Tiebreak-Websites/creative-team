@@ -89,30 +89,15 @@ export interface RunData {
   error: string | null
   total: number
   completed: number
-  counts: { ok: number; failed: number; pending: number; running: number }
+  counts: { ok: number; failed: number; pending: number; running: number; cancelled: number }
   created_at: string
   updated_at: string
   director?: RunDirector
   banners: Banner[]
-}
-
-/** A concept as the user edits it in the form. */
-export interface ConceptForm {
-  key: string
-  hook_phrase: string
-  creative_brief: string
-  button_bg: string | null // bg hex when a CTA is present, else null
-}
-
-/** A concept dict as returned by the AI-assist endpoint. */
-export interface SuggestedConcept {
-  key: string
-  title: string
-  locale: string
-  hook_phrase: string
-  creative_brief: string
-  cta?: string
-  button_combo?: [string, string]
+  cancelled?: boolean
+  intent?: string
+  intent_meta?: Record<string, unknown>
+  logo?: unknown
 }
 
 export const TERMINAL_STATUSES = ['completed', 'partial', 'failed', 'cancelled']

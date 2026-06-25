@@ -150,50 +150,81 @@ STORE = RunStore()
 def _derive_hook(title: str) -> str:
     """A 2-4 word verbatim fragment of the title (its leading words).
 
-    Prefers stopping at the first sentence boundary so the hook reads as a clean
-    phrase; otherwise takes the first 2-4 words. The returned fragment is always
-    a *verbatim* (case-insensitive) substring of the title — what
-    engine.validate_manifest requires of hook_phrase — so it is sliced directly
-    out of the title rather than rebuilt from split tokens.
+    Skips leading tokens that contain no alphanumeric character (e.g. a stray
+    bullet or dash) and prefers starting at the first token of length >= 3, so the
+    hook doesn't open on punctuation or a tiny stop-token. Prefers stopping at the
+    first sentence boundary so the hook reads as a clean phrase; otherwise takes
+    2-4 words. The returned fragment is always a *verbatim* (case-insensitive)
+    substring of the title — what engine.validate_manifest requires of
+    hook_phrase — so it is sliced directly out of the title rather than rebuilt
+    from split tokens.
     """
     t = title.strip()
     if not t:
         return t
     words = t.split()
-    # How many leading words to take: stop at the first word that ends a
-    # sentence (.!?), but always keep 2-4 words when the title is long enough.
-    take = 0
+    # Skip leading tokens with no alphanumeric character (e.g. a stray "—" or
+    # bullet) so the hook doesn't start on punctuation; prefer the first token of
+    # length >= 3 as the starting point. Conservative: fall back to 0 if the whole
+    # title is punctuation/short tokens, leaving behaviour unchanged for normal
+    # titles whose first word already qualifies.
+    start = 0
     for i, w in enumerate(words):
+        if any(ch.isalnum() for ch in w):
+            start = i
+            break
+    for i in range(start, len(words)):
+        if any(ch.isalnum() for ch in words[i]) and len(words[i]) >= 3:
+            start = i
+            break
+    # How many leading words to take (counting from `start`): stop at the first
+    # word that ends a sentence (.!?), but always keep 2-4 words when there are
+    # enough words remaining.
+    rest = words[start:]
+    take = 0
+    for i, w in enumerate(rest):
         take = i + 1
         if take >= 2 and w[-1:] in ".!?":
             break
         if take >= 4:
             break
     take = min(take, 4)
-    if len(words) >= 2:
+    if len(rest) >= 2:
         take = max(take, 2)
 
-    # Slice the verbatim substring spanning the first `take` words.
+    # Slice the verbatim substring spanning the chosen `take` words from `start`.
     consumed = 0
     idx = 0
-    for w in words[:take]:
-        idx = t.lower().index(w.lower(), idx) + len(w)
+    start_idx = None
+    for w in rest[:take]:
+        pos = t.lower().index(w.lower(), idx)
+        if start_idx is None:
+            start_idx = pos
+        idx = pos + len(w)
         consumed += 1
         if consumed == take:
             break
-    hook = t[:idx]
+    hook = t[(start_idx or 0):idx]
     # Trim trailing punctuation/space so the hook isn't left dangling on a "." —
     # rstrip only removes chars that are NOT part of any word, so it stays a
     # verbatim substring.
     return hook.rstrip(" .,:;!?-—–")
 
 
-def _synthesize_brief(subtitle: str, style: str) -> str:
+def _synthesize_brief(subtitle: str, style: str, angle: str = "") -> str:
     """Deterministic fallback brief — used ONLY when the GPT-5.5 director is off or
     unavailable. A bold, concrete, high-CTR default (not a soft mood piece), since
     it can't see the specific subject the way the director can.
+
+    When `angle` is non-empty (the per-concept divergence direction from
+    intent_engine.concept_angle), it is prepended as the dominant creative
+    direction so multi-concept runs still diverge even with the director down.
     """
-    parts = [
+    parts = []
+    ang = (angle or "").strip()
+    if ang:
+        parts.append(f"Dominant creative direction for this concept: {ang}.")
+    parts.append(
         "High-impact paid-social ad built on ONE clear idea: the hook in bold confident "
         "display type with strong figure-ground contrast against a clean, saturated "
         "background; a single concrete hero relevant to the message (a real-looking "
@@ -202,7 +233,7 @@ def _synthesize_brief(subtitle: str, style: str) -> str:
         "scroll-stopping and premium. No watercolor wash, no bokeh particles, no abstract "
         "swooshes, no candlestick/line charts (even as props), no desk/hand-on-chin stock "
         "pose, no gambling or get-rich-quick symbolism."
-    ]
+    )
     sub = (subtitle or "").strip()
     if sub:
         parts.append(f"Supporting message to convey: {sub}.")
@@ -270,6 +301,10 @@ def validate_request(req: RunRequest):
         return ["at least one concept is required"], {}, []
     if len(req.concepts) > 5:
         return ["cap is 5 concepts per run"], {}, []
+    # Cost control: cap the number of user-requested sizes (counted BEFORE the
+    # auto-injected master) so one run can't fan out into an unbounded image bill.
+    if len(req.sizes) > 12:
+        return ["cap is 12 sizes per run; please split into multiple runs"], {}, []
     for c in req.concepts:
         if not (c.title or "").strip():
             return ["every concept card needs a title"], {}, []
@@ -293,10 +328,15 @@ def _build_plan(concepts: Dict[str, dict], sizes: List[str]) -> List[dict]:
     plan = []
     for ck in concepts:
         for s in sizes:
+            # Safe lookup: validation already rejects unmapped sizes, but guard the
+            # worker thread against a stray KeyError if an unknown size slips through.
+            openai_size = engine.OPENAI_SIZE_MAP.get(s)
+            if openai_size is None:
+                continue
             is_master = (s == engine.MASTER_SIZE)
             plan.append({
                 "concept": ck, "size": s,
-                "openai_size": engine.OPENAI_SIZE_MAP[s],
+                "openai_size": openai_size,
                 "mode": "gen" if is_master else "edit",
                 "phase": "master" if is_master else "recomp",
             })
@@ -422,8 +462,16 @@ def _gen_one_frame(run: Run, frame: dict):
     fr.status = "running"
     run.touch()
 
+    # Defensive: a recomp (mode=="edit") whose size IS the master must never reach
+    # build_recomp_prompt — it raises ValueError when target_size == master_size.
+    # Normally only the master frame has that size, but if one ever slips through,
+    # treat it as a master generation (the mode=="gen" path) instead of crashing.
+    mode = frame["mode"]
+    if mode == "edit" and frame["size"] == engine.MASTER_SIZE:
+        mode = "gen"
+
     try:
-        if frame["mode"] == "edit":
+        if mode == "edit":
             prompt = engine.build_recomp_prompt(
                 concept, engine.MASTER_SIZE, frame["size"], art_direction=brief,
                 intent=run.intent)
@@ -441,7 +489,7 @@ def _gen_one_frame(run: Run, frame: dict):
         return
 
     master_png = None
-    if frame["mode"] == "edit":
+    if mode == "edit":
         master_png = str(run.dir / f"{frame['concept']}__{engine.MASTER_SIZE}.png")
 
     def _on_attempt(attempt):
@@ -452,7 +500,7 @@ def _gen_one_frame(run: Run, frame: dict):
     with _OPENAI_SEM:
         try:
             png = engine.generate_png(
-                api_key=run.api_key, prompt=prompt, mode=frame["mode"],
+                api_key=run.api_key, prompt=prompt, mode=mode,
                 openai_size=frame["openai_size"], model=run.model, quality=run.quality,
                 master_png_path=master_png, on_attempt=_on_attempt,
             )
@@ -653,6 +701,18 @@ def _direct_run(run: Run):
     """
     cfg = _director_config()
     if not cfg["enabled"]:
+        # Director disabled: frames fall back to each concept's base creative_brief.
+        # Re-synthesize that brief AROUND the concept's angle so multi-concept runs
+        # still diverge (same angles the director-ON path would have used). Single-
+        # concept runs get "" from concept_angle and are unchanged.
+        keys = list(run.concepts.keys())
+        total = len(keys)
+        for index, ck in enumerate(keys):
+            angle = intent_engine.concept_angle(run.intent, index, total)
+            if angle:
+                card = run.cards.get(ck, {})
+                run.concepts[ck]["creative_brief"] = _synthesize_brief(
+                    card.get("subtitle", ""), run.style or "", angle=angle)
         run.director = {"used": False, "reason": "disabled"}
         return
 
@@ -699,9 +759,15 @@ def _direct_run(run: Run):
                 failed += 1
                 if err:
                     errors.append(err)
-                run.size_briefs[ck] = {
-                    s: run.concepts[ck].get("creative_brief", "") for s in run.sizes
-                }
+                # Director failed for this concept: fall back to the deterministic
+                # template brief, but keep multi-concept divergence by re-synthesizing
+                # it AROUND this concept's angle (the director-ON path used the same
+                # angle), so a director outage doesn't collapse every concept to one
+                # identical brief.
+                angle = intent_engine.concept_angle(run.intent, keys.index(ck), total)
+                card = run.cards.get(ck, {})
+                fallback_brief = _synthesize_brief(card.get("subtitle", ""), run.style or "", angle=angle)
+                run.size_briefs[ck] = {s: fallback_brief for s in run.sizes}
                 continue
             run.concepts[ck]["hook_phrase"] = v["hook"]
             if v["button_combo"]:
@@ -756,6 +822,14 @@ def execute_run(run_id: str):
         ok_masters = {f["concept"] for f in master_frames
                       if run.fr(f["concept"], f["size"]).status == "ok"}
         if not ok_masters:
+            # No master landed, so no recomp can run. Mark every still-pending recomp
+            # frame master_missing (matching the per-concept branch below) so the UI
+            # doesn't leave recomp tiles stuck on "Queued" for this failed run.
+            for f in run.frames_plan:
+                if f["phase"] == "recomp":
+                    fr = run.fr(f["concept"], f["size"])
+                    if fr.status == "pending":
+                        fr.status, fr.error = "master_missing", "master generation failed"
             run.status, run.error = "failed", "all master frames failed"
             run.touch()
             return

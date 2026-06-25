@@ -65,6 +65,7 @@ export function ColorPicker({
             type="button"
             onClick={pickFromScreen}
             title="Pick a colour from the screen"
+            aria-label="Pick a color from the screen"
             className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:text-foreground"
           >
             <Pipette className="h-4 w-4" />

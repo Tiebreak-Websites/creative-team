@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: string }>
+}
+
 /**
  * "Install" affordance for the PWA. The browser fires `beforeinstallprompt` when
  * the app is installable; we stash it and show a button that triggers the native
@@ -9,12 +14,12 @@ import { Button } from '@/components/ui/button'
  * runs standalone (installed).
  */
 export function InstallButton() {
-  const [deferred, setDeferred] = useState<any>(null)
+  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null)
 
   useEffect(() => {
     const onPrompt = (e: Event) => {
       e.preventDefault()
-      setDeferred(e)
+      setDeferred(e as BeforeInstallPromptEvent)
     }
     const onInstalled = () => setDeferred(null)
     window.addEventListener('beforeinstallprompt', onPrompt)

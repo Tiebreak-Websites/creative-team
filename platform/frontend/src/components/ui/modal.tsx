@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -24,10 +24,49 @@ export function Modal({
   footer?: ReactNode
   className?: string
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const prevFocusRef = useRef<HTMLElement | null>(null)
+
   useEffect(() => {
     if (!open) return
+    // Remember what was focused so we can restore it when the modal closes.
+    prevFocusRef.current = document.activeElement as HTMLElement | null
+    const dialog = dialogRef.current
+    const focusables = (): HTMLElement[] =>
+      dialog
+        ? Array.from(
+            dialog.querySelectorAll<HTMLElement>(
+              'a[href], button:not([disabled]), textarea, input:not([disabled]), select, [tabindex]:not([tabindex="-1"])',
+            ),
+          ).filter((el) => el.offsetParent !== null)
+        : []
+    // Move focus into the dialog (first focusable, else the dialog itself).
+    ;(focusables()[0] ?? dialog)?.focus()
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        onClose()
+        return
+      }
+      // Trap Tab so focus can't escape behind the modal.
+      if (e.key === 'Tab' && dialog) {
+        const items = focusables()
+        if (!items.length) {
+          e.preventDefault()
+          dialog.focus()
+          return
+        }
+        const first = items[0]
+        const last = items[items.length - 1]
+        const active = document.activeElement
+        if (e.shiftKey && (active === first || active === dialog)) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
     }
     window.addEventListener('keydown', onKey)
     const prevOverflow = document.body.style.overflow
@@ -35,6 +74,8 @@ export function Modal({
     return () => {
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = prevOverflow
+      // Restore focus to whatever opened the modal.
+      prevFocusRef.current?.focus?.()
     }
   }, [open, onClose])
 
@@ -50,8 +91,10 @@ export function Modal({
         className="absolute inset-0 cursor-default bg-black/60 animate-fade-in"
       />
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        tabIndex={-1}
         className={cn(
           'relative z-10 flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_30px_80px_-20px_rgba(0,0,0,0.85)] animate-fade-up',
           className,
@@ -67,6 +110,7 @@ export function Modal({
               type="button"
               onClick={onClose}
               title="Close"
+              aria-label="Close"
               className="-mr-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               <X className="h-4 w-4" />

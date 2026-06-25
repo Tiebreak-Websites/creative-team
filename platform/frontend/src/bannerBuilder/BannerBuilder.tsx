@@ -11,7 +11,7 @@ import {
   Tag,
   X,
 } from 'lucide-react'
-import type { Meta, RunData, Tool } from '../types'
+import type { Meta, RunData } from '../types'
 import { TERMINAL_STATUSES } from '../types'
 import { ApiError, cancelRun, deleteBanner as deleteBannerApi, getRun, uploadReferences } from '../api'
 import { createRun, listRuns } from './campaignApi'
@@ -167,7 +167,7 @@ function writeSnapshot(runs: RunData[]) {
   }
 }
 
-export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
+export function BannerBuilder({ meta }: { meta: Meta }) {
   // ---- Campaign settings ----
   const efforts = meta.thinking_efforts ?? [
     { value: 'high', label: 'High' },
@@ -230,6 +230,9 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
 
   const [runs, setRuns] = useState<RunData[]>(() => readSnapshot())
   const [polling, setPolling] = useState(false)
+  // Guards Generate from a double-click (or a click during the in-flight POST)
+  // starting two runs — i.e. double image spend.
+  const [submitting, setSubmitting] = useState(false)
   const runsRef = useRef<RunData[]>(runs)
   runsRef.current = runs
 
@@ -267,13 +270,33 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
         if (!cancelled) setPolling(false)
         return
       }
-      const results = await Promise.all(active.map((r) => getRun(r.run_id).catch(() => null)))
+      const results = await Promise.all(
+        active.map((r) =>
+          getRun(r.run_id)
+            .then((d) => ({ id: r.run_id, data: d as RunData | null, gone: false }))
+            .catch((e) => ({ id: r.run_id, data: null, gone: e instanceof ApiError && e.status === 404 })),
+        ),
+      )
       if (cancelled) return
       const byId = new Map<string, RunData>()
-      results.forEach((d) => {
-        if (d) byId.set(d.run_id, d)
+      results.forEach((res) => {
+        if (res.data) byId.set(res.id, res.data)
       })
-      if (byId.size) setRuns((prev) => prev.map((r) => byId.get(r.run_id) ?? r))
+      // A run that 404s mid-poll (e.g. the backend restarted before persisting it)
+      // is settled to `failed` so it leaves the active set — never an endless spinner.
+      const goneIds = new Set(results.filter((res) => res.gone).map((res) => res.id))
+      if (byId.size || goneIds.size) {
+        setRuns((prev) =>
+          prev.map((r) => {
+            const fresh = byId.get(r.run_id)
+            if (fresh) return fresh
+            if (goneIds.has(r.run_id) && !TERMINAL_STATUSES.includes(r.status)) {
+              return { ...r, status: 'failed', error: 'This run is no longer available — the server may have restarted.' }
+            }
+            return r
+          }),
+        )
+      }
       timer = window.setTimeout(tick, 2000)
     }
     tick()
@@ -283,35 +306,46 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     }
   }, [polling])
 
-  // Restore previous batches after a reload / tab switch. Ids come from the URL
-  // (?runs=) and/or localStorage; the snapshot already seeded `runs` for an
-  // instant paint, and we re-fetch here to refresh each run's status.
+  // ONE deterministic mount load (these used to be two racing effects). Restore
+  // the user's prior batches (ids from ?runs= + localStorage) AND the shared
+  // gallery (listRuns → every persisted run, so all users see all output), then
+  // merge once and sort. The snapshot already painted instantly; precedence on
+  // merge is: local just-started < restored-by-id < shared server list (freshest).
   useEffect(() => {
     const ids = Array.from(new Set([...readRunIdsFromUrl(), ...readRunIdsFromStore()]))
-    if (ids.length === 0) return
     let alive = true
     ;(async () => {
-      const settled = await Promise.all(
-        ids.map((id) =>
-          getRun(id)
-            .then((data) => ({ id, data: data as RunData | null, gone: false }))
-            .catch((e) => ({ id, data: null, gone: e instanceof ApiError && e.status === 404 })),
+      const [serverRuns, settled] = await Promise.all([
+        listRuns().catch(() => [] as RunData[]),
+        Promise.all(
+          ids.map((id) =>
+            getRun(id)
+              .then((data) => ({ id, data: data as RunData | null, gone: false }))
+              .catch((e) => ({ id, data: null, gone: e instanceof ApiError && e.status === 404 })),
+          ),
         ),
-      )
+      ])
       if (!alive) return
       const restored = settled.filter((s) => s.data).map((s) => s.data as RunData)
-      if (restored.length) {
+      if (serverRuns.length || restored.length) {
         setRuns((prev) => {
-          const have = new Set(prev.map((r) => r.run_id))
-          const updated = prev.map((r) => restored.find((x) => x.run_id === r.run_id) ?? r)
-          const brandNew = restored.filter((r) => !have.has(r.run_id))
-          return brandNew.length ? [...brandNew, ...updated] : updated
+          const byId = new Map<string, RunData>()
+          prev.forEach((r) => byId.set(r.run_id, r))
+          restored.forEach((r) => byId.set(r.run_id, r))
+          serverRuns.forEach((r) => byId.set(r.run_id, r))
+          // Oldest-first; OutputPane reverses for a newest-first display.
+          return [...byId.values()].sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
         })
-        if (restored.some((r) => !TERMINAL_STATUSES.includes(r.status))) setPolling(true)
+        const anyActive =
+          serverRuns.some((r) => !TERMINAL_STATUSES.includes(r.status)) ||
+          restored.some((r) => !TERMINAL_STATUSES.includes(r.status))
+        if (anyActive) setPolling(true)
       }
-      const keepIds = ids.filter((id) => !settled.find((s) => s.id === id && s.gone))
-      const existing = runsRef.current.map((r) => r.run_id)
-      persistRunIds(Array.from(new Set([...keepIds, ...existing])))
+      // Persist only the user's own ids (drop any that 404'd). The shared gallery
+      // is re-fetched every mount, so it doesn't need to live in the URL.
+      const goneIds = new Set(settled.filter((s) => s.gone).map((s) => s.id))
+      const keepIds = ids.filter((id) => !goneIds.has(id))
+      persistRunIds(Array.from(new Set([...keepIds, ...runsRef.current.map((r) => r.run_id)])))
     })()
     return () => {
       alive = false
@@ -334,26 +368,6 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     listBrands()
       .then(setBrands)
       .catch(() => {})
-  }, [])
-
-  // Shared gallery: load ALL runs from the server on mount so every logged-in
-  // user sees every generated banner — not just the ones in their own browser.
-  // The backend persists runs to the durable disk and rehydrates them on start.
-  useEffect(() => {
-    listRuns().then((serverRuns) => {
-      if (!serverRuns.length) return
-      setRuns((prev) => {
-        const byId = new Map<string, RunData>()
-        serverRuns.forEach((r) => byId.set(r.run_id, r))
-        // Keep any local runs the server doesn't know yet (just-started, not persisted).
-        prev.forEach((r) => {
-          if (!byId.has(r.run_id)) byId.set(r.run_id, r)
-        })
-        // Oldest-first; OutputPane reverses for a newest-first display.
-        return [...byId.values()].sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
-      })
-      if (serverRuns.some((r) => !TERMINAL_STATUSES.includes(r.status))) setPolling(true)
-    })
   }, [])
 
   const running = runs.some((r) => !TERMINAL_STATUSES.includes(r.status))
@@ -438,7 +452,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     setDragIndex(null)
   }
 
-  const canRun = cards.length > 0 && cards.every((c) => c.title.trim().length > 0)
+  const canRun = sizes.size > 0 && cards.length > 0 && cards.every((c) => c.title.trim().length > 0)
   const selectedSizes = Array.from(sizes)
   const selectedBrand = brands.find((b) => b.id === brandId)
 
@@ -477,9 +491,11 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   }
 
   async function startRun() {
+    if (submitting) return // guard against a double-click starting two runs
     setFormError(null)
     setFormErrors([])
     setMissing(null)
+    setSubmitting(true)
     const composed = composeArtDirection(art, localeLabel)
     const finalStyle = [style.trim(), composed].filter(Boolean).join(' — ')
     const payload: CampaignRunRequest = {
@@ -509,6 +525,8 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
       if (e instanceof ApiError && e.status === 424) setMissing(e.missingSecrets ?? [])
       else if (e instanceof ApiError && e.errors) setFormErrors(e.errors)
       else setFormError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -524,6 +542,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
             <input
               value={sizeQuery}
               onChange={(e) => setSizeQuery(e.target.value)}
+              aria-label="Search banner sizes"
               placeholder="Search sizes — e.g. 1080, 728x90"
               className="h-8 w-full rounded-md border border-input bg-secondary pl-8 pr-7 text-xs text-foreground transition-colors placeholder:text-muted-foreground hover:border-foreground/25 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
             />
@@ -532,6 +551,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                 type="button"
                 onClick={() => setSizeQuery('')}
                 title="Clear"
+                aria-label="Clear size search"
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
                 <X className="h-3.5 w-3.5" />
@@ -652,6 +672,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                         type="button"
                         onClick={() => toggleSize(s)}
                         title="Remove size"
+                        aria-label={`Remove size ${s}`}
                         className="text-primary/70 hover:text-primary"
                       >
                         <X className="h-3.5 w-3.5" />
@@ -701,6 +722,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                 value={style}
                 onChange={(e) => setStyle(e.target.value)}
                 rows={2}
+                aria-label="Describe the banners"
                 placeholder="Describe the banners in your own words — or open the Art Director →"
                 className="w-full flex-1 resize-none"
               />
@@ -728,6 +750,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                           type="button"
                           onClick={() => removeRef(r.id)}
                           title="Remove reference"
+                          aria-label="Remove reference image"
                           className="absolute right-0.5 top-0.5 hidden rounded bg-foreground/70 p-0.5 text-background group-hover:block"
                         >
                           <X className="h-3 w-3" />
@@ -740,6 +763,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                         onClick={() => fileInputRef.current?.click()}
                         disabled={refBusy}
                         title="Attach style-reference images"
+                        aria-label="Attach style-reference images"
                         className="flex flex-col items-center justify-center gap-0.5 bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
                       >
                         {refBusy ? (
@@ -759,6 +783,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
                 accept="image/png,image/jpeg,image/webp"
                 multiple
                 hidden
+                aria-label="Upload style-reference images"
                 onChange={(e) => {
                   addRefs(e.target.files)
                   e.target.value = ''
@@ -773,6 +798,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
               type="button"
               onClick={() => setArtOpen(true)}
               title="Art Director"
+              aria-label="Open Art Director"
               className={cn(BAR_BTN, 'shrink-0', (isArtActive(art) || style.trim()) && 'border-primary/50 text-primary')}
             >
               <Sparkles className="h-4 w-4" />
@@ -789,6 +815,7 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
               <button
                 type="button"
                 onClick={() => setBarPopover((p) => (p === 'model' ? null : 'model'))}
+                aria-label="Model and image quality settings"
                 className={BAR_BTN}
               >
                 <SlidersHorizontal className="h-4 w-4" />
@@ -1073,12 +1100,20 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
               </Button>
             ) : (
               <Button
-                className={cn('ml-auto shrink-0 px-6 font-display', canRun && 'tb-glow')}
+                className={cn('ml-auto shrink-0 px-6 font-display', canRun && !submitting && 'tb-glow')}
                 size="lg"
                 onClick={startRun}
-                disabled={!canRun}
+                disabled={!canRun || submitting}
               >
-                <Sparkles className="h-4 w-4" /> Generate
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Starting…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" /> Generate
+                  </>
+                )}
               </Button>
             )}
             </div>
@@ -1223,6 +1258,7 @@ function IconBtn({
 function Alert({ tone, children }: { tone: 'err' | 'warn'; children: ReactNode }) {
   return (
     <div
+      role="alert"
       className={cn(
         'rounded-lg border px-3 py-2 text-sm',
         tone === 'err'

@@ -40,8 +40,9 @@ cd platform\backend
 1. Push the `prod` branch to GitHub (already done if you followed the chat).
 2. [Render](https://dashboard.render.com) → **New → Blueprint** → connect the
    `chr1srusevv/creative-team` repo. Render reads [`render.yaml`](../render.yaml) and
-   proposes a free web service named **creative-team** that builds the Dockerfile and
-   tracks the **`prod`** branch.
+   proposes a **standard** (always-on) web service named **creative-team** that builds
+   the Dockerfile, tracks the **`prod`** branch, and mounts a persistent 5GB disk for
+   generated banners.
 3. Click **Apply**.
 
 ### 3. Set the secret env vars
@@ -65,9 +66,9 @@ Render builds and deploys. When it's live, open
 `https://creative-team.onrender.com` → the app's **login** page → sign in with
 `ADMIN_EMAIL` + your password.
 
-> Free tier note: the service spins down after ~15 min idle, so the first request
-> after a nap takes ~30–60s to wake. Fine for internal use; upgrade the plan to keep
-> it always-on.
+> Standard plan note: the service is **always-on** — it doesn't spin down on idle, so
+> there's no cold-start wake-up delay. A persistent 5GB disk (mounted at the configured
+> path) keeps generated banners across restarts and redeploys.
 
 ---
 

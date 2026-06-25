@@ -187,6 +187,7 @@ function Workspace() {
           className="group flex items-center"
           onClick={goBanner}
           title="Internovus - Creative Builder"
+          aria-label="Internovus - Creative Builder — go to Banner Builder"
         >
           <Logo className="h-8 w-auto transition-transform duration-200 group-hover:scale-[1.03]" />
         </button>
@@ -218,6 +219,7 @@ function Workspace() {
               variant="ghost"
               size="icon"
               title="How it works"
+              aria-label="How it works"
               onClick={() => setHelpOpen(true)}
             >
               <HelpCircle className="h-4 w-4" />
@@ -242,7 +244,7 @@ function Workspace() {
             </div>
           </div>
         ) : tool && meta ? (
-          <BannerBuilder tool={tool} meta={meta} />
+          <BannerBuilder meta={meta} />
         ) : (
           <div className="flex h-full items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
             <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />

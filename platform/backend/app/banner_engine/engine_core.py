@@ -20,8 +20,11 @@ import json
 import uuid
 import time
 import base64
+import logging
 import urllib.request
 import urllib.error
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Frame size -> OpenAI-supported generation size.
@@ -205,7 +208,10 @@ def generate_png(*, api_key, prompt, mode, openai_size, model="gpt-image-2",
                 sleep(wait * (2 ** (attempt - 1)))
                 continue
             status = "edit_http_error" if is_edit else "gen_http_error"
-            raise GenError(status, f"HTTP {e.code}: {body[:300]}")
+            # Log the upstream body server-side for debugging; never echo it to
+            # the client (it can carry sensitive request/account details).
+            log.warning("OpenAI image %s HTTP %s: %s", status, e.code, body[:300])
+            raise GenError(status, f"image generation failed (HTTP {e.code})")
         except (TimeoutError, urllib.error.URLError) as e:
             # A slow read/connection to OpenAI (image renders can sit near the
             # timeout). Retry once before failing rather than dropping the banner.

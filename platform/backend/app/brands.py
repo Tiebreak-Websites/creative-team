@@ -136,10 +136,16 @@ def _clean_colors(colors: Any) -> List[str]:
     return out[:_MAX_COLORS]
 
 
+_MAX_LOGO_CHARS = 2_000_000  # ~2MB cap on the logo string (inline SVG / data: URI)
+
+
 def _clean_logo(logo_svg: Any) -> Optional[str]:
     if logo_svg is None:
         return None
     if isinstance(logo_svg, str):
+        # Reject an oversized payload before storing it (DoS / memory bloat).
+        if len(logo_svg) > _MAX_LOGO_CHARS:
+            raise HTTPException(status_code=422, detail="logo is too large")
         s = logo_svg.strip()
         return s or None
     return None

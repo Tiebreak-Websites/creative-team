@@ -14,10 +14,10 @@ from pydantic import BaseModel, Field
 
 class ConceptIn(BaseModel):
     """One concept card as typed by the user. Engine fields are derived."""
-    key: str
-    title: str
-    subtitle: Optional[str] = None
-    button: Optional[str] = None
+    key: str = Field(max_length=64)
+    title: str = Field(max_length=200)
+    subtitle: Optional[str] = Field(default=None, max_length=300)
+    button: Optional[str] = Field(default=None, max_length=80)
 
 
 class RunRequest(BaseModel):
@@ -25,9 +25,9 @@ class RunRequest(BaseModel):
     model: str = "gpt-image-2"
     quality: str = "medium"              # gpt-image-2 image quality: low | medium | high
     effort: Optional[str] = None         # GPT-5.5 thinking effort override; None -> admin default
-    locale: str = "en"
+    locale: str = Field(default="en", max_length=16)
     sizes: List[str] = Field(default_factory=lambda: ["1200x1200"])
-    style: Optional[str] = None          # optional look / brand vibe
+    style: Optional[str] = Field(default=None, max_length=4000)  # optional look / brand vibe
     # Style-only reference images (ids from POST /references). The creative
     # director uses them for palette/composition/mood/lighting ONLY — never copy.
     references: List[str] = Field(default_factory=list)

@@ -46,6 +46,7 @@ export function BrandsSettings() {
           onClick={() => void refresh()}
           disabled={loading}
           title="Refresh brands"
+          aria-label="Refresh brands"
         >
           <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} /> Refresh
         </Button>

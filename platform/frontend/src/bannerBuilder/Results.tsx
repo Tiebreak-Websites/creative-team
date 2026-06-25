@@ -198,8 +198,11 @@ export function OutputPane({
       </div>
       <div className="space-y-7 p-5">
         {firstError && (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {firstError}
+          <div
+            role="alert"
+            className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            Something went wrong with a generation: {firstError}
           </div>
         )}
         {groups.map((g) => (
@@ -470,6 +473,7 @@ function AssetCard({
               type="button"
               onClick={() => onDelete(b.label)}
               title="Remove"
+              aria-label={`Delete ${b.size} banner`}
               className="text-muted-foreground hover:text-destructive"
             >
               <Trash2 className="h-3.5 w-3.5" />

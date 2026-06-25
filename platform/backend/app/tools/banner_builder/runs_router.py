@@ -85,6 +85,9 @@ def build_router() -> APIRouter:
         creative director uses them for palette/composition/mood/lighting ONLY
         and ignores any text/copy in them.
         """
+        # Bound the file count BEFORE buffering any bytes into memory.
+        if len(files) > references_store.MAX_FILES:
+            raise HTTPException(status_code=422, detail="Too many files (max 4).")
         items = []
         for f in files:
             data = await f.read()

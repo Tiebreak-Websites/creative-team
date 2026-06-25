@@ -8,7 +8,8 @@ import mimetypes
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import plugin_bridge
 from .auth import build_auth_router, require_user
@@ -21,6 +22,48 @@ from . import tools  # noqa: F401 — importing registers every tool plugin
 
 # Some hosts don't map .webmanifest; serve the PWA manifest as the correct type.
 mimetypes.add_type("application/manifest+json", ".webmanifest")
+
+# Content-Security-Policy scoped to exactly what the SPA loads: same-origin code,
+# Google Fonts (stylesheet + font files), inline theme bootstrap + React inline
+# styles ('unsafe-inline'), and images from self / data: / blob: / any https
+# (brand SVGs as data URIs, flag icons, generated banner PNGs). `frame-ancestors
+# 'none'` blocks clickjacking; `connect-src 'self'` keeps API calls same-origin.
+_CSP = (
+    "default-src 'self'; "
+    "img-src 'self' data: blob: https:; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com data:; "
+    "script-src 'self' 'unsafe-inline'; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+)
+
+# A 40 MB ceiling on any request body. The only sizeable input is the 1–4 style
+# reference images; this stops a single huge/streamed body from buffering into RAM.
+_MAX_BODY_BYTES = 40 * 1024 * 1024
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Defense-in-depth for an internal, never-indexed tool: rejects oversized
+    request bodies up front, then stamps every response with no-index, anti-
+    clickjacking, no-sniff, referrer, permissions, and CSP headers."""
+
+    async def dispatch(self, request, call_next):
+        cl = request.headers.get("content-length")
+        if cl:
+            try:
+                if int(cl) > _MAX_BODY_BYTES:
+                    return JSONResponse(status_code=413, content={"detail": "Payload too large."})
+            except ValueError:
+                pass
+        resp = await call_next(request)
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["X-Frame-Options"] = "DENY"
+        resp.headers["Referrer-Policy"] = "no-referrer"
+        resp.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+        resp.headers["Content-Security-Policy"] = _CSP
+        return resp
 
 
 def create_app() -> FastAPI:
@@ -39,6 +82,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         allow_credentials=False,
     )
+    # Added last → outermost: security headers wrap every response (incl. CORS
+    # preflight and static assets) and the body-size guard runs before routing.
+    app.add_middleware(SecurityHeadersMiddleware)
     # Public: auth endpoints + the Figma plugin bridge (the plugin iframe carries no session).
     app.include_router(build_auth_router())
     app.include_router(plugin_bridge.build_plugin_router())

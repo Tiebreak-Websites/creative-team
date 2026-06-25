@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import urllib.error
 import urllib.request
@@ -41,6 +42,8 @@ from .banner_engine.prompts import (
 )
 
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+
+log = logging.getLogger(__name__)
 
 # Reasoning effort tiers accepted by the Responses API (model-dependent; gpt-5.5
 # supports all of these and defaults to "medium").
@@ -344,7 +347,9 @@ def direct_concept(*, api_key, title, subtitle="", button="", style="", locale="
             body = resp.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")[:300]
-        raise DirectorError(f"HTTP {e.code}: {detail}")
+        # Log the upstream detail server-side; never surface it to the client.
+        log.warning("OpenAI responses HTTP %s: %s", e.code, detail)
+        raise DirectorError(f"art direction failed (HTTP {e.code})")
     except Exception as e:  # noqa: BLE001 - any network/parse failure -> fallback
         raise DirectorError(f"{type(e).__name__}: {e}")
 

@@ -1,0 +1,4 @@
+# Internovus - Creative Builder is an internal tool. Keep it out of all search
+# indexes. (Reinforced by a <meta name="robots"> tag and an X-Robots-Tag header.)
+User-agent: *
+Disallow: /

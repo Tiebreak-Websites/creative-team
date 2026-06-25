@@ -25,7 +25,7 @@ _CAP = 500
 def record(tool: str, file_key: str, ops: list, label: str = "") -> str:
     """Stage canvas ops for the plugin. Returns the short code the user enters in
     the plugin (or that the plugin auto-resolves via /latest by file key)."""
-    code = uuid.uuid4().hex[:6].upper()
+    code = uuid.uuid4().hex[:12].upper()
     rec = {"code": code, "tool": tool, "label": label or tool,
            "file_key": file_key or "", "ops": ops or []}
     with _LOCK:

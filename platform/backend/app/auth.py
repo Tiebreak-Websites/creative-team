@@ -78,7 +78,15 @@ def _seed_users() -> dict[str, dict]:
     if pre_hashed:
         pw_hash = pre_hashed
     else:
-        plaintext = get_secret("ADMIN_PASSWORD") or "parola"
+        plaintext = get_secret("ADMIN_PASSWORD")
+        if not plaintext:
+            # Fail closed in production (COOKIE_SECURE is the prod signal): never
+            # seed the weak convenience default behind TLS. Local dev keeps it.
+            if settings.COOKIE_SECURE:
+                raise RuntimeError(
+                    "Refusing to start in production: set ADMIN_PASSWORD_HASH (or ADMIN_PASSWORD)."
+                )
+            plaintext = "parola"
         pw_hash = _pwd.hash(plaintext)
     return {
         email: {"email": email, "role": "admin", "password_hash": pw_hash},
