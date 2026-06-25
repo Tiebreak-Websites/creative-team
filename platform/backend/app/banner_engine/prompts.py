@@ -296,6 +296,73 @@ def is_rtl(locale: str) -> bool:
     return locale.lower().split("-")[0] in _RTL_LOCALES
 
 
+# The 3 aspect ratios the image API can emit. Every size is generated at the
+# NEAREST of these and then center-crop "cover"ed to exact pixels
+# (reshape.fit_cover) — so for sizes whose aspect is far from the generated one a
+# big band of the frame is cropped away. Anything (esp. a bottom-anchored button)
+# in that band gets sliced. The helpers below make the prompt crop-aware.
+_GEN_ASPECTS = (1.0, 1536 / 1024, 1024 / 1536)  # 1:1, 3:2 wide, 2:3 tall
+
+
+def _crop_info(size: str) -> tuple:
+    """(crop_pct, axis) for a size: how much EACH cropped edge loses and on which
+    axis — 'vertical' (top+bottom cropped, target wider than generated) or
+    'horizontal' (left+right cropped, target taller). (0, '') when the target's
+    aspect ~matches a generated aspect (negligible crop)."""
+    try:
+        w, h = (int(x) for x in size.lower().split("x"))
+        r = w / h
+    except Exception:  # noqa: BLE001
+        return 0, ""
+    g = min(_GEN_ASPECTS, key=lambda a: abs(a - r))
+    if r > g + 0.04:
+        return round((1 - g / r) / 2 * 100), "vertical"
+    if r < g - 0.04:
+        return round((1 - r / g) / 2 * 100), "horizontal"
+    return 0, ""
+
+
+def _crop_safe_note(size: str) -> str:
+    """A sentence telling the model exactly how much of each edge the exact-size
+    crop removes, so it keeps the headline + button inside the surviving band."""
+    pct, axis = _crop_info(size)
+    if pct < 8:
+        return ""
+    if axis == "vertical":
+        return (
+            f"EXACT-SIZE CROP: the final export is center-cropped to this aspect, "
+            f"removing roughly the top {pct}% and bottom {pct}% of the frame. Keep "
+            f"the headline AND the CTA button within the central horizontal band — at "
+            f"least {pct + 5}% clear of the top and bottom edges. Put NOTHING important "
+            f"(no text, no button) in the top/bottom margins; they are cropped away."
+        )
+    return (
+        f"EXACT-SIZE CROP: the final export is center-cropped to this aspect, "
+        f"removing roughly the left {pct}% and right {pct}% of the frame. Keep the "
+        f"headline AND the CTA button within the central vertical band — at least "
+        f"{pct + 5}% clear of the left and right edges. Put NOTHING important in the "
+        f"side margins; they are cropped away."
+    )
+
+
+def button_placement(size: str) -> str:
+    """Crop-aware CTA placement: for sizes that get heavily cover-cropped, the
+    button must sit inside the surviving central band, not against a cropped edge."""
+    base = BUTTON_PLACEMENT.get(size, "bottom-left, aligned with the copy block")
+    pct, axis = _crop_info(size)
+    if pct < 8:
+        return base
+    if axis == "vertical":
+        # Top+bottom are cropped — a bottom-anchored button would be sliced.
+        return (
+            "inside the central band, beside or just beneath the headline, fully "
+            f"{pct + 5}% clear of the TOP and BOTTOM edges — never touching the bottom "
+            "edge, which gets cropped"
+        )
+    # Left+right cropped — keep the usual vertical placement but off the sides.
+    return f"{base}, but pulled fully {pct + 5}% clear of the LEFT and RIGHT edges (they get cropped)"
+
+
 def layout_lock(size: str, has_cta: bool) -> str:
     """Return the per-aspect layout lock, including button placement when CTA present."""
     if size not in LAYOUT_BASE:
@@ -308,8 +375,11 @@ def layout_lock(size: str, has_cta: bool) -> str:
             " Tiny slot — render ONLY the most important line (the ticker or headline); "
             "omit body and secondary copy; ensure it reads in 1-2 seconds."
         )
+    note = _crop_safe_note(size)
+    if note:
+        base += " " + note
     if has_cta:
-        return f"{base} CTA button placed {BUTTON_PLACEMENT[size]}."
+        return f"{base} CTA button placed {button_placement(size)}."
     return base
 
 
@@ -372,7 +442,7 @@ def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
 
     if has_cta:
         bg_hex, text_hex = button_combo[0], button_combo[1]
-        placement = BUTTON_PLACEMENT[size]
+        placement = button_placement(size)
         cta_label = normalize_cta(cta)
         sections.append(
             f'CTA button: "{cta_label}" — LARGE, command-presence pill button, '
@@ -435,7 +505,7 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
     ]
     if has_cta:
         bg_hex, text_hex = button_combo[0], button_combo[1]
-        placement = BUTTON_PLACEMENT[target_size]
+        placement = button_placement(target_size)
         cta_label = normalize_cta(cta)
         preserve.append(
             f'- CTA button: "{cta_label}" — {bg_hex} fill with {text_hex} text, '
