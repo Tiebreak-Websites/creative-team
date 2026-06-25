@@ -36,6 +36,17 @@ async function asJson(r: Response): Promise<any> {
   return r.json().catch(() => ({}))
 }
 
+/** All runs across users (the shared gallery), newest first. Empty on any error. */
+export async function listRuns(): Promise<RunData[]> {
+  try {
+    const r = await fetch(`${BASE}/tools/banner-builder/runs`)
+    if (!r.ok) return []
+    return (await r.json()).runs ?? []
+  } catch {
+    return []
+  }
+}
+
 export async function createRun(payload: CampaignRunRequest): Promise<RunData> {
   const r = await fetch(`${BASE}/tools/banner-builder/run`, {
     method: 'POST',

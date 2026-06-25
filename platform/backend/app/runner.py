@@ -121,6 +121,12 @@ class RunStore:
         with self._lock:
             return self._runs.get(run_id)
 
+    def all(self) -> List[Run]:
+        """Every run in the store (live + rehydrated from disk) — powers the
+        shared gallery so all users see all banners."""
+        with self._lock:
+            return list(self._runs.values())
+
 
 STORE = RunStore()
 

@@ -14,7 +14,7 @@ import {
 import type { Meta, RunData, Tool } from '../types'
 import { TERMINAL_STATUSES } from '../types'
 import { ApiError, cancelRun, getRun, uploadReferences } from '../api'
-import { createRun } from './campaignApi'
+import { createRun, listRuns } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
 import {
@@ -367,6 +367,26 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     listBrands()
       .then(setBrands)
       .catch(() => {})
+  }, [])
+
+  // Shared gallery: load ALL runs from the server on mount so every logged-in
+  // user sees every generated banner — not just the ones in their own browser.
+  // The backend persists runs to the durable disk and rehydrates them on start.
+  useEffect(() => {
+    listRuns().then((serverRuns) => {
+      if (!serverRuns.length) return
+      setRuns((prev) => {
+        const byId = new Map<string, RunData>()
+        serverRuns.forEach((r) => byId.set(r.run_id, r))
+        // Keep any local runs the server doesn't know yet (just-started, not persisted).
+        prev.forEach((r) => {
+          if (!byId.has(r.run_id)) byId.set(r.run_id, r)
+        })
+        // Oldest-first; OutputPane reverses for a newest-first display.
+        return [...byId.values()].sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
+      })
+      if (serverRuns.some((r) => !TERMINAL_STATUSES.includes(r.status))) setPolling(true)
+    })
   }, [])
 
   const running = runs.some((r) => !TERMINAL_STATUSES.includes(r.status))

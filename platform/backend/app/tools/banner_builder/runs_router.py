@@ -53,6 +53,15 @@ def build_router() -> APIRouter:
         run = runner.create_and_start_run(req, concepts, sizes, api_key)
         return JSONResponse(status_code=202, content=runner.run_to_dict(run))
 
+    @router.get("/runs")
+    def list_runs(limit: int = 200):
+        """All runs (shared gallery), newest first — so every logged-in user sees
+        every generated banner, not just the ones in their own browser. Capped to
+        the most recent `limit`."""
+        runs = sorted(runner.STORE.all(), key=lambda r: r.created_at, reverse=True)
+        runs = runs[: max(1, min(limit, 500))]
+        return {"runs": [runner.run_to_dict(r) for r in runs]}
+
     @router.get("/runs/{run_id}")
     def get_run(run_id: str):
         run = runner.STORE.get(run_id)
