@@ -120,16 +120,18 @@ export function OutputPane({
 }) {
   const [libOpen, setLibOpen] = useState(false)
   const [libIndex, setLibIndex] = useState(0)
+  const [libItems, setLibItems] = useState<LibraryItem[]>([])
+  const [libDownloadAll, setLibDownloadAll] = useState<string | undefined>(undefined)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   if (!runs.length) return <EmptyOutput onHelp={onHelp} />
   const groups = buildGroups(runs)
   const firstError = runs.map((r) => r.error).find(Boolean)
-  const okRunIds = runs.filter((r) => r.banners.some((b) => b.status === 'ok')).map((r) => r.run_id)
 
   const styleByRun = new Map(runs.map((r) => [r.run_id, r.style ?? '']))
-  // Flat list of every viewable banner — powers the library / lightbox.
-  const libItems: LibraryItem[] = groups.flatMap((g) =>
-    g.banners
+  // The viewable (ok) banners of ONE version → lightbox items. The lightbox is
+  // scoped to a single version, so its filmstrip shows only that version's sizes.
+  function versionItems(g: ConceptGroup): LibraryItem[] {
+    return g.banners
       .filter((b) => b.status === 'ok' && b.url)
       .map((b) => {
         const slug = slugify(b.title)
@@ -149,16 +151,20 @@ export function OutputPane({
           prompt: b.prompt ?? undefined,
           style: styleByRun.get(g.runId) ?? '',
         }
-      }),
-  )
+      })
+  }
   function openLibrary(runId: string, label: string) {
-    // label (concept__size) repeats across runs — match BOTH so "view" opens the
-    // exact banner the user clicked, not just the first one with that label.
-    const i = libItems.findIndex((it) => it.runId === runId && it.label === label)
-    if (i >= 0) {
-      setLibIndex(i)
-      setLibOpen(true)
-    }
+    // Scope the lightbox to the clicked banner's version (its concept group) so
+    // the filmstrip + prev/next walk only that version's sizes — not all history.
+    const g = groups.find((gr) => gr.runId === runId && gr.banners.some((b) => b.label === label))
+    if (!g) return
+    const items = versionItems(g)
+    const i = items.findIndex((it) => it.label === label)
+    if (i < 0) return
+    setLibItems(items)
+    setLibDownloadAll(items.length > 1 ? versionZipUrl(g.runId, g.concept, g.number, g.title) : undefined)
+    setLibIndex(i)
+    setLibOpen(true)
   }
 
   // Multi-select: keys are `${runId}|${label}` (runId/label never contain "|").
@@ -249,7 +255,7 @@ export function OutputPane({
         onIndexChange={setLibIndex}
         onClose={() => setLibOpen(false)}
         onDelete={(runId, label) => onDeleteBanner?.(runId, label)}
-        downloadAllHref={okRunIds.length ? zipAllUrl(okRunIds) : undefined}
+        downloadAllHref={libDownloadAll}
       />
     </div>
   )
