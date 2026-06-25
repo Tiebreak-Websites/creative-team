@@ -8,7 +8,7 @@
  *
  * Bump CACHE to invalidate old shells on a breaking change.
  */
-const CACHE = 'internovus-v1'
+const CACHE = 'internovus-v2'
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/icon-192.png']
 
 self.addEventListener('install', (event) => {
@@ -36,6 +36,24 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     // App shell: network-first, fall back to the cached SPA when offline.
     event.respondWith(fetch(request).catch(() => caches.match('/index.html')))
+    return
+  }
+
+  // Brand assets (icon*, manifest, favicon, apple-touch) have STABLE, non-hashed
+  // names and change in place across deploys — network-first so a new icon shows
+  // up immediately; fall back to the cache when offline.
+  if (/^\/(icon|manifest|favicon|apple-touch)/.test(url.pathname)) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          if (res.ok && res.type === 'basic') {
+            const copy = res.clone()
+            caches.open(CACHE).then((c) => c.put(request, copy))
+          }
+          return res
+        })
+        .catch(() => caches.match(request)),
+    )
     return
   }
 
