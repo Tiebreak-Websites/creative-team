@@ -53,8 +53,8 @@ _APPROVED_BG_HEXES = {bg.upper() for bg, _ in BUTTON_COMBOS}
 # shared lighting/palette/depth, the headline/ticker dominant), plus a per-format
 # adaptation note. Hard vertical split-panels only happen if the direction asks.
 LAYOUT_BASE = {
-    "1200x1200": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge.",
-    "1080x1080": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge.",
+    "1200x1200": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge. Alignment follows the subject: if the hero subject/person is centered in the frame, CENTER the headline, supporting copy AND the CTA button horizontally too (a symmetric, centered composition); only left-align the copy block when the subject sits clearly to one side.",
+    "1080x1080": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge. Alignment follows the subject: if the hero subject/person is centered in the frame, CENTER the headline, supporting copy AND the CTA button horizontally too (a symmetric, centered composition); only left-align the copy block when the subject sits clearly to one side.",
     "1200x628":  "Aspect 1.91:1 wide banner. ONE integrated composition (subject, type and background share lighting and depth — not pasted blocks): compressed but readable, fewer elements, a strong left-to-right reading flow. Headline/ticker dominant and legible. Avoid hard split-panels unless requested; 12% safe top+bottom.",
     "1080x1920": "Aspect 9:16 tall. ONE integrated composition with a STACKED hierarchy — headline/ticker toward the top, the hero subject/scene filling below, with breathing room between. Subject, type and background share one lighting and palette (not pasted blocks). Mobile safe top 8% + bottom 12%; 10% safe left+right.",
     "1080x1350": "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker prominent toward the top, hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right.",
@@ -417,6 +417,7 @@ def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
     if not brief:
         raise ValueError("concept.creative_brief is required")
     locale = (concept.get("locale") or "en").strip()
+    subtitle = (concept.get("subtitle") or "").strip()
     cta = (concept.get("cta") or "").strip()
     button_combo = concept.get("button_combo") or []
 
@@ -435,6 +436,18 @@ def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
         f'Hook: "{hook}" — pulled verbatim from the Title above. This fragment is '
         "the type-hero of the composition; its treatment is specified in the "
         "creative direction below.",
+    ]
+    # The subtitle is REQUIRED on-image copy — render it verbatim as a legible
+    # supporting line, the same as the title. (Skipped only on tiny slots where
+    # secondary copy is unreadable.) Without this the model treats it as mere
+    # context and drops it from the banner.
+    if subtitle and size not in _TINY_SLOTS:
+        sections.append(
+            f'Subheadline / supporting copy (render verbatim, exactly as written — do '
+            f'NOT paraphrase, shorten, omit, or invent around it; place it as a clearly '
+            f'legible secondary line near the headline): "{subtitle}"'
+        )
+    sections += [
         BRAND_DEFENCE_LINE,
         COPY_CONTRACT,
         "Creative direction: " + brief.strip(),
@@ -489,6 +502,7 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
     if not hook:
         raise ValueError("concept.hook_phrase is required")
     locale = (concept.get("locale") or "en").strip()
+    subtitle = (concept.get("subtitle") or "").strip()
     cta = (concept.get("cta") or "").strip()
     button_combo = concept.get("button_combo") or []
     has_cta = bool(cta)
@@ -503,6 +517,11 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
         f'- Title (verbatim from master): "{title}"',
         f'- Hook fragment as the type-hero: "{hook}" (same color, weight, and treatment as the master)',
     ]
+    if subtitle and target_size not in _TINY_SLOTS:
+        preserve.append(
+            f'- Subheadline / supporting copy (verbatim, exactly as written — keep it a '
+            f'legible secondary line, never dropped): "{subtitle}"'
+        )
     if has_cta:
         bg_hex, text_hex = button_combo[0], button_combo[1]
         placement = button_placement(target_size)

@@ -13,10 +13,11 @@ import zipfile
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from ...auth import require_user
+from ... import copy_parse
 from ... import references as references_store
 from ... import runner
 from ...brands import build_brands_router
@@ -113,6 +114,13 @@ def build_router() -> APIRouter:
         except references_store.ReferenceError as e:
             raise HTTPException(status_code=422, detail=str(e))
         return {"ids": ids}
+
+    @router.post("/parse-copy")
+    def parse_copy_route(payload: dict = Body(default={})):
+        """Detect Title / Subtitle / Button from a pasted copy deck → concept cards.
+        Deterministic parser (no LLM): handles labeled, numbered and plain blocks."""
+        text = str(payload.get("text") or "")[:12000]
+        return {"concepts": copy_parse.parse_copy(text, max_concepts=5)}
 
     @router.get("/runs/{run_id}/banners/{label}.png")
     def get_banner(run_id: str, label: str, download: int = 0, name: str = ""):

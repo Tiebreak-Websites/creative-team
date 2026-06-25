@@ -151,8 +151,10 @@ export function OutputPane({
         }
       }),
   )
-  function openLibrary(label: string) {
-    const i = libItems.findIndex((it) => it.label === label)
+  function openLibrary(runId: string, label: string) {
+    // label (concept__size) repeats across runs — match BOTH so "view" opens the
+    // exact banner the user clicked, not just the first one with that label.
+    const i = libItems.findIndex((it) => it.runId === runId && it.label === label)
     if (i >= 0) {
       setLibIndex(i)
       setLibOpen(true)
@@ -254,26 +256,27 @@ export function OutputPane({
 }
 
 function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => void }) {
-  const total = runs.reduce((a, r) => a + r.total, 0)
-  const ready = runs.reduce((a, r) => a + r.completed, 0)
+  // Progress reflects ONLY the currently-generating runs (the current task) —
+  // not the historical total of every run in the gallery.
+  const activeRuns = runs.filter((r) => RUNNING.includes(r.status))
+  const activeCount = activeRuns.length
+  const total = activeRuns.reduce((a, r) => a + r.total, 0)
+  const ready = activeRuns.reduce((a, r) => a + r.completed, 0)
   const pct = total ? Math.round((ready / total) * 100) : 0
-  const running = runs.some((r) => RUNNING.includes(r.status))
+  const running = activeCount > 0
   // Pre-render phases (queued/classifying/art-direction) finish no frames for a
-  // while — at Extended effort the director alone can take a couple of minutes.
-  // Show an animated indeterminate bar so it reads as "working", not frozen at 0%.
+  // while — show an animated indeterminate bar so it reads as "working", not 0%.
   const preRender = running && ready === 0
-  const activeCount = runs.filter((r) => RUNNING.includes(r.status)).length
   const failed = runs.some((r) => r.status === 'failed')
   const directed = runs.some((r) => r.director?.used)
   const okRunIds = runs.filter((r) => r.banners.some((b) => b.status === 'ok')).map((r) => r.run_id)
-  const label =
-    runs.length === 1
-      ? statusLabel(runs[0].status)
-      : running
-        ? 'Generating…'
-        : failed
-          ? 'Some runs failed'
-          : 'All banners ready'
+  const label = running
+    ? activeCount > 1
+      ? `Generating ${activeCount} batches…`
+      : statusLabel(activeRuns[0].status)
+    : failed
+      ? 'Some runs failed'
+      : 'All banners ready'
 
   return (
     <div className="flex items-center gap-4 border-b border-border bg-card/70 px-5 py-3 backdrop-blur-md">
@@ -286,19 +289,25 @@ function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => voi
         {label}
       </span>
 
-      <div className="hidden h-1.5 max-w-[280px] flex-1 overflow-hidden rounded-full bg-secondary sm:block">
-        <div
-          className={cn(
-            'h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400',
-            preRender ? 'w-2/5 animate-pulse' : 'transition-[width] duration-500',
-          )}
-          style={preRender ? undefined : { width: `${pct}%` }}
-        />
-      </div>
+      {running && (
+        <div className="hidden h-1.5 max-w-[240px] flex-1 overflow-hidden rounded-full bg-secondary sm:block">
+          <div
+            className={cn(
+              'h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400',
+              preRender ? 'w-2/5 animate-pulse' : 'transition-[width] duration-500',
+            )}
+            style={preRender ? undefined : { width: `${pct}%` }}
+          />
+        </div>
+      )}
 
-      <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
-        {preRender ? 'preparing…' : `${ready}/${total} ready`}
-      </span>
+      {running && (
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {preRender ? 'preparing…' : `${ready}/${total} ready`}
+        </span>
+      )}
+
+      <div className="ml-auto" />
 
       {activeCount > 1 && onCancel && (
         <Button
@@ -338,14 +347,15 @@ function ConceptGroupBlock({
   onToggleSelect,
 }: {
   g: ConceptGroup
-  onView: (label: string) => void
+  onView: (runId: string, label: string) => void
   onDelete?: (runId: string, label: string) => void
   onCancelRun?: (runId: string) => void
   selected: Set<string>
   onToggleSelect: (runId: string, label: string) => void
 }) {
-  // Bind this group's run id so a deletion is scoped to the right run.
+  // Bind this group's run id so view + delete are scoped to the right run.
   const onDeleteLabel = onDelete ? (label: string) => onDelete(g.runId, label) : undefined
+  const onViewLabel = (label: string) => onView(g.runId, label)
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
@@ -397,7 +407,7 @@ function ConceptGroupBlock({
             b={b}
             version={g.number}
             index={i}
-            onView={onView}
+            onView={onViewLabel}
             onDelete={onDeleteLabel}
             selected={selected.has(`${g.runId}|${b.label}`)}
             onToggleSelect={() => onToggleSelect(g.runId, b.label)}

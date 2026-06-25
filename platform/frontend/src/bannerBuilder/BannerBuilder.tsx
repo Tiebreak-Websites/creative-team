@@ -13,10 +13,11 @@ import {
 } from 'lucide-react'
 import type { Meta, RunData } from '../types'
 import { TERMINAL_STATUSES } from '../types'
-import { ApiError, cancelRun, deleteBanner as deleteBannerApi, getRun, uploadReferences } from '../api'
+import { ApiError, cancelRun, deleteBanner as deleteBannerApi, getRun, uploadReferences, type DetectedConcept } from '../api'
 import { createRun, listRuns } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
+import { CopyDetectModal } from './CopyDetectModal'
 import {
   ArtDirectionModal,
   artActiveCount,
@@ -198,6 +199,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     colorMood: brand.colorMood,
   })
   const [artOpen, setArtOpen] = useState(false)
+  const [copyDetectOpen, setCopyDetectOpen] = useState(false)
   const patchArt = (patch: Partial<ArtDirection>) => setArt((a) => ({ ...a, ...patch }))
   const currentLocale = LOCALES.find((l) => l.value === locale) ?? LOCALES[0]
   const localeLabel = currentLocale.label
@@ -454,6 +456,16 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   }
   function addCard() {
     setCards((prev) => (prev.length >= 5 ? prev : [...prev, blankCard()]))
+  }
+  // Replace the version cards with copy detected from a pasted block.
+  function applyDetected(concepts: DetectedConcept[]) {
+    const next = concepts.slice(0, 5).map((c) => ({
+      ...blankCard(),
+      title: c.title || '',
+      subtitle: c.subtitle || '',
+      button: c.button || '',
+    }))
+    if (next.length) setCards(next)
   }
   function removeCard(key: string) {
     setCards((prev) => (prev.length <= 1 ? prev : prev.filter((c) => c.key !== key)))
@@ -1170,7 +1182,18 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       {/* ---------------- Right: concepts ---------------- */}
       <aside className="order-2 flex w-full shrink-0 flex-col border-t border-border bg-card animate-fade-in lg:order-none lg:w-[340px] lg:border-t-0 xl:w-[400px]">
         <div className="space-y-4 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-          <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Versions</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Versions</h2>
+            <button
+              type="button"
+              onClick={() => setCopyDetectOpen(true)}
+              title="Detect copy — paste a block of text and split it into versions"
+              aria-label="Detect copy from pasted text"
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
+            >
+              <Sparkles className="h-3.5 w-3.5" /> Detect
+            </button>
+          </div>
 
           {cards.map((c, i) => (
             <div
@@ -1243,6 +1266,12 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
           )}
         </div>
       </aside>
+
+      <CopyDetectModal
+        open={copyDetectOpen}
+        onClose={() => setCopyDetectOpen(false)}
+        onDetected={applyDetected}
+      />
     </div>
   )
 }

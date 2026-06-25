@@ -99,3 +99,20 @@ export async function uploadReferences(files: File[]): Promise<string[]> {
   }
   return (await r.json()).ids ?? []
 }
+
+export interface DetectedConcept {
+  title: string
+  subtitle?: string
+  button?: string
+}
+
+/** Detect Title / Subtitle / Button from a pasted copy deck → concept cards. */
+export async function parseCopy(text: string): Promise<DetectedConcept[]> {
+  const r = await fetch(`${BASE}/tools/banner-builder/parse-copy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+  if (!r.ok) throw new ApiError(r.status, `Copy detection failed (HTTP ${r.status}).`)
+  return (await r.json()).concepts ?? []
+}

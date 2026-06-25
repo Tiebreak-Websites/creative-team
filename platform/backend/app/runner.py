@@ -330,6 +330,7 @@ def card_to_concept(c, locale: str, style: str) -> dict:
     title = (c.title or "").strip()
     d = {
         "title": title,
+        "subtitle": (c.subtitle or "").strip(),
         "locale": locale or "en",
         "hook_phrase": _derive_hook(title),
         "creative_brief": _synthesize_brief(c.subtitle or "", style or ""),
