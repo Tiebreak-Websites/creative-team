@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import { Login } from './auth/Login'
 import { UserMenu } from './auth/UserMenu'
 import { Logo } from './components/Logo'
+import { FullScreenLoader, LogoLoader } from './components/LogoLoader'
 import { ThemeToggle } from './components/ThemeToggle'
 import { InstallButton } from './components/InstallButton'
 import { VersionBadge } from './components/VersionBadge'
@@ -110,12 +111,7 @@ function StorageBadge() {
 function Gate() {
   const { user, loading } = useAuth()
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center gap-2 text-sm text-muted-foreground">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-        Loading…
-      </div>
-    )
+    return <FullScreenLoader label="Starting Internovus…" />
   }
   if (!user) return <Login />
   return <Workspace />
@@ -136,7 +132,7 @@ function Tab({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-md px-3 py-1.5 font-display text-sm font-medium transition-colors ${
+      className={`rounded-md px-3 py-1.5 font-display text-sm font-medium transition-[transform,background-color,color] active:scale-95 ${
         active
           ? 'bg-secondary text-foreground'
           : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
@@ -246,9 +242,8 @@ function Workspace() {
         ) : tool && meta ? (
           <BannerBuilder meta={meta} />
         ) : (
-          <div className="flex h-full items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-            Loading…
+          <div className="flex h-full items-center justify-center p-6">
+            <LogoLoader label="Loading the builder…" />
           </div>
         )}
       </main>

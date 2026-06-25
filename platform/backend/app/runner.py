@@ -1092,3 +1092,40 @@ def rehydrate_runs() -> int:
     if n:
         log.info("banner-builder: rehydrated %d persisted run(s) from %s", n, base)
     return n
+
+
+def storage_stats() -> dict:
+    """Diagnostics for the banner artifact disk — proves banners land on (and
+    survive on) the mounted persistent disk. Reports the resolved dir, disk
+    total/free, exact run/PNG counts persisted, runs live in memory, and a
+    `.first_seen` marker that, once written, MUST survive redeploys if the disk
+    is truly persistent."""
+    import os
+    import shutil
+    art = settings.ARTIFACT_ROOT
+    base = art / TOOL_ID
+    out: dict = {
+        "artifact_dir": str(art),
+        "persistent_env": bool(os.environ.get("PLATFORM_ARTIFACT_DIR")),
+        "runs_in_memory": len(STORE.all()),
+    }
+    try:
+        du = shutil.disk_usage(art if art.exists() else art.parent)
+        out["total_gb"] = round(du.total / 1e9, 1)
+        out["free_gb"] = round(du.free / 1e9, 1)
+    except Exception:  # noqa: BLE001
+        out["total_gb"] = None
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+        out["writable"] = True
+        run_dirs = [d for d in base.iterdir() if d.is_dir()]
+        out["runs_on_disk"] = sum(1 for d in run_dirs if (d / "run.json").is_file())
+        out["pngs_on_disk"] = sum(1 for d in run_dirs for _ in d.glob("*.png"))
+        marker = base / ".first_seen"
+        if not marker.exists():
+            marker.write_text(_now(), encoding="utf-8")
+        out["first_seen"] = marker.read_text(encoding="utf-8")[:32]
+    except Exception as e:  # noqa: BLE001
+        out["writable"] = False
+        out["error"] = type(e).__name__
+    return out

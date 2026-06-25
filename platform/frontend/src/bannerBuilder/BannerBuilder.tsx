@@ -370,6 +370,37 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       .catch(() => {})
   }, [])
 
+  // LIVE: keep the shared gallery fresh so every user sees others' new and
+  // in-progress runs without refreshing the page. Polls the server list on an
+  // interval + on window focus, merging by run_id (server is the shared truth) —
+  // but never flips a locally-settled run (e.g. just-stopped) back to running.
+  useEffect(() => {
+    let alive = true
+    const refresh = async () => {
+      const serverRuns = await listRuns().catch(() => [] as RunData[])
+      if (!alive || !serverRuns.length) return
+      setRuns((prev) => {
+        const byId = new Map(prev.map((r) => [r.run_id, r]))
+        serverRuns.forEach((s) => {
+          const local = byId.get(s.run_id)
+          if (local && TERMINAL_STATUSES.includes(local.status) && !TERMINAL_STATUSES.includes(s.status)) {
+            return // keep the local terminal state until the server settles too
+          }
+          byId.set(s.run_id, s)
+        })
+        return [...byId.values()].sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
+      })
+      if (serverRuns.some((r) => !TERMINAL_STATUSES.includes(r.status))) setPolling(true)
+    }
+    const iv = window.setInterval(refresh, 5000)
+    window.addEventListener('focus', refresh)
+    return () => {
+      alive = false
+      window.clearInterval(iv)
+      window.removeEventListener('focus', refresh)
+    }
+  }, [])
+
   const running = runs.some((r) => !TERMINAL_STATUSES.includes(r.status))
 
   // ---- Sizes ----

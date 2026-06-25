@@ -166,7 +166,7 @@ export function OutputPane({
       <div className="sticky top-0 z-10">
         <OverviewBar runs={runs} onCancel={onCancel} />
         {selected.size > 0 && (
-          <div className="flex items-center gap-3 border-b border-primary/30 bg-primary/10 px-5 py-2.5 backdrop-blur-md">
+          <div className="flex animate-pop-in items-center gap-3 border-b border-primary/30 bg-primary/10 px-5 py-2.5 backdrop-blur-md">
             <span className="font-display text-sm font-semibold text-primary">
               {selected.size} selected
             </span>
@@ -403,7 +403,12 @@ function AssetCard({
         )}
       >
         <div className="relative aspect-square" style={CHECKER}>
-          <img src={src} alt={b.label} loading="lazy" className="h-full w-full object-contain" />
+          <img
+            src={src}
+            alt={b.label}
+            loading="lazy"
+            className="h-full w-full object-contain transition-transform duration-300 ease-out group-hover:scale-[1.03]"
+          />
 
           {/* Multi-select checkbox (top-left) — shows on hover, or always when selected */}
           {onToggleSelect && (
