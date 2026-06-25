@@ -60,7 +60,7 @@ export function CopyDetectModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Detect copy"
+      title="Text Detect"
       description="Paste your ad copy and the builder splits it into version cards — title, subtitle, and button."
       className="max-w-2xl"
       footer={
