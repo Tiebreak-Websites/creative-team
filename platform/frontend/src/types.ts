@@ -61,6 +61,10 @@ export interface Banner {
   label: string
   concept: string
   title: string
+  subtitle?: string
+  button?: string
+  brief?: string // the creative-director's per-size brief
+  prompt?: string | null // the exact prompt sent to the image model
   size: string
   mode: string
   phase: string
@@ -93,6 +97,7 @@ export interface RunData {
   created_at: string
   updated_at: string
   director?: RunDirector
+  style?: string // the composed art-direction string fed to the generator
   banners: Banner[]
   cancelled?: boolean
   intent?: string

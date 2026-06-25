@@ -401,8 +401,6 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     }
   }, [])
 
-  const running = runs.some((r) => !TERMINAL_STATUSES.includes(r.status))
-
   // ---- Sizes ----
   function toggleSize(s: string) {
     if (s === meta.master_size) return // master always on
@@ -498,6 +496,17 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       prev.map((r) => (TERMINAL_STATUSES.includes(r.status) ? r : { ...r, status: 'cancelled' })),
     )
     setPolling(false)
+  }
+
+  // Stop ONE run (from its generating concept card). Optimistically settles just
+  // that run so the user is never trapped; any other runs keep going.
+  function cancelOneRun(runId: string) {
+    cancelRun(runId)
+    setRuns((prev) =>
+      prev.map((r) =>
+        r.run_id === runId && !TERMINAL_STATUSES.includes(r.status) ? { ...r, status: 'cancelled' } : r,
+      ),
+    )
   }
 
   // Upload dropped/picked reference images (max 4); store ids + local previews.
@@ -651,7 +660,12 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       {/* ---------------- Center: results + floating command bar ---------------- */}
       <section className="relative min-h-0 min-w-0 flex-1 bg-background">
         <div className="h-full overflow-y-auto pb-56">
-          <OutputPane runs={visibleRuns} onDeleteBanner={deleteBanner} onCancel={cancelRuns} />
+          <OutputPane
+            runs={visibleRuns}
+            onDeleteBanner={deleteBanner}
+            onCancel={cancelRuns}
+            onCancelRun={cancelOneRun}
+          />
         </div>
 
         {/* click-away backdrop for the bar popovers */}
@@ -1120,36 +1134,25 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
               )}
             </div>
 
-            {running ? (
-              // While generating, the primary button stops the run; once it
-              // settles the user can immediately start a new generation.
-              <Button
-                className="ml-auto shrink-0 gap-1.5 px-6 font-display"
-                size="lg"
-                variant="destructive"
-                onClick={cancelRuns}
-                title="Stop the current generation"
-              >
-                <X className="h-4 w-4" /> Stop
-              </Button>
-            ) : (
-              <Button
-                className={cn('ml-auto shrink-0 px-6 font-display', canRun && !submitting && 'tb-glow')}
-                size="lg"
-                onClick={startRun}
-                disabled={!canRun || submitting}
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" /> Starting…
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" /> Generate
-                  </>
-                )}
-              </Button>
-            )}
+            {/* Generate is ALWAYS available — start more runs while others generate;
+                cancel a run from its own card. */}
+            <Button
+              className={cn('ml-auto shrink-0 px-6 font-display', canRun && !submitting && 'tb-glow')}
+              size="lg"
+              onClick={startRun}
+              disabled={!canRun || submitting}
+              title="Generate banners — you can start more while others are running"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Starting…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" /> Generate
+                </>
+              )}
+            </Button>
             </div>
           </div>
         </div>

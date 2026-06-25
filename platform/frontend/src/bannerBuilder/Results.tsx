@@ -44,6 +44,7 @@ interface ConceptGroup {
   ok: number
   total: number
   running: boolean
+  createdAt: string
 }
 
 /** Flatten all runs into per-concept groups (newest run first). */
@@ -74,6 +75,7 @@ function buildGroups(runs: RunData[]): ConceptGroup[] {
         ok: bs.filter((b) => b.status === 'ok').length,
         total: bs.length,
         running: RUNNING.includes(run.status),
+        createdAt: run.created_at,
       })
     })
   }
@@ -84,6 +86,13 @@ function fmtTime(ms: number): string {
   const s = ms / 1000
   if (s < 60) return `${s.toFixed(1)}s`
   return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
+}
+
+/** Local clock time a run was requested (when Generate was pressed). */
+function fmtRequested(iso: string): string {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 /** Filesystem-safe slug for download filenames. */
@@ -101,11 +110,13 @@ export function OutputPane({
   onHelp,
   onDeleteBanner,
   onCancel,
+  onCancelRun,
 }: {
   runs: RunData[]
   onHelp?: () => void
   onDeleteBanner?: (runId: string, label: string) => void
   onCancel?: () => void
+  onCancelRun?: (runId: string) => void
 }) {
   const [libOpen, setLibOpen] = useState(false)
   const [libIndex, setLibIndex] = useState(0)
@@ -115,6 +126,7 @@ export function OutputPane({
   const firstError = runs.map((r) => r.error).find(Boolean)
   const okRunIds = runs.filter((r) => r.banners.some((b) => b.status === 'ok')).map((r) => r.run_id)
 
+  const styleByRun = new Map(runs.map((r) => [r.run_id, r.style ?? '']))
   // Flat list of every viewable banner — powers the library / lightbox.
   const libItems: LibraryItem[] = groups.flatMap((g) =>
     g.banners
@@ -131,6 +143,11 @@ export function OutputPane({
           size: b.size,
           version: g.number,
           title: g.title,
+          subtitle: b.subtitle,
+          button: b.button,
+          brief: b.brief,
+          prompt: b.prompt ?? undefined,
+          style: styleByRun.get(g.runId) ?? '',
         }
       }),
   )
@@ -217,6 +234,7 @@ export function OutputPane({
             g={g}
             onView={openLibrary}
             onDelete={onDeleteBanner}
+            onCancelRun={onCancelRun}
             selected={selected}
             onToggleSelect={toggleSelect}
           />
@@ -244,6 +262,7 @@ function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => voi
   // while — at Extended effort the director alone can take a couple of minutes.
   // Show an animated indeterminate bar so it reads as "working", not frozen at 0%.
   const preRender = running && ready === 0
+  const activeCount = runs.filter((r) => RUNNING.includes(r.status)).length
   const failed = runs.some((r) => r.status === 'failed')
   const directed = runs.some((r) => r.director?.used)
   const okRunIds = runs.filter((r) => r.banners.some((b) => b.status === 'ok')).map((r) => r.run_id)
@@ -281,14 +300,15 @@ function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => voi
         {preRender ? 'preparing…' : `${ready}/${total} ready`}
       </span>
 
-      {running && onCancel && (
+      {activeCount > 1 && onCancel && (
         <Button
           size="sm"
           variant="outline"
           className="shrink-0 gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
           onClick={onCancel}
+          title="Stop all running generations"
         >
-          <X className="h-4 w-4" /> Cancel
+          <X className="h-4 w-4" /> Stop all
         </Button>
       )}
 
@@ -313,12 +333,14 @@ function ConceptGroupBlock({
   g,
   onView,
   onDelete,
+  onCancelRun,
   selected,
   onToggleSelect,
 }: {
   g: ConceptGroup
   onView: (label: string) => void
   onDelete?: (runId: string, label: string) => void
+  onCancelRun?: (runId: string) => void
   selected: Set<string>
   onToggleSelect: (runId: string, label: string) => void
 }) {
@@ -329,6 +351,14 @@ function ConceptGroupBlock({
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
         <h3 className="font-display text-[15px] font-bold tracking-tight">Version {g.number}</h3>
         {g.title && <span className="text-sm text-muted-foreground">{g.title}</span>}
+        {g.createdAt && (
+          <span
+            className="text-xs text-muted-foreground/80"
+            title={`Requested ${new Date(g.createdAt).toLocaleString()}`}
+          >
+            · requested {fmtRequested(g.createdAt)}
+          </span>
+        )}
         <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
           {g.running && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           <span>
@@ -336,6 +366,17 @@ function ConceptGroupBlock({
           </span>
           {g.genMs > 0 && (
             <span title="Total image render time across this version's sizes">· {fmtTime(g.genMs)}</span>
+          )}
+          {g.running && onCancelRun && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onCancelRun(g.runId)}
+              title="Stop this generation"
+              className="h-7 gap-1 border-destructive/40 px-2.5 text-destructive hover:bg-destructive/10"
+            >
+              <X className="h-3.5 w-3.5" /> Stop
+            </Button>
           )}
           {g.ok > 0 && (
             <Button asChild size="sm" variant="outline" className="h-7 px-2.5">

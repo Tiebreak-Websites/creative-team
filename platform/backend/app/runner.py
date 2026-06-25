@@ -71,6 +71,7 @@ class FrameResult:
     bytes: int = 0
     png_path: Optional[str] = None
     error: Optional[str] = None
+    prompt: Optional[str] = None       # the exact prompt sent to the image model
 
 
 @dataclass
@@ -537,6 +538,7 @@ def _gen_one_frame(run: Run, frame: dict):
         fr.status, fr.error = "prompt_failed", f"{type(e).__name__}: {e}"
         run.touch()
         return
+    fr.prompt = prompt  # surface the exact generation prompt in the viewer
 
     ok, reason = engine.check_moderation(concept)
     if not ok:
@@ -954,9 +956,13 @@ def run_to_dict(run: Run) -> dict:
     for f in run.frames_plan:
         fr = run.fr(f["concept"], f["size"])
         label = _label(f["concept"], f["size"])
+        card = run.cards.get(f["concept"], {})
         banners.append({
             "label": label, "concept": f["concept"], "size": f["size"],
             "title": run.concepts.get(f["concept"], {}).get("title", ""),
+            "subtitle": card.get("subtitle", ""), "button": card.get("button", ""),
+            "brief": run.size_briefs.get(f["concept"], {}).get(f["size"], ""),
+            "prompt": fr.prompt,
             "mode": f["mode"], "phase": f["phase"], "status": fr.status,
             "attempts": fr.attempts, "gen_ms": fr.gen_ms, "bytes": fr.bytes,
             "error": fr.error,
@@ -974,6 +980,7 @@ def run_to_dict(run: Run) -> dict:
         "intent_meta": run.intent_meta,
         "director": run.director,
         "logo": run.logo or None,
+        "style": run.style or "",
         "banners": banners,
     }
 
@@ -1044,6 +1051,8 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
     frames_plan: List[dict] = []
     frame_results: Dict[str, FrameResult] = {}
     concepts: Dict[str, dict] = {}
+    cards: Dict[str, dict] = {}
+    size_briefs: Dict[str, Dict[str, str]] = {}
     sizes: List[str] = []
     for b in d.get("banners", []):
         ck, size = b.get("concept", ""), b.get("size", "")
@@ -1062,9 +1071,14 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
             concept=ck, size=size, openai_size="", mode=mode, phase=phase,
             status=status, attempts=b.get("attempts", 0),
             gen_ms=b.get("gen_ms"), bytes=b.get("bytes", 0),
-            png_path=str(png), error=error,
+            png_path=str(png), error=error, prompt=b.get("prompt"),
         )
         concepts.setdefault(ck, {"title": b.get("title", "")})
+        cards.setdefault(ck, {"title": b.get("title", ""),
+                              "subtitle": b.get("subtitle", ""),
+                              "button": b.get("button", "")})
+        if b.get("brief"):
+            size_briefs.setdefault(ck, {})[size] = b.get("brief", "")
         if size not in sizes:
             sizes.append(size)
     now = _now()
@@ -1072,7 +1086,8 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
         id=d["run_id"], status=d.get("status", "completed"),
         model=d.get("model", "gpt-image-2"), quality=d.get("quality", "high"),
         sizes=sizes, concepts=concepts, frames_plan=frames_plan,
-        frame_results=frame_results, dir=run_dir,
+        frame_results=frame_results, dir=run_dir, cards=cards,
+        size_briefs=size_briefs, style=d.get("style", ""),
         created_at=d.get("created_at", now), updated_at=d.get("updated_at", now),
         intent=d.get("intent", "general_ad"), intent_meta=d.get("intent_meta") or {},
         director=d.get("director") or {}, logo=d.get("logo") or {},

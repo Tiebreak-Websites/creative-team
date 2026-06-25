@@ -1,6 +1,15 @@
-import { useEffect, useRef, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight, Download, DownloadCloud, ExternalLink, Trash2, X } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  DownloadCloud,
+  ExternalLink,
+  Info,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -12,6 +21,11 @@ export interface LibraryItem {
   size: string // e.g. "1200x1200"
   version: number
   title: string
+  subtitle?: string
+  button?: string
+  brief?: string // the creative-director's per-size brief
+  prompt?: string // the exact prompt sent to the image model
+  style?: string // the composed art-direction string
 }
 
 /** Subtle checkerboard so transparent PNGs read against any theme. */
@@ -52,6 +66,8 @@ export function BannerLibrary({
   const current = count ? items[safeIndex] : undefined
 
   const stripRef = useRef<HTMLDivElement>(null)
+  // Side panel with the input / art direction / exact prompt. On by default (desktop).
+  const [showInfo, setShowInfo] = useState(true)
 
   // Reconcile an out-of-range index (e.g. after a delete) back to the parent.
   useEffect(() => {
@@ -161,6 +177,16 @@ export function BannerLibrary({
           </Button>
 
           <Button
+            size="sm"
+            variant={showInfo ? 'secondary' : 'outline'}
+            onClick={() => setShowInfo((s) => !s)}
+            title="Show the input, art direction and the exact generation prompt"
+            className="hidden md:inline-flex"
+          >
+            <Info className="h-4 w-4" /> Details
+          </Button>
+
+          <Button
             size="icon"
             variant="ghost"
             onClick={onClose}
@@ -173,9 +199,11 @@ export function BannerLibrary({
         </div>
       </div>
 
+      {/* Middle: stage + optional info panel */}
+      <div className="relative z-10 flex min-h-0 flex-1">
       {/* Stage */}
       <div
-        className="relative z-10 flex min-h-0 flex-1 items-center justify-center px-4 py-5 sm:px-16"
+        className="relative flex min-h-0 flex-1 items-center justify-center px-4 py-5 sm:px-10"
         onClick={(e) => {
           // Click the empty area around the banner (not the image or the arrows) closes.
           if (e.target === e.currentTarget) onClose()
@@ -216,6 +244,44 @@ export function BannerLibrary({
         >
           <ChevronRight className="h-5 w-5" />
         </button>
+        </div>
+
+        {/* Info panel — the user's input, the art direction, and the exact prompt. */}
+        {showInfo && (
+          <aside
+            onClick={(e) => e.stopPropagation()}
+            className="z-10 hidden w-[340px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-border/60 bg-card/80 p-4 backdrop-blur-xl md:flex"
+          >
+            <InfoBox title="Your input">
+              <InfoRow label="Title" value={current.title} />
+              <InfoRow label="Subtitle" value={current.subtitle} />
+              <InfoRow label="Button" value={current.button} />
+            </InfoBox>
+            <InfoBox title="Art direction">
+              {current.style ? (
+                <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/90">
+                  {current.style}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">The AI chose the direction automatically.</p>
+              )}
+              {current.brief && (
+                <p className="mt-2 whitespace-pre-wrap break-words border-t border-border/60 pt-2 text-xs leading-relaxed text-muted-foreground">
+                  {current.brief}
+                </p>
+              )}
+            </InfoBox>
+            <InfoBox title="Generation prompt">
+              {current.prompt ? (
+                <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground/80">
+                  {current.prompt}
+                </pre>
+              ) : (
+                <p className="text-xs text-muted-foreground">Not recorded for this banner.</p>
+              )}
+            </InfoBox>
+          </aside>
+        )}
       </div>
 
       {/* Filmstrip */}
@@ -257,5 +323,27 @@ export function BannerLibrary({
       )}
     </div>,
     document.body,
+  )
+}
+
+function InfoBox({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border bg-background/40 p-3">
+      <div className="mb-1.5 font-display text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function InfoRow({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="flex gap-2 py-0.5 text-xs">
+      <span className="w-14 shrink-0 text-muted-foreground">{label}</span>
+      <span className="min-w-0 break-words text-foreground/90">
+        {value || <span className="text-muted-foreground/60">—</span>}
+      </span>
+    </div>
   )
 }
