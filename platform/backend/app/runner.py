@@ -12,6 +12,7 @@ users can't oversaturate the rate limit.
 """
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -759,6 +760,11 @@ def execute_run(run_id: str):
     except Exception as e:  # noqa: BLE001
         run.status, run.error = "failed", f"{type(e).__name__}: {e}"
         run.touch()
+    finally:
+        # Persist every terminal run (completed/partial/failed/cancelled) so its
+        # banners + metadata survive a restart/redeploy (see _persist).
+        if run.status in TERMINAL:
+            _persist(run)
 
 
 def _finish_cancelled(run: Run):
@@ -815,3 +821,77 @@ def run_to_dict(run: Run) -> dict:
         "logo": run.logo or None,
         "banners": banners,
     }
+
+
+# ---------------------------------------------------------------------------
+# Durable storage — persist finished runs so banners survive restarts/redeploys
+# ---------------------------------------------------------------------------
+def _persist(run: Run) -> None:
+    """Write a finished run's metadata to its dir as run.json (best-effort).
+
+    Combined with the on-disk PNGs (under PLATFORM_ARTIFACT_DIR — a mounted disk
+    in the cloud) this lets `rehydrate_runs()` restore the gallery after a
+    restart/redeploy. A write failure must never affect the run.
+    """
+    try:
+        (run.dir / "run.json").write_text(
+            json.dumps(run_to_dict(run), ensure_ascii=False), encoding="utf-8"
+        )
+    except Exception:  # noqa: BLE001
+        log.warning("banner-builder: could not persist run.json for %s", run.id)
+
+
+def _run_from_dict(d: dict, run_dir: Path) -> Run:
+    """Reconstruct a finished (read-only) Run from a persisted run.json, so the
+    existing API + PNG-serving code works against it unchanged."""
+    frames_plan: List[dict] = []
+    frame_results: Dict[str, FrameResult] = {}
+    concepts: Dict[str, dict] = {}
+    sizes: List[str] = []
+    for b in d.get("banners", []):
+        ck, size = b.get("concept", ""), b.get("size", "")
+        mode, phase = b.get("mode", "gen"), b.get("phase", "master")
+        frames_plan.append({"concept": ck, "size": size, "openai_size": "",
+                            "mode": mode, "phase": phase})
+        frame_results[_label(ck, size)] = FrameResult(
+            concept=ck, size=size, openai_size="", mode=mode, phase=phase,
+            status=b.get("status", "ok"), attempts=b.get("attempts", 0),
+            gen_ms=b.get("gen_ms"), bytes=b.get("bytes", 0),
+            png_path=str(run_dir / f"{_label(ck, size)}.png"), error=b.get("error"),
+        )
+        concepts.setdefault(ck, {"title": b.get("title", "")})
+        if size not in sizes:
+            sizes.append(size)
+    now = _now()
+    return Run(
+        id=d["run_id"], status=d.get("status", "completed"),
+        model=d.get("model", "gpt-image-2"), quality=d.get("quality", "high"),
+        sizes=sizes, concepts=concepts, frames_plan=frames_plan,
+        frame_results=frame_results, dir=run_dir,
+        created_at=d.get("created_at", now), updated_at=d.get("updated_at", now),
+        intent=d.get("intent", "general_ad"), intent_meta=d.get("intent_meta") or {},
+        director=d.get("director") or {}, logo=d.get("logo") or {},
+        cancelled=(d.get("status") == "cancelled"), error=d.get("error"),
+    )
+
+
+def rehydrate_runs() -> int:
+    """Load persisted finished runs from disk into the store on startup, so the
+    gallery survives a restart/redeploy. Best-effort and idempotent — a live run
+    already in the store is never overwritten. Returns the number restored."""
+    base = settings.ARTIFACT_ROOT / TOOL_ID
+    if not base.exists():
+        return 0
+    n = 0
+    for run_dir in sorted(base.iterdir()):
+        meta = run_dir / "run.json"
+        if not (run_dir.is_dir() and meta.is_file()) or STORE.get(run_dir.name) is not None:
+            continue
+        try:
+            STORE.add(_run_from_dict(json.loads(meta.read_text(encoding="utf-8")), run_dir))
+            n += 1
+        except Exception:  # noqa: BLE001
+            log.warning("banner-builder: skipped unreadable run dir %s", run_dir.name)
+    if n:
+        log.info("banner-builder: rehydrated %d persisted run(s) from %s", n, base)
+    return n

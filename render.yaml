@@ -9,10 +9,19 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     branch: prod          # the live branch — push here to release
-    plan: free            # free tier: HTTPS *.onrender.com, spins down when idle
+    plan: standard        # paid instance: always-on (no spin-down) + a persistent disk
     autoDeploy: true
     healthCheckPath: /api/health
+    # Persistent disk so generated banners survive restarts/redeploys.
+    disk:
+      name: disk
+      mountPath: /var/banners
+      sizeGB: 5
     envVars:
+      # Banner PNGs + each run's run.json are written under the mounted disk above,
+      # so the gallery is restored on startup (see runner.rehydrate_runs).
+      - key: PLATFORM_ARTIFACT_DIR
+        value: /var/banners
       - key: PLATFORM_COOKIE_SECURE
         value: "true"
       - key: PLATFORM_DOCS

@@ -50,6 +50,14 @@ def create_app() -> FastAPI:
     app.include_router(tools_router.router, dependencies=protected)
     mount_tool_routers(app, dependencies=protected)
 
+    # Restore persisted banner runs from the durable disk (PLATFORM_ARTIFACT_DIR)
+    # so the gallery survives restarts/redeploys. Never fatal.
+    try:
+        from . import runner as _banner_runner
+        _banner_runner.rehydrate_runs()
+    except Exception:  # noqa: BLE001
+        pass
+
     @app.get("/api/health")
     def health():
         return {"status": "ok", "tools": len(ToolRegistry.all())}
