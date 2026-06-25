@@ -574,10 +574,10 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     // Desktop-first 3-pane console. Panes use responsive widths (full at xl); on
     // anything narrower than fits, the row scrolls horizontally rather than
     // overlapping, so every pane stays reachable.
-    <div className="flex h-full min-h-0 overflow-x-auto">
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto pb-28 lg:flex-row lg:overflow-x-auto lg:overflow-y-hidden lg:pb-0">
       {/* ---------------- Left: sizes ---------------- */}
-      <aside className="flex w-[280px] shrink-0 flex-col bg-card animate-fade-in xl:w-[320px]">
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+      <aside className="order-1 flex w-full shrink-0 flex-col border-b border-border bg-card animate-fade-in lg:order-none lg:w-[280px] lg:border-b-0 xl:w-[320px]">
+        <div className="space-y-3 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Sizes</h2>
 
           <div className="relative">
@@ -658,8 +658,8 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       </aside>
 
       {/* ---------------- Center: results + floating command bar ---------------- */}
-      <section className="relative min-h-0 min-w-0 flex-1 bg-background">
-        <div className="h-full overflow-y-auto pb-56">
+      <section className="relative order-3 min-h-[55vh] min-w-0 bg-background lg:order-none lg:min-h-0 lg:flex-1">
+        <div className="lg:h-full lg:overflow-y-auto lg:pb-56">
           <OutputPane
             runs={visibleRuns}
             onDeleteBanner={deleteBanner}
@@ -679,7 +679,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
           />
         )}
 
-        <div className="absolute inset-x-0 bottom-5 z-40 flex flex-col items-center gap-2 px-4">
+        <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-3 lg:absolute lg:bottom-5 lg:pb-0">
           {(missing || formError || formErrors.length > 0) && (
             <div className="w-full max-w-md space-y-2">
               {missing && (
@@ -840,7 +840,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             </div>
 
             {/* Row 2 — controls + generate, kept on a single line inside the console */}
-            <div className="flex flex-nowrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
             {/* Art direction */}
             <button
               type="button"
@@ -1168,8 +1168,8 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       </section>
 
       {/* ---------------- Right: concepts ---------------- */}
-      <aside className="flex w-[340px] shrink-0 flex-col bg-card animate-fade-in xl:w-[400px]">
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+      <aside className="order-2 flex w-full shrink-0 flex-col border-t border-border bg-card animate-fade-in lg:order-none lg:w-[340px] lg:border-t-0 xl:w-[400px]">
+        <div className="space-y-4 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Versions</h2>
 
           {cards.map((c, i) => (

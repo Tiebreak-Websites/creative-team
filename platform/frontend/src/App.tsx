@@ -177,7 +177,7 @@ function Workspace() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      <header className="flex h-16 shrink-0 items-center gap-3 bg-card/70 px-5 backdrop-blur-md sm:gap-5">
+      <header className="flex h-16 shrink-0 items-center gap-2 bg-card/70 px-3 backdrop-blur-md sm:gap-5 sm:px-5">
         <button
           type="button"
           className="group flex items-center"
@@ -189,15 +189,19 @@ function Workspace() {
         </button>
         <nav className="flex items-center gap-1">
           <Tab active={bannerActive} onClick={goBanner}>
-            Banner Builder
+            <span className="sm:hidden">Banner</span>
+            <span className="hidden sm:inline">Banner Builder</span>
           </Tab>
           <Tab active={lpActive} onClick={goLp}>
-            LP Builder
+            <span className="sm:hidden">LP</span>
+            <span className="hidden sm:inline">LP Builder</span>
           </Tab>
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <StorageBadge />
-          <VersionBadge />
+          <span className="hidden sm:inline-flex">
+            <VersionBadge />
+          </span>
           {isAdmin && (
             <Button
               variant={view === 'settings' ? 'secondary' : 'ghost'}
@@ -206,10 +210,12 @@ function Workspace() {
               onClick={() => setView((v) => (v === 'settings' ? 'tool' : 'settings'))}
             >
               <Library className="h-4 w-4" />
-              Catalog
+              <span className="hidden sm:inline">Catalog</span>
             </Button>
           )}
-          <InstallButton />
+          <span className="hidden sm:inline-flex">
+            <InstallButton />
+          </span>
           {bannerActive && (
             <Button
               variant="ghost"
