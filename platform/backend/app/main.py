@@ -137,7 +137,30 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "tools": len(ToolRegistry.all())}
+        # Storage diagnostic: confirms banners land on the mounted 5GB disk (a
+        # persistent path with ~5GB total + writable), not ephemeral container fs.
+        import os
+        import shutil
+        art = settings.ARTIFACT_ROOT
+        storage = {
+            "artifact_dir": str(art),
+            "persistent_env": bool(os.environ.get("PLATFORM_ARTIFACT_DIR")),
+        }
+        try:
+            du = shutil.disk_usage(art if art.exists() else art.parent)
+            storage["total_gb"] = round(du.total / 1e9, 1)
+            storage["free_gb"] = round(du.free / 1e9, 1)
+        except Exception:  # noqa: BLE001
+            storage["total_gb"] = None
+        try:
+            art.mkdir(parents=True, exist_ok=True)
+            probe = art / ".health_write_test"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+            storage["writable"] = True
+        except Exception:  # noqa: BLE001
+            storage["writable"] = False
+        return {"status": "ok", "tools": len(ToolRegistry.all()), "storage": storage}
 
     @app.get("/api/app-build")
     def app_build():
