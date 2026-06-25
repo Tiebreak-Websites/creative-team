@@ -1,7 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from 'react'
 import {
+  Check,
   Download,
-  ExternalLink,
   HelpCircle,
   ImageIcon,
   Loader2,
@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import type { Banner, RunData } from '../types'
-import { assetUrl, versionZipUrl, zipAllUrl } from '../api'
+import { assetUrl, selectionZipUrl, versionZipUrl, zipAllUrl } from '../api'
 import { BannerLibrary, type LibraryItem } from './BannerLibrary'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -109,6 +109,7 @@ export function OutputPane({
 }) {
   const [libOpen, setLibOpen] = useState(false)
   const [libIndex, setLibIndex] = useState(0)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   if (!runs.length) return <EmptyOutput onHelp={onHelp} />
   const groups = buildGroups(runs)
   const firstError = runs.map((r) => r.error).find(Boolean)
@@ -141,9 +142,60 @@ export function OutputPane({
     }
   }
 
+  // Multi-select: keys are `${runId}|${label}` (runId/label never contain "|").
+  function toggleSelect(runId: string, label: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      const k = `${runId}|${label}`
+      if (next.has(k)) next.delete(k)
+      else next.add(k)
+      return next
+    })
+  }
+  const selectedItems = [...selected].map((k) => {
+    const i = k.indexOf('|')
+    return { runId: k.slice(0, i), label: k.slice(i + 1) }
+  })
+  function deleteSelected() {
+    selectedItems.forEach((it) => onDeleteBanner?.(it.runId, it.label))
+    setSelected(new Set())
+  }
+
   return (
     <div className="flex min-h-full flex-col animate-fade-in">
-      <OverviewBar runs={runs} onCancel={onCancel} />
+      <div className="sticky top-0 z-10">
+        <OverviewBar runs={runs} onCancel={onCancel} />
+        {selected.size > 0 && (
+          <div className="flex items-center gap-3 border-b border-primary/30 bg-primary/10 px-5 py-2.5 backdrop-blur-md">
+            <span className="font-display text-sm font-semibold text-primary">
+              {selected.size} selected
+            </span>
+            <Button asChild size="sm" className="gap-1.5">
+              <a href={selectionZipUrl(selectedItems)} download>
+                <Download className="h-4 w-4" /> Download {selected.size}
+              </a>
+            </Button>
+            {onDeleteBanner && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
+                onClick={deleteSelected}
+              >
+                <Trash2 className="h-4 w-4" /> Delete
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto gap-1.5"
+              onClick={() => setSelected(new Set())}
+            >
+              <X className="h-4 w-4" /> Clear
+            </Button>
+          </div>
+        )}
+      </div>
       <div className="space-y-7 p-5">
         {firstError && (
           <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -151,7 +203,14 @@ export function OutputPane({
           </div>
         )}
         {groups.map((g) => (
-          <ConceptGroupBlock key={g.id} g={g} onView={openLibrary} onDelete={onDeleteBanner} />
+          <ConceptGroupBlock
+            key={g.id}
+            g={g}
+            onView={openLibrary}
+            onDelete={onDeleteBanner}
+            selected={selected}
+            onToggleSelect={toggleSelect}
+          />
         ))}
       </div>
       <BannerLibrary
@@ -189,7 +248,7 @@ function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => voi
           : 'All banners ready'
 
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-4 border-b border-border bg-card/70 px-5 py-3 backdrop-blur-md">
+    <div className="flex items-center gap-4 border-b border-border bg-card/70 px-5 py-3 backdrop-blur-md">
       <span className="flex shrink-0 items-center gap-2 font-display text-sm font-semibold">
         {running ? (
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -245,10 +304,14 @@ function ConceptGroupBlock({
   g,
   onView,
   onDelete,
+  selected,
+  onToggleSelect,
 }: {
   g: ConceptGroup
   onView: (label: string) => void
   onDelete?: (runId: string, label: string) => void
+  selected: Set<string>
+  onToggleSelect: (runId: string, label: string) => void
 }) {
   // Bind this group's run id so a deletion is scoped to the right run.
   const onDeleteLabel = onDelete ? (label: string) => onDelete(g.runId, label) : undefined
@@ -286,6 +349,8 @@ function ConceptGroupBlock({
             index={i}
             onView={onView}
             onDelete={onDeleteLabel}
+            selected={selected.has(`${g.runId}|${b.label}`)}
+            onToggleSelect={() => onToggleSelect(g.runId, b.label)}
           />
         ))}
       </div>
@@ -301,69 +366,71 @@ const CHECKER: CSSProperties = {
 
 function AssetCard({
   b,
-  version,
   index = 0,
   onView,
   onDelete,
+  selected = false,
+  onToggleSelect,
 }: {
   b: Banner
   version: number
   index?: number
   onView?: (label: string) => void
   onDelete?: (label: string) => void
+  selected?: boolean
+  onToggleSelect?: () => void
 }) {
   const tag = b.phase === 'master' ? 'master' : 'recomposed'
   const delay = { animationDelay: `${Math.min(index * 40, 400)}ms` }
 
   if (b.status === 'ok' && b.url) {
     const src = assetUrl(b.url)
-    const slug = slugify(b.title)
-    const fileName = `v${version}-${b.size}${slug ? `-${slug}` : ''}`
     return (
       <div
         style={delay}
-        className="group animate-fade-up overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md"
+        className={cn(
+          'group animate-fade-up overflow-hidden rounded-xl border bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md',
+          selected ? 'border-primary ring-2 ring-primary/40' : 'border-border hover:border-foreground/20',
+        )}
       >
         <div className="relative aspect-square" style={CHECKER}>
           <img src={src} alt={b.label} loading="lazy" className="h-full w-full object-contain" />
-          <div className="absolute inset-0 flex items-center justify-center gap-2 bg-foreground/45 opacity-0 transition-opacity group-hover:opacity-100">
-            {onView && (
-              <button
-                type="button"
-                onClick={() => onView(b.label)}
-                title="View in library"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background/90 text-foreground shadow hover:bg-background"
-              >
-                <Maximize2 className="h-4 w-4" />
-              </button>
-            )}
-            <a
-              href={src}
-              target="_blank"
-              rel="noreferrer"
-              title="Open full size"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background/90 text-foreground shadow hover:bg-background"
+
+          {/* Multi-select checkbox (top-left) — shows on hover, or always when selected */}
+          {onToggleSelect && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleSelect()
+              }}
+              title={selected ? 'Deselect' : 'Select'}
+              aria-pressed={selected}
+              className={cn(
+                'absolute left-2 top-2 z-10 inline-flex h-6 w-6 items-center justify-center rounded-md border shadow transition-opacity',
+                selected
+                  ? 'border-primary bg-primary text-primary-foreground opacity-100'
+                  : 'border-border bg-background/90 text-transparent opacity-0 group-hover:opacity-100',
+              )}
             >
-              <ExternalLink className="h-4 w-4" />
-            </a>
-            <a
-              href={`${src}?download=1&name=${encodeURIComponent(fileName)}`}
-              title={`Download ${fileName}.png`}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background/90 text-foreground shadow hover:bg-background"
+              <Check className="h-4 w-4" />
+            </button>
+          )}
+
+          {/* Hover: a single icon to open the banner in view mode (delete/download live there) */}
+          {onView && (
+            <button
+              type="button"
+              onClick={() => onView(b.label)}
+              title="Open"
+              aria-label="Open banner"
+              className="absolute inset-0 flex items-center justify-center bg-foreground/45 opacity-0 transition-opacity group-hover:opacity-100"
             >
-              <Download className="h-4 w-4" />
-            </a>
-            {onDelete && (
-              <button
-                type="button"
-                onClick={() => onDelete(b.label)}
-                title="Delete banner"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-background/90 text-destructive shadow hover:bg-background"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            )}
-          </div>
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-background/90 text-foreground shadow-lg">
+                <Maximize2 className="h-5 w-5" />
+              </span>
+            </button>
+          )}
         </div>
         <div className="flex items-center justify-between border-t border-border px-2.5 py-2 text-xs">
           <span className="font-display font-semibold">{b.size}</span>

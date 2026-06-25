@@ -165,6 +165,39 @@ def build_router() -> APIRouter:
             headers={"Content-Disposition": 'attachment; filename="banners.zip"'},
         )
 
+    @router.get("/selection.zip")
+    def selection_zip(items: str = ""):
+        """Zip a specific, hand-picked set of banners — ?items=runId:label,runId:label,...
+        Each label is validated against its run's plan (also blocks path traversal);
+        same-label banners from different runs are namespaced by run id."""
+        buf = io.BytesIO()
+        seen: set[str] = set()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for tok in items.split(","):
+                tok = tok.strip()
+                if ":" not in tok:
+                    continue
+                rid, label = tok.split(":", 1)
+                rid, label = rid.strip(), label.strip()
+                run = runner.STORE.get(rid)
+                if run is None:
+                    continue
+                if label not in {runner._label(f["concept"], f["size"]) for f in run.frames_plan}:
+                    continue
+                png = run.dir / f"{label}.png"
+                if not png.exists():
+                    continue
+                arc = f"{label}.png"
+                if arc in seen:
+                    arc = f"{rid}/{label}.png"
+                seen.add(arc)
+                zf.write(str(png), arcname=arc)
+        buf.seek(0)
+        return StreamingResponse(
+            buf, media_type="application/zip",
+            headers={"Content-Disposition": 'attachment; filename="banners-selected.zip"'},
+        )
+
     # Brands CRUD lives under this same prefix (/api/tools/banner-builder/brands).
     # GET is any logged-in user; writes self-gate with require_admin.
     router.include_router(build_brands_router())

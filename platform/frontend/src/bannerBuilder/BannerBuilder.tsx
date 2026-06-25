@@ -1066,22 +1066,28 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
               )}
             </div>
 
-            <Button
-              className={cn('ml-auto shrink-0 px-6 font-display', canRun && !running && 'tb-glow')}
-              size="lg"
-              onClick={startRun}
-              disabled={!canRun || running}
-            >
-              {running ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Generating…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" /> Generate
-                </>
-              )}
-            </Button>
+            {running ? (
+              // While generating, the primary button stops the run; once it
+              // settles the user can immediately start a new generation.
+              <Button
+                className="ml-auto shrink-0 gap-1.5 px-6 font-display"
+                size="lg"
+                variant="destructive"
+                onClick={cancelRuns}
+                title="Stop the current generation"
+              >
+                <X className="h-4 w-4" /> Stop
+              </Button>
+            ) : (
+              <Button
+                className={cn('ml-auto shrink-0 px-6 font-display', canRun && 'tb-glow')}
+                size="lg"
+                onClick={startRun}
+                disabled={!canRun}
+              >
+                <Sparkles className="h-4 w-4" /> Generate
+              </Button>
+            )}
             </div>
           </div>
         </div>

@@ -106,6 +106,12 @@ export function versionZipUrl(runId: string, concept: string, v: number, title: 
   return assetUrl(`/api/tools/banner-builder/runs/${runId}/version.zip?${q.toString()}`)
 }
 
+/** Zip a hand-picked set of banners → banners-selected.zip. Items are {runId,label}. */
+export function selectionZipUrl(items: { runId: string; label: string }[]): string {
+  const q = items.map((i) => `${i.runId}:${i.label}`).join(',')
+  return assetUrl(`/api/tools/banner-builder/selection.zip?items=${encodeURIComponent(q)}`)
+}
+
 /** Cancel an in-progress run; the runner stops between frames and settles to `cancelled`. */
 export async function cancelRun(runId: string): Promise<void> {
   await fetch(`${BASE}/tools/banner-builder/runs/${runId}/cancel`, { method: 'POST' }).catch(() => {})

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
-import { ChevronLeft, ChevronRight, Download, DownloadCloud, Trash2, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, DownloadCloud, ExternalLink, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -129,6 +129,12 @@ export function BannerLibrary({
         </span>
 
         <div className="flex shrink-0 items-center gap-2">
+          <Button asChild size="sm" variant="outline">
+            <a href={current.src} target="_blank" rel="noreferrer" title="Open full size in a new tab">
+              <ExternalLink className="h-4 w-4" /> Open
+            </a>
+          </Button>
+
           <Button asChild size="sm" variant="outline">
             <a href={current.downloadHref} download title={`Download ${current.size} PNG`}>
               <Download className="h-4 w-4" /> Download
