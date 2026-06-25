@@ -33,11 +33,10 @@ def meta():
         "master_size": engine.MASTER_SIZE,
         "models": engine.MODELS,
         "qualities": QUALITIES,
-        "default_quality": opts.get("defaultQuality") if opts.get("defaultQuality") in QUALITIES else "high",
+        "default_quality": opts.get("defaultQuality") if opts.get("defaultQuality") in QUALITIES else "medium",
         "thinking_efforts": THINKING_EFFORTS,
-        # Default to "High", not "Extended": Extended (xhigh) art-direction can
-        # take ~2+ min before the first image, which reads as "stuck". High is
-        # the director's own default and is markedly faster. Users can still pick
-        # Extended explicitly. Admin can override via creativeDirector.effort.
-        "default_effort": cd.get("effort") or "high",
+        # Speed-first defaults (target ~1 min/run): Medium quality + Low director
+        # effort. High quality (~2 min/image, measured live) and higher efforts stay
+        # available per run / via admin creativeDirector.effort.
+        "default_effort": cd.get("effort") or "low",
     }

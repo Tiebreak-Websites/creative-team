@@ -164,7 +164,7 @@ def post_images_edits(api_key, prompt, master_png_path, openai_size, model, qual
 
 
 def generate_png(*, api_key, prompt, mode, openai_size, model="gpt-image-2",
-                 quality="medium", master_png_path=None, timeout=120,
+                 quality="medium", master_png_path=None, timeout=180,
                  max_retries=2, base_backoff=8, sleep=time.sleep, on_attempt=None):
     """Generate (mode='gen') or recompose (mode='edit') one PNG; return raw bytes.
 
@@ -206,6 +206,15 @@ def generate_png(*, api_key, prompt, mode, openai_size, model="gpt-image-2",
                 continue
             status = "edit_http_error" if is_edit else "gen_http_error"
             raise GenError(status, f"HTTP {e.code}: {body[:300]}")
+        except (TimeoutError, urllib.error.URLError) as e:
+            # A slow read/connection to OpenAI (image renders can sit near the
+            # timeout). Retry once before failing rather than dropping the banner.
+            # (HTTPError is handled above; this catches bare read timeouts + URLError.)
+            if attempt < max_retries:
+                sleep(3 * (2 ** (attempt - 1)))
+                continue
+            status = "edit_http_error" if is_edit else "gen_http_error"
+            raise GenError(status, f"timed out after {max_retries} attempts: {type(e).__name__}: {e}")
         except FileNotFoundError as e:
             raise GenError("master_missing", str(e))
         except GenError:

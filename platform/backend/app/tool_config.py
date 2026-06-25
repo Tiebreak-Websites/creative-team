@@ -51,17 +51,19 @@ DEFAULT_CONFIGS: dict[str, dict[str, Any]] = {
         "options": {
             "sizes": ["1080x1080", "1080x1920", "1200x628", "300x250", "728x90"],
             "defaultModel": "gpt-image-2",
-            "defaultQuality": "high",  # gpt-image-2 max fidelity (low | medium | high)
+            # Speed-first default so a run lands in ~1 min. gpt-image-2 "high" takes
+            # ~2 min/image (measured live) — too slow; "medium" is ~half. Users can
+            # still pick "high" per run for max fidelity (slower).
+            "defaultQuality": "medium",  # low | medium | high
             "aiAssist": True,
             # GPT-5.5 "creative director": reasons per concept and writes a bespoke
             # creative brief for each size before gpt-image-2 renders it.
             "creativeDirector": {
                 "enabled": True,
                 "model": "gpt-5.5",
-                # "high" by default: Extended (xhigh) art-direction can take ~2+ min
-                # before the first image renders, which reads as "stuck". High is much
-                # faster and still strong. Bump to xhigh here (or per-run) for max quality.
-                "effort": "high",  # none|minimal|low|medium|high|xhigh
+                # "low" by default for speed (~seconds). Higher effort = richer art
+                # direction but adds latency; bump per-run when fidelity matters.
+                "effort": "low",  # none|minimal|low|medium|high|xhigh
             },
         },
     },
