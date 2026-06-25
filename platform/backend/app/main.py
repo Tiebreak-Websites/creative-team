@@ -11,7 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from . import plugin_bridge
 from .auth import build_auth_router, require_user
 from .registry import ToolRegistry, mount_tool_routers
 from .routers import meta_router, tools_router
@@ -85,9 +84,8 @@ def create_app() -> FastAPI:
     # Added last → outermost: security headers wrap every response (incl. CORS
     # preflight and static assets) and the body-size guard runs before routing.
     app.add_middleware(SecurityHeadersMiddleware)
-    # Public: auth endpoints + the Figma plugin bridge (the plugin iframe carries no session).
+    # Public: auth endpoints only (login/logout/me). Everything else is gated.
     app.include_router(build_auth_router())
-    app.include_router(plugin_bridge.build_plugin_router())
     # Per-tool config self-gates per route (GET=any user, PUT=admin).
     app.include_router(build_config_router())
     # Everything else requires a valid session cookie.

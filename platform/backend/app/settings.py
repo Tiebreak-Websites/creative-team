@@ -24,10 +24,11 @@ class Settings:
     # --- Network -----------------------------------------------------------
     HOST = _env("PLATFORM_HOST", "127.0.0.1")
     PORT = int(_env("PLATFORM_PORT", "8000"))
-    # Vite dev server origins; override for a shared deployment. "null" lets the
-    # Figma plugin's sandboxed iframe (Origin: null) reach the /api/plugin/* bridge.
+    # Vite dev-server origins for local work. In production the backend serves the
+    # SPA itself (single origin), so no cross-origin browser access is needed and
+    # the list is intentionally minimal — no "null", no wildcard.
     CORS_ORIGINS = [o.strip() for o in _env(
-        "PLATFORM_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,null"
+        "PLATFORM_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
     ).split(",") if o.strip()]
 
     # Behind TLS (a Cloudflare Tunnel / any HTTPS reverse proxy) the session
