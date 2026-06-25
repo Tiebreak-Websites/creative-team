@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import type { Meta, RunData, Tool } from '../types'
 import { TERMINAL_STATUSES } from '../types'
-import { ApiError, cancelRun, getRun, uploadReferences } from '../api'
+import { ApiError, cancelRun, deleteBanner as deleteBannerApi, getRun, uploadReferences } from '../api'
 import { createRun, listRuns } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
@@ -167,28 +167,6 @@ function writeSnapshot(runs: RunData[]) {
   }
 }
 
-// Deleted banner labels — persisted so a "trash" deletion sticks across reloads
-// even though the backend (which we re-poll) still holds the PNG. We simply
-// filter these out of everything shown.
-const DELETED_LS_KEY = 'bb:deleted'
-
-function readDeleted(): string[] {
-  try {
-    const v = JSON.parse(localStorage.getItem(DELETED_LS_KEY) || '[]')
-    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []
-  } catch {
-    return []
-  }
-}
-
-function writeDeleted(labels: string[]) {
-  try {
-    localStorage.setItem(DELETED_LS_KEY, JSON.stringify(labels))
-  } catch {
-    /* best-effort */
-  }
-}
-
 export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
   // ---- Campaign settings ----
   const efforts = meta.thinking_efforts ?? [
@@ -260,33 +238,22 @@ export function BannerBuilder({ meta }: { tool: Tool; meta: Meta }) {
     writeSnapshot(runs)
   }, [runs])
 
-  // Trash: deleted banners (persisted), filtered out of what we render. Keyed
-  // PER-RUN: banner labels (concept__size, e.g. "c1__1200x1200") repeat across
-  // runs, so a bare-label key would hide every future run's same-size banner —
-  // that was the "generates but shows nothing" bug. Old bare-label entries from
-  // before this fix simply never match the new runId-scoped key, so any earlier
-  // poisoned state clears itself.
-  const [deleted, setDeleted] = useState<Set<string>>(() => new Set(readDeleted()))
-  const deletedKey = (runId: string, label: string) => `${runId}__${label}`
+  // Delete a banner for EVERYONE: ask the server to remove the PNG from the disk
+  // and drop it from the run, then optimistically remove it from the local
+  // gallery. Deletes are now shared (no per-user localStorage hide).
   function deleteBanner(runId: string, label: string) {
-    setDeleted((prev) => {
-      const next = new Set(prev)
-      next.add(deletedKey(runId, label))
-      writeDeleted([...next])
-      return next
-    })
+    void deleteBannerApi(runId, label)
+    setRuns((prev) =>
+      prev
+        .map((r) => (r.run_id === runId ? { ...r, banners: r.banners.filter((b) => b.label !== label) } : r))
+        .filter((r) => r.banners.length > 0 || !TERMINAL_STATUSES.includes(r.status)),
+    )
   }
   const visibleRuns = useMemo(
-    () =>
-      runs
-        .map((r) => ({
-          ...r,
-          banners: r.banners.filter((b) => !deleted.has(deletedKey(r.run_id, b.label))),
-        }))
-        // Keep a run visible while it's still active even if it has no banners
-        // yet, so progress always shows; hide only finished, fully-emptied runs.
-        .filter((r) => r.banners.length > 0 || !TERMINAL_STATUSES.includes(r.status)),
-    [runs, deleted],
+    // Keep an active run visible even with no banners yet (so progress shows);
+    // hide finished, fully-emptied runs.
+    () => runs.filter((r) => r.banners.length > 0 || !TERMINAL_STATUSES.includes(r.status)),
+    [runs],
   )
 
   // Poll every non-terminal run until all reach a terminal status.

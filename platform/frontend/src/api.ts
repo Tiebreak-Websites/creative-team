@@ -117,6 +117,14 @@ export async function cancelRun(runId: string): Promise<void> {
   await fetch(`${BASE}/tools/banner-builder/runs/${runId}/cancel`, { method: 'POST' }).catch(() => {})
 }
 
+/** Delete one banner for EVERYONE — removes the PNG from the disk + the shared gallery. */
+export async function deleteBanner(runId: string, label: string): Promise<void> {
+  await fetch(
+    `${BASE}/tools/banner-builder/runs/${runId}/banners/${encodeURIComponent(label)}.png`,
+    { method: 'DELETE' },
+  ).catch(() => {})
+}
+
 /** Upload 1–4 style-reference images; returns server ids to pass in the run payload. */
 export async function uploadReferences(files: File[]): Promise<string[]> {
   const fd = new FormData()

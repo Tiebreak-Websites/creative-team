@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from ... import references as references_store
 from ... import runner
@@ -107,12 +107,25 @@ def build_router() -> APIRouter:
         if not png.exists():
             raise HTTPException(status_code=404, detail="banner not generated yet")
         disposition = "attachment" if download else "inline"
-        # Optional caller-supplied download name, e.g. v1-1200x1200-title.png
-        fname = (_slug(name) or label) + ".png"
+        # Download name: caller-supplied, else the standard v{N}-{size}-{title}.
+        concept, _, size = label.partition("__")
+        fname = (_slug(name) or runner.export_name(run, concept, size)) + ".png"
         return FileResponse(
             str(png), media_type="image/png",
             headers={"Content-Disposition": f'{disposition}; filename="{fname}"'},
         )
+
+    @router.delete("/runs/{run_id}/banners/{label}.png", status_code=204)
+    def delete_banner(run_id: str, label: str):
+        """Delete one banner for EVERYONE — removes the PNG from the disk and drops
+        it from the run (re-persisted). Not a per-user hide, so it disappears from
+        the shared gallery for all users."""
+        run = runner.STORE.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        if not runner.delete_frame(run, label):
+            raise HTTPException(status_code=404, detail="unknown banner")
+        return Response(status_code=204)
 
     @router.get("/runs/{run_id}/download.zip")
     def download_zip(run_id: str):
@@ -123,7 +136,7 @@ def build_router() -> APIRouter:
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for fr in run.frame_results.values():
                 if fr.status == "ok" and fr.png_path and Path(fr.png_path).exists():
-                    zf.write(fr.png_path, arcname=Path(fr.png_path).name)
+                    zf.write(fr.png_path, arcname=runner.export_name(run, fr.concept, fr.size) + ".png")
         buf.seek(0)
         return StreamingResponse(
             buf, media_type="application/zip",
@@ -144,10 +157,9 @@ def build_router() -> APIRouter:
             for f in run.frames_plan:
                 if f["concept"] != concept:
                     continue
-                label = runner._label(f["concept"], f["size"])
-                png = run.dir / f"{label}.png"
+                png = run.dir / f"{runner._label(f['concept'], f['size'])}.png"
                 if png.exists():
-                    zf.write(str(png), arcname=f"v{v}-{f['size']}{suffix}.png")
+                    zf.write(str(png), arcname=runner.export_name(run, concept, f["size"]) + ".png")
         buf.seek(0)
         return StreamingResponse(
             buf, media_type="application/zip",
@@ -160,6 +172,7 @@ def build_router() -> APIRouter:
         namespaced by run id in the archive so labels can't collide."""
         run_ids = [x.strip() for x in ids.split(",") if x.strip()]
         buf = io.BytesIO()
+        seen: set[str] = set()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for rid in run_ids:
                 run = runner.STORE.get(rid)
@@ -167,7 +180,11 @@ def build_router() -> APIRouter:
                     continue
                 for fr in run.frame_results.values():
                     if fr.status == "ok" and fr.png_path and Path(fr.png_path).exists():
-                        zf.write(fr.png_path, arcname=f"{rid}/{Path(fr.png_path).name}")
+                        arc = runner.export_name(run, fr.concept, fr.size) + ".png"
+                        if arc in seen:
+                            arc = f"{arc[:-4]}-{rid[-4:]}.png"
+                        seen.add(arc)
+                        zf.write(fr.png_path, arcname=arc)
         buf.seek(0)
         return StreamingResponse(
             buf, media_type="application/zip",
@@ -196,9 +213,10 @@ def build_router() -> APIRouter:
                 png = run.dir / f"{label}.png"
                 if not png.exists():
                     continue
-                arc = f"{label}.png"
+                concept, _, size = label.partition("__")
+                arc = runner.export_name(run, concept, size) + ".png"
                 if arc in seen:
-                    arc = f"{rid}/{label}.png"
+                    arc = f"{arc[:-4]}-{rid[-4:]}.png"
                 seen.add(arc)
                 zf.write(str(png), arcname=arc)
         buf.seek(0)

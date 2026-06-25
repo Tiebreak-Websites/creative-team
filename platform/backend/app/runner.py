@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 import uuid
@@ -126,6 +127,10 @@ class RunStore:
         shared gallery so all users see all banners."""
         with self._lock:
             return list(self._runs.values())
+
+    def remove(self, run_id: str) -> None:
+        with self._lock:
+            self._runs.pop(run_id, None)
 
 
 STORE = RunStore()
@@ -460,13 +465,14 @@ def _gen_one_frame(run: Run, frame: dict):
             run.touch()
             return
 
-    # Display-ad slots need EXACT pixels — cover-crop the generated frame.
-    if frame["size"] in engine.DISPLAY_SIZES:
-        try:
-            _w, _h = (int(x) for x in frame["size"].split("x"))
-            png = reshape.fit_cover(png, _w, _h)
-        except Exception:  # noqa: BLE001 — never drop a frame over reshaping
-            pass
+    # Export EVERY banner at its EXACT requested pixel size. The image API only
+    # emits 1024/1536-class sizes, so scale + center-crop to the precise box —
+    # otherwise a "1200x1200" banner would download as the generated 1024x1024.
+    try:
+        _w, _h = (int(x) for x in frame["size"].split("x"))
+        png = reshape.fit_cover(png, _w, _h)
+    except Exception:  # noqa: BLE001 — never drop a frame over reshaping
+        pass
 
     # Composite the brand logo (raster only) into the chosen corner. Best-effort:
     # a failure leaves the un-overlaid banner rather than dropping the frame.
@@ -858,6 +864,48 @@ def _persist(run: Run) -> None:
         )
     except Exception:  # noqa: BLE001
         log.warning("banner-builder: could not persist run.json for %s", run.id)
+
+
+def export_name(run: Run, concept: str, size: str) -> str:
+    """Download filename for a banner (no extension): v{N}-{size}-{title}, where N
+    is the version number from the concept key (c1 -> 1) and title is the concept
+    title slugged. Used for single + zip downloads so names are consistent."""
+    m = re.search(r"(\d+)", concept)
+    v = m.group(1) if m else "1"
+    title = (run.concepts.get(concept) or {}).get("title", "") or ""
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", title).strip("-").lower()[:60]
+    return f"v{v}-{size}" + (f"-{slug}" if slug else "")
+
+
+def delete_run(run: Run) -> None:
+    """Delete a run entirely: remove its dir from the disk + drop it from the store."""
+    try:
+        import shutil
+        if run.dir.exists():
+            shutil.rmtree(run.dir, ignore_errors=True)
+    except Exception:  # noqa: BLE001
+        pass
+    STORE.remove(run.id)
+
+
+def delete_frame(run: Run, label: str) -> bool:
+    """Delete ONE banner for everyone: remove its PNG from the disk, drop the frame
+    from the run, and re-persist (or delete the whole run if nothing is left).
+    Returns False if the label isn't part of the run."""
+    if label not in {_label(f["concept"], f["size"]) for f in run.frames_plan}:
+        return False
+    try:
+        (run.dir / f"{label}.png").unlink(missing_ok=True)
+    except OSError:
+        pass
+    run.frames_plan = [f for f in run.frames_plan if _label(f["concept"], f["size"]) != label]
+    run.frame_results.pop(label, None)
+    run.touch()
+    if run.frames_plan:
+        _persist(run)
+    else:
+        delete_run(run)
+    return True
 
 
 def _run_from_dict(d: dict, run_dir: Path) -> Run:
