@@ -1050,11 +1050,19 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
         mode, phase = b.get("mode", "gen"), b.get("phase", "master")
         frames_plan.append({"concept": ck, "size": size, "openai_size": "",
                             "mode": mode, "phase": phase})
+        status, error = b.get("status", "ok"), b.get("error")
+        png = run_dir / f"{_label(ck, size)}.png"
+        # A previously-"ok" banner whose PNG is gone (e.g. it predates the mounted
+        # disk) must NOT be served as ok — the frontend would render a broken image.
+        # Downgrade it to "missing" so run_to_dict drops its url and the UI shows a
+        # clean "unavailable" placeholder instead.
+        if status == "ok" and not png.is_file():
+            status, error = "missing", "image file is no longer on disk"
         frame_results[_label(ck, size)] = FrameResult(
             concept=ck, size=size, openai_size="", mode=mode, phase=phase,
-            status=b.get("status", "ok"), attempts=b.get("attempts", 0),
+            status=status, attempts=b.get("attempts", 0),
             gen_ms=b.get("gen_ms"), bytes=b.get("bytes", 0),
-            png_path=str(run_dir / f"{_label(ck, size)}.png"), error=b.get("error"),
+            png_path=str(png), error=error,
         )
         concepts.setdefault(ck, {"title": b.get("title", "")})
         if size not in sizes:
@@ -1085,7 +1093,12 @@ def rehydrate_runs() -> int:
         if not (run_dir.is_dir() and meta.is_file()) or STORE.get(run_dir.name) is not None:
             continue
         try:
-            STORE.add(_run_from_dict(json.loads(meta.read_text(encoding="utf-8")), run_dir))
+            run = _run_from_dict(json.loads(meta.read_text(encoding="utf-8")), run_dir)
+            # Skip a fully-dead run (no surviving banner image on disk) — it would
+            # only show a card full of "unavailable" placeholders.
+            if not any(fr.status == "ok" for fr in run.frame_results.values()):
+                continue
+            STORE.add(run)
             n += 1
         except Exception:  # noqa: BLE001
             log.warning("banner-builder: skipped unreadable run dir %s", run_dir.name)
@@ -1119,8 +1132,24 @@ def storage_stats() -> dict:
         base.mkdir(parents=True, exist_ok=True)
         out["writable"] = True
         run_dirs = [d for d in base.iterdir() if d.is_dir()]
-        out["runs_on_disk"] = sum(1 for d in run_dirs if (d / "run.json").is_file())
+        run_jsons = [d for d in run_dirs if (d / "run.json").is_file()]
+        out["runs_on_disk"] = len(run_jsons)
         out["pngs_on_disk"] = sum(1 for d in run_dirs for _ in d.glob("*.png"))
+        # ok banners that run.json claims vs how many actually have a PNG on disk —
+        # `missing_pngs` is the count that would otherwise show as broken images.
+        ok_claimed = missing = 0
+        for d in run_jsons:
+            try:
+                meta_d = json.loads((d / "run.json").read_text(encoding="utf-8"))
+                for b in meta_d.get("banners", []):
+                    if b.get("status") == "ok":
+                        ok_claimed += 1
+                        if not (d / f"{_label(b.get('concept', ''), b.get('size', ''))}.png").is_file():
+                            missing += 1
+            except Exception:  # noqa: BLE001
+                pass
+        out["ok_claimed"] = ok_claimed
+        out["missing_pngs"] = missing
         marker = base / ".first_seen"
         if not marker.exists():
             marker.write_text(_now(), encoding="utf-8")

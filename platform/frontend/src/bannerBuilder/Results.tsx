@@ -391,8 +391,11 @@ function AssetCard({
 }) {
   const tag = b.phase === 'master' ? 'master' : 'recomposed'
   const delay = { animationDelay: `${Math.min(index * 40, 400)}ms` }
+  // If a banner the server reports "ok" fails to load (its PNG is gone), fall
+  // through to a clean placeholder instead of a broken <img>.
+  const [broken, setBroken] = useState(false)
 
-  if (b.status === 'ok' && b.url) {
+  if (b.status === 'ok' && b.url && !broken) {
     const src = assetUrl(b.url)
     return (
       <div
@@ -407,6 +410,7 @@ function AssetCard({
             src={src}
             alt={b.label}
             loading="lazy"
+            onError={() => setBroken(true)}
             className="h-full w-full object-contain transition-transform duration-300 ease-out group-hover:scale-[1.03]"
           />
 
@@ -474,9 +478,9 @@ function AssetCard({
     >
       <div className="flex aspect-square flex-col items-center justify-center gap-1.5 p-3 text-center">
         <span className="flex items-center gap-1.5 text-xs font-medium">
-          <StatusDot status={b.status} /> {b.size}
+          <StatusDot status={broken ? 'missing' : b.status} /> {b.size}
         </span>
-        <span className="text-xs text-muted-foreground">{phLabel(b)}</span>
+        <span className="text-xs text-muted-foreground">{broken ? 'Image unavailable' : phLabel(b)}</span>
       </div>
       <div className="flex items-center justify-between border-t border-border px-2.5 py-2 text-xs">
         <span className="font-display font-semibold text-muted-foreground">{b.size}</span>
@@ -516,6 +520,7 @@ function StatusDot({ status }: { status: string }) {
 function phLabel(b: Banner): string {
   if (b.status === 'pending') return 'Queued'
   if (b.status === 'running') return `Generating${b.attempts > 1 ? ` · attempt ${b.attempts}` : ''}…`
+  if (b.status === 'missing') return 'Image unavailable'
   return b.error ? `${b.status}: ${b.error}` : b.status
 }
 
