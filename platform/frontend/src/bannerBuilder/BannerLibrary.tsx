@@ -1,4 +1,5 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, Download, DownloadCloud, ExternalLink, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -94,12 +95,12 @@ export function BannerLibrary({
   const atStart = safeIndex <= 0
   const atEnd = safeIndex >= count - 1
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label="Banner preview"
-      className="fixed inset-0 z-[80] flex flex-col animate-fade-in"
+      className="fixed inset-0 z-[100] flex flex-col animate-fade-in"
     >
       {/* Scrim — clicking the empty space closes the lightbox. */}
       <button
@@ -248,6 +249,7 @@ export function BannerLibrary({
           })}
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   )
 }
