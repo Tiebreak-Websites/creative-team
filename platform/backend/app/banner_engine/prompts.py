@@ -53,12 +53,12 @@ _APPROVED_BG_HEXES = {bg.upper() for bg, _ in BUTTON_COMBOS}
 # shared lighting/palette/depth, the headline/ticker dominant), plus a per-format
 # adaptation note. Hard vertical split-panels only happen if the direction asks.
 LAYOUT_BASE = {
-    "1200x1200": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge. Alignment follows the subject: if the hero subject/person is centered in the frame, CENTER the headline, supporting copy AND the CTA button horizontally too (a symmetric, centered composition); only left-align the copy block when the subject sits clearly to one side.",
-    "1080x1080": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge. Alignment follows the subject: if the hero subject/person is centered in the frame, CENTER the headline, supporting copy AND the CTA button horizontally too (a symmetric, centered composition); only left-align the copy block when the subject sits clearly to one side.",
+    "1200x1200": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge.",
+    "1080x1080": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge.",
     "1200x628":  "Aspect 1.91:1 wide banner. ONE integrated composition (subject, type and background share lighting and depth — not pasted blocks): compressed but readable, fewer elements, a strong left-to-right reading flow. Headline/ticker dominant and legible. Avoid hard split-panels unless requested; 12% safe top+bottom.",
     "1080x1920": "Aspect 9:16 tall. ONE integrated composition with a STACKED hierarchy — headline/ticker toward the top, the hero subject/scene filling below, with breathing room between. Subject, type and background share one lighting and palette (not pasted blocks). Mobile safe top 8% + bottom 12%; 10% safe left+right.",
-    "1080x1350": "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker prominent in the upper area but FULLY inside the top safe margin (never touching or bleeding off the top edge), hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right, and keep the whole headline ~12% clear of the TOP and BOTTOM edges (the export is cropped there).",
-    "960x1200":  "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker prominent in the upper area but FULLY inside the top safe margin (never touching or bleeding off the top edge), hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right, and keep the whole headline ~12% clear of the TOP and BOTTOM edges (the export is cropped there).",
+    "1080x1350": "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker is the dominant element, positioned in the UPPER-MIDDLE of the SURVIVING central band — NOT pushed to the top edge, which is cropped. Hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right; the exact-size-crop clearances stated below own the top/bottom margins (every headline line must sit fully inside the central band).",
+    "960x1200":  "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker is the dominant element, positioned in the UPPER-MIDDLE of the SURVIVING central band — NOT pushed to the top edge, which is cropped. Hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right; the exact-size-crop clearances stated below own the top/bottom margins (every headline line must sit fully inside the central band).",
     "1920x1080": "Aspect 16:9 landscape. ONE integrated cinematic composition — compressed, fewer elements, strong left-to-right flow; subject and background share lighting and depth (not pasted blocks). Headline/ticker dominant and legible. Avoid hard split-panels unless requested.",
     "1200x960":  "Aspect 5:4 mild-wide. ONE integrated composition — headline/ticker dominant and legible, subject and background sharing lighting and depth (not pasted blocks). Avoid hard split-panels unless requested.",
 }
@@ -226,14 +226,49 @@ TYPOGRAPHY_RULE = (
     "AFTER the final letter, never overlapping it."
 )
 
+# Single authority for HORIZONTAL placement. The engine never names an absolute
+# corner for the button — alignment is a compositional choice owned by the
+# creative direction; the engine only enforces that the three text elements stay
+# COHERENT (one shared alignment). This kills "centered copy + left-pinned button".
+COPY_STACK_ALIGNMENT = (
+    "ALIGNMENT (one rule — governs HORIZONTAL placement and OVERRIDES any side named "
+    "elsewhere): the headline/hook, the supporting subheadline, and the CTA button are "
+    "ONE vertical copy stack that shares a SINGLE horizontal alignment and axis — never "
+    "mixed. Pick that alignment from the composition: if the hero subject is centered, or "
+    "there is no single subject (type-led / symmetric), CENTER all three on the canvas "
+    "centerline; if the subject clearly occupies one side, align all three to the OPPOSITE "
+    "side and share that side's edge. The CTA button INHERITS the headline's alignment "
+    "exactly — centered under centered copy, left-aligned under left copy. NEVER a centered "
+    "headline with a corner- or side-pinned button, and never the copy on one alignment and "
+    "the button on another."
+)
+
 RTL_RULE = (
     "RTL composition: mirror visual hierarchy; hook and copy block enter from the right. "
     "Numerals stay LTR even inside an RTL block. Question mark is U+061F when applicable."
 )
 
 
-def hierarchy_rule(has_cta: bool) -> str:
-    """Per-canvas hierarchy weights. Diverges by CTA presence."""
+def hierarchy_rule(has_cta: bool, size: str = "") -> str:
+    """Per-canvas hierarchy weights. Crop-aware: extreme letterbox slots can't fit the
+    full-canvas % heights below into their thin surviving strip, so they get a
+    band-relative single-line spec instead (avoids the impossible-stack contradiction)."""
+    if size and _is_strip(size):
+        _, axis = _crop_info(size)
+        if axis == "vertical":  # thin WIDE strip — leaderboard / billboard
+            line = ("Render the headline as ONE short horizontal line, vertically centered "
+                    "in the surviving strip, sized to ~55-70% of the strip height. ")
+            cta = ("Put a COMPACT CTA pill on the SAME baseline, beside the headline (inline, "
+                   "never stacked) — scale it to the strip, IGNORE the 14-18%-of-canvas rule. "
+                   ) if has_cta else ""
+        else:  # thin TALL strip — skyscraper
+            line = ("Set the headline as a tight NARROW column within the surviving central "
+                    "width (few characters per line), sized to fit. ")
+            cta = ("Use a COMPACT CTA whose width fits that central column, scaled to the band "
+                   "— IGNORE the 14-18%-of-canvas rule. ") if has_cta else ""
+        return ("Visual hierarchy (EXTREME strip — only a thin central band survives the crop; "
+                "treat THAT band as the whole canvas): " + line + cta +
+                "No subtitle, no stacked extra lines.")
     if has_cta:
         return (
             "Visual hierarchy: hook prominent at ~30-40% canvas height (confident, "
@@ -322,6 +357,20 @@ def _crop_info(size: str) -> tuple:
     return 0, ""
 
 
+def _surviving_band(size: str) -> int:
+    """% of the cropped axis that survives the exact-size crop (100 = no crop)."""
+    pct, _ = _crop_info(size)
+    return 100 - 2 * (pct + 6) if pct >= 4 else 100
+
+
+def _is_strip(size: str) -> bool:
+    """True when the crop leaves only a thin strip (extreme letterbox — leaderboards,
+    billboards, skyscrapers). Such slots get a single-line, no-subtitle, compact-inline-
+    button treatment scaled to the strip instead of full-canvas hierarchy. Derived from
+    the crop band so every present + future extreme size is caught automatically."""
+    return _surviving_band(size) <= 34
+
+
 def _crop_safe_note(size: str) -> str:
     """A forceful instruction: how much of each edge the exact-size crop removes,
     and that the WHOLE headline + button must be sized/placed inside the surviving
@@ -330,43 +379,65 @@ def _crop_safe_note(size: str) -> str:
     if pct < 4:
         return ""
     m = pct + 6  # clearance — generous, because the model places text imprecisely
+    band = 100 - 2 * m
+    if _is_strip(size):
+        # Extreme letterbox: only a thin central strip survives — full stacked copy
+        # can never fit, so collapse to a single line + compact inline button.
+        if axis == "vertical":
+            return (
+                f"⚠ EXTREME LETTERBOX CROP: the export slices off the top {pct}% and bottom "
+                f"{pct}% — only a thin central HORIZONTAL strip (~{band}% of the height) "
+                f"survives. Put the WHOLE ad in that strip: ONE short headline line and (if "
+                f"any) a compact inline button on the SAME baseline beside it. NO stacked "
+                f"lines, NO subtitle, nothing taller than the strip. Top and bottom are "
+                f"background only."
+            )
+        return (
+            f"⚠ EXTREME LETTERBOX CROP: the export slices off the left {pct}% and right "
+            f"{pct}% — only a thin central VERTICAL strip (~{band}% of the width) survives. "
+            f"Set the copy as a tight NARROW column inside that strip, sized to fit, with a "
+            f"compact button; NO content reaches a side edge, NO subtitle."
+        )
     if axis == "vertical":
         return (
             f"⚠ EXACT-SIZE CROP (do not ignore): the export is center-cropped to this "
             f"aspect, which SLICES OFF the top ~{pct}% and bottom ~{pct}% of whatever you "
-            f"draw. So EVERY line of the headline and the ENTIRE CTA button must sit fully "
-            f"inside the central ~{100 - 2 * m}% of the height — at least {m}% clear of the "
-            f"TOP edge and {m}% clear of the BOTTOM edge. SIZE the headline so its top line "
-            f"starts BELOW the top {m}% and its baseline ends ABOVE the bottom {m}%; if it "
-            f"won't fit, make it smaller — never let a single letter reach the top or bottom "
-            f"edge. Keep the top and bottom margins as clean background only."
+            f"draw. So EVERY line of the headline, the subheadline, and the ENTIRE CTA "
+            f"button must sit fully inside the central ~{band}% of the height — at least "
+            f"{m}% clear of the TOP edge and {m}% clear of the BOTTOM edge. SIZE the headline "
+            f"so its top line starts BELOW the top {m}% and its baseline ends ABOVE the "
+            f"bottom {m}%; if it won't fit, make it smaller — never let a single letter reach "
+            f"the top or bottom edge. Keep the top and bottom margins as clean background."
         )
     return (
         f"⚠ EXACT-SIZE CROP (do not ignore): the export is center-cropped to this aspect, "
         f"which SLICES OFF the left ~{pct}% and right ~{pct}% of whatever you draw. So the "
-        f"whole headline and the ENTIRE CTA button must sit fully inside the central "
-        f"~{100 - 2 * m}% of the width — at least {m}% clear of the LEFT and RIGHT edges. "
-        f"Never let a letter or the button reach a side edge; keep the side margins clean."
+        f"whole headline, the subheadline, and the ENTIRE CTA button must sit fully inside "
+        f"the central ~{band}% of the width — at least {m}% clear of the LEFT and RIGHT "
+        f"edges. If the headline is wider than this band, REDUCE its size or break it onto "
+        f"more lines; never let a letter or the button reach a side edge."
     )
 
 
 def button_placement(size: str) -> str:
-    """Crop-aware CTA placement: for sizes that get cover-cropped, the button must
-    sit inside the surviving central band, not against a cropped edge."""
-    base = BUTTON_PLACEMENT.get(size, "bottom-left, aligned with the copy block")
+    """CTA VERTICAL band + crop-safety only. HORIZONTAL alignment is NOT fixed here —
+    it is inherited from the copy stack (see COPY_STACK_ALIGNMENT), so a centered
+    layout gets a centered button and a side layout a side button, automatically."""
+    # Phrase the button's horizontal position purely relative to the copy.
+    align = ("on the SAME horizontal alignment and axis as the headline + subheadline "
+             "(centered under centered copy, left under left copy) — never a fixed corner")
     pct, axis = _crop_info(size)
+    if _is_strip(size):
+        return (f"as a COMPACT inline pill on the headline's baseline, {align}, scaled to "
+                "the surviving strip (NOT 14-18% of the full canvas)")
     if pct < 4:
-        return base
+        return f"in the lower third, directly beneath the copy, {align}"
     m = pct + 6
     if axis == "vertical":
-        # Top+bottom are cropped — a bottom-anchored button would be sliced.
-        return (
-            "inside the central band, beside or just beneath the headline, fully "
-            f"{m}% clear of the TOP and BOTTOM edges — never touching the bottom edge, "
-            "which gets cropped"
-        )
-    # Left+right cropped — keep the usual vertical placement but off the sides.
-    return f"{base}, but pulled fully {m}% clear of the LEFT and RIGHT edges (they get cropped)"
+        return (f"beneath the copy, {align}, fully {m}% clear of the TOP and BOTTOM edges — "
+                "never touching the bottom edge, which gets cropped")
+    return (f"beneath the copy, {align}, with the ENTIRE button pulled fully {m}% clear of "
+            "the LEFT and RIGHT edges (they get cropped)")
 
 
 def layout_lock(size: str, has_cta: bool) -> str:
@@ -376,10 +447,11 @@ def layout_lock(size: str, has_cta: bool) -> str:
             f"Unsupported size: {size}. Supported: {sorted(LAYOUT_BASE.keys())}"
         )
     base = LAYOUT_BASE[size]
-    if size in _TINY_SLOTS:
+    if _is_strip(size):
         base += (
-            " Tiny slot — render ONLY the most important line (the ticker or headline); "
-            "omit body and secondary copy; ensure it reads in 1-2 seconds."
+            " Strip slot — render ONLY the most important line (the ticker or headline); "
+            "omit body and secondary copy (intentionally — do not add them back); ensure it "
+            "reads in 1-2 seconds."
         )
     note = _crop_safe_note(size)
     if note:
@@ -437,7 +509,7 @@ def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
         SYSTEM_HEADER,
         hard_negatives_for(intent),
         layout_lock(size, has_cta=has_cta),
-        hierarchy_rule(has_cta=has_cta),
+        hierarchy_rule(has_cta=has_cta, size=size),
         f'Title (verbatim, render exactly as written): "{title}"',
         f'Hook: "{hook}" — pulled verbatim from the Title above. This fragment is '
         "the type-hero of the composition; its treatment is specified in the "
@@ -447,11 +519,12 @@ def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
     # supporting line, the same as the title. (Skipped only on tiny slots where
     # secondary copy is unreadable.) Without this the model treats it as mere
     # context and drops it from the banner.
-    if subtitle and size not in _TINY_SLOTS:
+    if subtitle and not _is_strip(size):
         sections.append(
             f'Subheadline / supporting copy (render verbatim, exactly as written — do '
             f'NOT paraphrase, shorten, omit, or invent around it; place it as a clearly '
-            f'legible secondary line near the headline): "{subtitle}"'
+            f'legible secondary line directly under the headline, on the SAME alignment, '
+            f'inside the safe band): "{subtitle}"'
         )
     sections += [
         BRAND_DEFENCE_LINE,
@@ -464,15 +537,16 @@ def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
         placement = button_placement(size)
         cta_label = normalize_cta(cta)
         sections.append(
-            f'CTA button: "{cta_label}" — LARGE, command-presence pill button, '
+            f'CTA button: "{cta_label}" — command-presence pill button, '
             f"{bg_hex} fill with {text_hex} text, placed {placement}. "
-            "Button height ~14-18% of canvas with very generous internal padding "
-            "(button text never cramped — vertical breathing room ~30-40% of label "
-            "height on each side, horizontal padding ~60-80% of cap-height each side). "
-            "High visual weight, the action anchor — impossible to miss. "
-            "Render the button text verbatim, no paraphrase. "
-            "No trailing punctuation on the button label."
+            "Sized per the visual-hierarchy spec above (compact inline on cropped strips, "
+            "otherwise large ~14-18% of canvas height) with very generous internal padding "
+            "(button text never cramped — vertical breathing room ~30-40% of label height "
+            "on each side, horizontal padding ~60-80% of cap-height each side). "
+            "High visual weight, the action anchor. Render the button text verbatim, no "
+            "paraphrase. No trailing punctuation on the button label."
         )
+        sections.append(COPY_STACK_ALIGNMENT)
 
     sections.append(TYPOGRAPHY_RULE)
     if is_rtl(locale):
@@ -523,10 +597,11 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
         f'- Title (verbatim from master): "{title}"',
         f'- Hook fragment as the type-hero: "{hook}" (same color, weight, and treatment as the master)',
     ]
-    if subtitle and target_size not in _TINY_SLOTS:
+    if subtitle and not _is_strip(target_size):
         preserve.append(
-            f'- Subheadline / supporting copy (verbatim, exactly as written — keep it a '
-            f'legible secondary line, never dropped): "{subtitle}"'
+            f'- Subheadline / supporting copy (verbatim, exactly as written — a legible '
+            f'secondary line directly under the headline, on the SAME alignment, inside the '
+            f'safe band): "{subtitle}"'
         )
     if has_cta:
         bg_hex, text_hex = button_combo[0], button_combo[1]
@@ -534,9 +609,9 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
         cta_label = normalize_cta(cta)
         preserve.append(
             f'- CTA button: "{cta_label}" — {bg_hex} fill with {text_hex} text, '
-            f"repositioned to {placement}. Button stays LARGE, ~14-18% of canvas height, "
-            f"with very generous internal padding. Command-presence sized. "
-            f"The action anchor — impossible to miss. No trailing punctuation on the label."
+            f"repositioned {placement}. Sized per the hierarchy spec above (compact inline "
+            f"on cropped strips, otherwise ~14-18% of canvas height) with generous internal "
+            f"padding. Command-presence. No trailing punctuation on the label."
         )
     preserve.append("- Subject, background and visual elements from the master, repositioned for the new aspect")
     preserve.append("- Palette from the master (no new colors introduced)")
@@ -549,11 +624,15 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
 
         f"NEW LAYOUT ({family}): {layout_lock(target_size, has_cta=has_cta)}",
 
-        hierarchy_rule(has_cta=has_cta),
+        hierarchy_rule(has_cta=has_cta, size=target_size),
     ]
 
     if art_direction and art_direction.strip():
-        sections.append("Art direction for this format: " + art_direction.strip())
+        sections.append(
+            "Art direction for this format (this governs composition and the alignment of "
+            "the copy + button; the NEW LAYOUT note above only sets aspect, safe zones and "
+            "crop): " + art_direction.strip()
+        )
 
     # Finance intents may keep abstract market texture from the master; non-finance
     # recomps must not drift into a generic candlestick-chart template.
@@ -569,6 +648,8 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
         "no real brand logos or wordmarks, no recognizable real landmarks, no AI "
         f"artifacts; do not drift into the watercolor/bokeh/abstract-swoosh{chart_clause}.",
     ]
+    if has_cta:
+        sections.append(COPY_STACK_ALIGNMENT)
     if is_rtl(locale):
         sections.append("RTL composition: keep mirrored direction; hook + copy block on the right.")
     sections.append(TYPOGRAPHY_RULE)
