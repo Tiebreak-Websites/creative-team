@@ -100,18 +100,17 @@ export function DiskManager() {
 
   async function refresh() {
     setError(null)
-    const [rs, st] = await Promise.all([
-      listRuns().catch(() => [] as RunData[]),
-      fetchStorage().catch(() => null),
-    ])
-    setRuns(rs)
+    const [rs, st] = await Promise.all([listRuns(), fetchStorage().catch(() => null)])
     if (st) setStorage(st)
-    // Drop any selection pointing at things that no longer exist on disk, so the
-    // action bar never counts stale items after a refresh/delete.
-    const runIds = new Set(rs.map((r) => r.run_id))
-    const banIds = new Set(rs.flatMap((r) => r.banners.map((b) => bkey(r.run_id, b.label))))
-    setSelRuns((prev) => new Set([...prev].filter((id) => runIds.has(id))))
-    setSelBanners((prev) => new Set([...prev].filter((k) => banIds.has(k))))
+    if (rs) {
+      setRuns(rs)
+      // Drop any selection pointing at things that no longer exist on disk, so the
+      // action bar never counts stale items after a refresh/delete.
+      const runIds = new Set(rs.map((r) => r.run_id))
+      const banIds = new Set(rs.flatMap((r) => r.banners.map((b) => bkey(r.run_id, b.label))))
+      setSelRuns((prev) => new Set([...prev].filter((id) => runIds.has(id))))
+      setSelBanners((prev) => new Set([...prev].filter((k) => banIds.has(k))))
+    }
     setLoading(false)
   }
 

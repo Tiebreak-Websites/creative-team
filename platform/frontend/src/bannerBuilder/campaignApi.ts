@@ -36,14 +36,18 @@ async function asJson(r: Response): Promise<any> {
   return r.json().catch(() => ({}))
 }
 
-/** All runs across users (the shared gallery), newest first. Empty on any error. */
-export async function listRuns(): Promise<RunData[]> {
+/**
+ * All runs across users (the shared gallery), newest first. Returns `null` on a
+ * failed/erroring fetch (so callers can tell a transient outage apart from a real
+ * empty list and avoid wiping the view); `[]` only when the server truly has none.
+ */
+export async function listRuns(): Promise<RunData[] | null> {
   try {
     const r = await fetch(`${BASE}/tools/banner-builder/runs`)
-    if (!r.ok) return []
+    if (!r.ok) return null
     return (await r.json()).runs ?? []
   } catch {
-    return []
+    return null
   }
 }
 

@@ -169,6 +169,31 @@ function writeSnapshot(runs: RunData[]) {
   }
 }
 
+/**
+ * Reconcile the local gallery against the shared server list. The server is
+ * AUTHORITATIVE for which runs exist, so a run an admin deleted (gone from the
+ * list) is dropped for every user instead of lingering — this is the merge that
+ * used to only ever add/replace, never remove. A locally-settled terminal status
+ * is preserved over a server status that's briefly still mid-flight (avoids a
+ * flicker right after a local stop), and a just-started local run the server
+ * doesn't know about yet is kept until it appears.
+ */
+function reconcileRuns(prev: RunData[], server: RunData[]): RunData[] {
+  const serverIds = new Set(server.map((r) => r.run_id))
+  const out: RunData[] = server.map((s) => {
+    const local = prev.find((r) => r.run_id === s.run_id)
+    return local && TERMINAL_STATUSES.includes(local.status) && !TERMINAL_STATUSES.includes(s.status)
+      ? local
+      : s
+  })
+  for (const local of prev) {
+    if (!serverIds.has(local.run_id) && !TERMINAL_STATUSES.includes(local.status)) {
+      out.push(local) // still generating; not in the shared list yet
+    }
+  }
+  return out.sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
+}
+
 export function BannerBuilder({ meta }: { meta: Meta }) {
   // ---- Campaign settings ----
   const efforts = meta.thinking_efforts ?? [
@@ -319,7 +344,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     let alive = true
     ;(async () => {
       const [serverRuns, settled] = await Promise.all([
-        listRuns().catch(() => [] as RunData[]),
+        listRuns(),
         Promise.all(
           ids.map((id) =>
             getRun(id)
@@ -330,20 +355,24 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       ])
       if (!alive) return
       const restored = settled.filter((s) => s.data).map((s) => s.data as RunData)
-      if (serverRuns.length || restored.length) {
-        setRuns((prev) => {
-          const byId = new Map<string, RunData>()
-          prev.forEach((r) => byId.set(r.run_id, r))
-          restored.forEach((r) => byId.set(r.run_id, r))
-          serverRuns.forEach((r) => byId.set(r.run_id, r))
-          // Oldest-first; OutputPane reverses for a newest-first display.
-          return [...byId.values()].sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
+      setRuns((prev) => {
+        // Seed with restored-by-id so a user's own runs paint even if the shared
+        // list lags; then make the server list authoritative (when it succeeded)
+        // so anything deleted elsewhere is dropped, not resurrected from the snapshot.
+        const seeded = [...prev]
+        const seen = new Set(seeded.map((r) => r.run_id))
+        restored.forEach((r) => {
+          if (!seen.has(r.run_id)) {
+            seeded.push(r)
+            seen.add(r.run_id)
+          }
         })
-        const anyActive =
-          serverRuns.some((r) => !TERMINAL_STATUSES.includes(r.status)) ||
-          restored.some((r) => !TERMINAL_STATUSES.includes(r.status))
-        if (anyActive) setPolling(true)
-      }
+        return serverRuns === null ? seeded : reconcileRuns(seeded, serverRuns)
+      })
+      const anyActive =
+        (serverRuns ?? []).some((r) => !TERMINAL_STATUSES.includes(r.status)) ||
+        restored.some((r) => !TERMINAL_STATUSES.includes(r.status))
+      if (anyActive) setPolling(true)
       // Persist only the user's own ids (drop any that 404'd). The shared gallery
       // is re-fetched every mount, so it doesn't need to live in the URL.
       const goneIds = new Set(settled.filter((s) => s.gone).map((s) => s.id))
@@ -380,19 +409,11 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   useEffect(() => {
     let alive = true
     const refresh = async () => {
-      const serverRuns = await listRuns().catch(() => [] as RunData[])
-      if (!alive || !serverRuns.length) return
-      setRuns((prev) => {
-        const byId = new Map(prev.map((r) => [r.run_id, r]))
-        serverRuns.forEach((s) => {
-          const local = byId.get(s.run_id)
-          if (local && TERMINAL_STATUSES.includes(local.status) && !TERMINAL_STATUSES.includes(s.status)) {
-            return // keep the local terminal state until the server settles too
-          }
-          byId.set(s.run_id, s)
-        })
-        return [...byId.values()].sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
-      })
+      const serverRuns = await listRuns()
+      if (!alive || serverRuns === null) return // transient error — keep the current view
+      // Server is authoritative: this drops runs deleted elsewhere (e.g. by an
+      // admin in the Disk Manager) so they disappear for every user.
+      setRuns((prev) => reconcileRuns(prev, serverRuns))
       if (serverRuns.some((r) => !TERMINAL_STATUSES.includes(r.status))) setPolling(true)
     }
     const iv = window.setInterval(refresh, 5000)
