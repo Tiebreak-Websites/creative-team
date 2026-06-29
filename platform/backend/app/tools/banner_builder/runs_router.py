@@ -54,6 +54,18 @@ def _dir_bytes(d: Path) -> int:
     return total
 
 
+def _enforce_owner(run, user: dict) -> None:
+    """Only the person who started a run may cancel/approve/reject it; admins may
+    too. Legacy runs with no recorded creator are ungoverned. Raises 403 otherwise.
+    Enforced server-side so one user can never interrupt another's generation."""
+    creator = (getattr(run, "created_by", "") or "").strip().lower()
+    email = ((user or {}).get("email") or "").strip().lower()
+    if not creator or (user or {}).get("role") == "admin" or creator == email:
+        return
+    raise HTTPException(status_code=403,
+                        detail="Only the person who started this generation can do that.")
+
+
 def build_router() -> APIRouter:
     router = APIRouter()
 
@@ -106,11 +118,14 @@ def build_router() -> APIRouter:
         return runner.run_to_dict(run)
 
     @router.post("/runs/{run_id}/cancel")
-    def cancel_run(run_id: str):
-        # Flags the run; the runner stops between frames and between phases,
-        # leaving already-finished banners intact. 404 if the run is unknown.
-        if not runner.cancel(run_id):
+    def cancel_run(run_id: str, user: dict = Depends(require_user)):
+        # Owner-only: only the user who started the run (or an admin) may stop it,
+        # so one user can't interrupt another's generation. 404 if unknown.
+        run = runner.STORE.get(run_id)
+        if run is None:
             raise HTTPException(status_code=404, detail="run not found")
+        _enforce_owner(run, user)
+        runner.cancel(run_id)
         return {"status": "cancelled"}
 
     @router.post("/references")

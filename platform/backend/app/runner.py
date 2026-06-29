@@ -105,11 +105,29 @@ class Run:
     logo_corner: Optional[str] = None
     logo: dict = field(default_factory=dict)
 
+    def __post_init__(self):
+        # Concurrency primitives — never serialized. _lock serializes read-then-write
+        # of run-global state (status, approval, finalize); _recomp_locks gate
+        # per-concept recompose; _recomp_guard protects lazy lock creation. OpenAI
+        # generate calls are always made OUTSIDE _lock so polls never block on them.
+        self._lock = threading.RLock()
+        self._recomp_locks: Dict[str, "threading.Lock"] = {}
+        self._recomp_guard = threading.Lock()
+
     def touch(self):
         self.updated_at = _now()
 
     def fr(self, concept: str, size: str) -> FrameResult:
         return self.frame_results[_label(concept, size)]
+
+    def recomp_lock(self, concept: str) -> "threading.Lock":
+        """Lazily create + return the per-concept recompose lock (gates approve/reject)."""
+        with self._recomp_guard:
+            lk = self._recomp_locks.get(concept)
+            if lk is None:
+                lk = threading.Lock()
+                self._recomp_locks[concept] = lk
+            return lk
 
 
 class RunStore:
@@ -955,38 +973,45 @@ def _counts(run: Run) -> dict:
 
 
 def run_to_dict(run: Run) -> dict:
-    banners = []
-    for f in run.frames_plan:
-        fr = run.fr(f["concept"], f["size"])
-        label = _label(f["concept"], f["size"])
-        card = run.cards.get(f["concept"], {})
-        banners.append({
-            "label": label, "concept": f["concept"], "size": f["size"],
-            "title": run.concepts.get(f["concept"], {}).get("title", ""),
-            "subtitle": card.get("subtitle", ""), "button": card.get("button", ""),
-            "brief": run.size_briefs.get(f["concept"], {}).get(f["size"], ""),
-            "prompt": fr.prompt,
-            "mode": f["mode"], "phase": f["phase"], "status": fr.status,
-            "attempts": fr.attempts, "gen_ms": fr.gen_ms, "bytes": fr.bytes,
-            "error": fr.error,
-            "url": (f"/api/tools/{TOOL_ID}/runs/{run.id}/banners/{label}.png"
-                    if fr.status == "ok" else None),
-        })
-    return {
-        "run_id": run.id, "status": run.status, "error": run.error,
-        "cancelled": run.cancelled,
-        "total": len(run.frames_plan),
-        "completed": sum(1 for fr in run.frame_results.values() if fr.status == "ok"),
-        "counts": _counts(run),
-        "created_at": run.created_at, "updated_at": run.updated_at,
-        "created_by": run.created_by,
-        "intent": run.intent,
-        "intent_meta": run.intent_meta,
-        "director": run.director,
-        "logo": run.logo or None,
-        "style": run.style or "",
-        "banners": banners,
-    }
+    # Snapshot run-global state under the lock so a concurrent recompose/approve
+    # daemon (Phase 1) can't mutate frames_plan/frame_results mid-serialization.
+    with run._lock:
+        banners = []
+        for f in run.frames_plan:
+            label = _label(f["concept"], f["size"])
+            fr = run.frame_results.get(label)
+            if fr is None:
+                continue
+            card = run.cards.get(f["concept"], {})
+            banners.append({
+                "label": label, "concept": f["concept"], "size": f["size"],
+                "title": run.concepts.get(f["concept"], {}).get("title", ""),
+                "subtitle": card.get("subtitle", ""), "button": card.get("button", ""),
+                "brief": run.size_briefs.get(f["concept"], {}).get(f["size"], ""),
+                "prompt": fr.prompt,
+                "mode": f["mode"], "phase": f["phase"], "status": fr.status,
+                "openai_size": f.get("openai_size", ""),
+                "attempts": fr.attempts, "gen_ms": fr.gen_ms, "bytes": fr.bytes,
+                "error": fr.error,
+                "url": (f"/api/tools/{TOOL_ID}/runs/{run.id}/banners/{label}.png"
+                        if fr.status == "ok" else None),
+            })
+        return {
+            "run_id": run.id, "status": run.status, "error": run.error,
+            "cancelled": run.cancelled,
+            "model": run.model, "quality": run.quality,
+            "total": len(run.frames_plan),
+            "completed": sum(1 for fr in run.frame_results.values() if fr.status == "ok"),
+            "counts": _counts(run),
+            "created_at": run.created_at, "updated_at": run.updated_at,
+            "created_by": run.created_by,
+            "intent": run.intent,
+            "intent_meta": run.intent_meta,
+            "director": run.director,
+            "logo": run.logo or None,
+            "style": run.style or "",
+            "banners": banners,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -1061,7 +1086,10 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
     for b in d.get("banners", []):
         ck, size = b.get("concept", ""), b.get("size", "")
         mode, phase = b.get("mode", "gen"), b.get("phase", "master")
-        frames_plan.append({"concept": ck, "size": size, "openai_size": "",
+        # Restore the OpenAI size (persisted on new runs; recomputed for old ones)
+        # so a rehydrated run can still recompose after a restart.
+        openai_size = b.get("openai_size") or engine.OPENAI_SIZE_MAP.get(size, "")
+        frames_plan.append({"concept": ck, "size": size, "openai_size": openai_size,
                             "mode": mode, "phase": phase})
         status, error = b.get("status", "ok"), b.get("error")
         png = run_dir / f"{_label(ck, size)}.png"
@@ -1072,7 +1100,7 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
         if status == "ok" and not png.is_file():
             status, error = "missing", "image file is no longer on disk"
         frame_results[_label(ck, size)] = FrameResult(
-            concept=ck, size=size, openai_size="", mode=mode, phase=phase,
+            concept=ck, size=size, openai_size=openai_size, mode=mode, phase=phase,
             status=status, attempts=b.get("attempts", 0),
             gen_ms=b.get("gen_ms"), bytes=b.get("bytes", 0),
             png_path=str(png), error=error, prompt=b.get("prompt"),
