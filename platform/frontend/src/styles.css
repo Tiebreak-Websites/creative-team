@@ -1,6 +1,6 @@
 :root {
   /* Internovus — light (default). Mirrors the shadcn tokens in index.css.
-     Brand red accent (#E71E25 → #9E181C); dark overrides live in `.dark` below. */
+     System blue accent; red reserved for danger. Dark overrides live in `.dark`. */
   --bg: #ffffff;
   --surface: #ffffff;
   --surface-sunken: #f4f4f5;
@@ -11,11 +11,11 @@
   --text-2: #3f3f46;
   --tb-muted: #71717a;
 
-  /* Brand red accent */
-  --tb-accent: #e71e25;
-  --tb-accent-hover: #9e181c;
-  --tb-accent-soft: rgba(231, 30, 37, 0.1);
-  --tb-accent-ring: rgba(231, 30, 37, 0.22);
+  /* System blue accent */
+  --tb-accent: #2563eb;
+  --tb-accent-hover: #1d4ed8;
+  --tb-accent-soft: rgba(37, 99, 235, 0.1);
+  --tb-accent-ring: rgba(37, 99, 235, 0.22);
   --on-accent: #ffffff;
 
   --ok: #16a34a;
@@ -53,10 +53,10 @@
   --text-2: #c2c8c5;
   --tb-muted: #8a908d;
 
-  --tb-accent: #f12731;
-  --tb-accent-hover: #ff4d54;
-  --tb-accent-soft: rgba(231, 30, 37, 0.16);
-  --tb-accent-ring: rgba(231, 30, 37, 0.3);
+  --tb-accent: #3b82f6;
+  --tb-accent-hover: #60a5fa;
+  --tb-accent-soft: rgba(59, 130, 246, 0.16);
+  --tb-accent-ring: rgba(59, 130, 246, 0.3);
   --on-accent: #ffffff;
 
   --ok: #22c55e;
@@ -135,7 +135,7 @@ button {
   height: 32px;
   border-radius: 9px;
   flex: none;
-  background: linear-gradient(150deg, #e71e25, #9e181c);
+  background: linear-gradient(150deg, #2563eb, #1d4ed8);
   color: var(--on-accent);
   display: grid;
   place-items: center;
@@ -684,7 +684,7 @@ select:focus {
 }
 .runbar .bar > div {
   height: 100%;
-  background: linear-gradient(90deg, #9e181c, #e71e25);
+  background: linear-gradient(90deg, #1d4ed8, #3b82f6);
   transition: width 0.4s ease;
 }
 .runbar .count {

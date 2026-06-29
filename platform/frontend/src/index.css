@@ -2,8 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Internovus — "Creative Builder" — red brand (#E71E25 → #9E181C), light + dark.
-   Light is :root; dark is .dark (toggled on <html>). Fonts cascade from :root. */
+/* Internovus — "Creative Builder" — system blue primary; red reserved for
+   destructive actions. Light is :root; dark is .dark (toggled on <html>). */
 @layer base {
   :root {
     --background: 0 0% 100%; /* white */
@@ -12,8 +12,8 @@
     --card-foreground: 0 0% 9%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 9%;
-    --primary: 358 81% 51%; /* #E71E25 Internovus red */
-    --primary-foreground: 0 0% 100%; /* white on red */
+    --primary: 221 83% 53%; /* #2563EB system blue */
+    --primary-foreground: 0 0% 100%; /* white on blue */
     --secondary: 0 0% 96%;
     --secondary-foreground: 0 0% 9%;
     --muted: 0 0% 96%;
@@ -24,7 +24,7 @@
     --destructive-foreground: 0 0% 100%;
     --border: 0 0% 90%;
     --input: 0 0% 90%;
-    --ring: 358 81% 51%;
+    --ring: 221 83% 53%;
     --radius: 0.75rem;
 
     --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -38,7 +38,7 @@
     --card-foreground: 0 0% 96%;
     --popover: 0 0% 12%;
     --popover-foreground: 0 0% 96%;
-    --primary: 358 82% 56%; /* brighter red on dark */
+    --primary: 217 91% 60%; /* #3B82F6 brighter blue on dark */
     --primary-foreground: 0 0% 100%;
     --secondary: 0 0% 14%; /* #242424 */
     --secondary-foreground: 0 0% 96%;
@@ -50,7 +50,7 @@
     --destructive-foreground: 0 0% 100%;
     --border: 0 0% 18%; /* #2E2E2E */
     --input: 0 0% 18%;
-    --ring: 358 82% 56%;
+    --ring: 217 91% 60%;
   }
 }
 
