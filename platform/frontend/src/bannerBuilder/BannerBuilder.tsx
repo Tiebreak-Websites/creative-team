@@ -195,6 +195,22 @@ function reconcileRuns(prev: RunData[], server: RunData[]): RunData[] {
   return out.sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
 }
 
+/** Pull WxH size tokens out of pasted text — commas/spaces/newlines, x/×/* separators
+ * ("1200×628, 300x250 1080 x 1080" → ["1200x628","300x250","1080x1080"]). Deduped. */
+function parseSizes(text: string): string[] {
+  const matches = text.match(/\d{2,5}\s*[x×X*]\s*\d{2,5}/g) || []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const m of matches) {
+    const norm = m.replace(/\s+/g, '').replace(/[×X*]/g, 'x')
+    if (!seen.has(norm)) {
+      seen.add(norm)
+      out.push(norm)
+    }
+  }
+  return out
+}
+
 export function BannerBuilder({ meta }: { meta: Meta }) {
   // ---- Campaign settings ----
   const efforts = meta.thinking_efforts ?? [
@@ -209,9 +225,13 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   const [quality, setQuality] = useState(
     brand.quality && meta.qualities.includes(brand.quality)
       ? brand.quality
-      : meta.default_quality ?? meta.qualities[meta.qualities.length - 1] ?? 'high',
+      : meta.qualities.includes('high')
+        ? 'high'
+        : meta.default_quality ?? meta.qualities[meta.qualities.length - 1] ?? 'high',
   )
-  const [effort, setEffort] = useState(meta.default_effort ?? 'high')
+  const [effort, setEffort] = useState(
+    meta.thinking_efforts?.some((e) => e.value === 'high') ? 'high' : meta.default_effort ?? 'high',
+  )
   const [locale, setLocale] = useState(
     LOCALES.some((l) => l.value === brand.locale) ? (brand.locale as string) : 'en',
   )
@@ -234,6 +254,31 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   // Sizes UI: collapsible platform groups + global search.
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['Most used']))
   const [sizeQuery, setSizeQuery] = useState('')
+  // Bulk-paste sizes: add all supported ones at once; warn (toast, fades after 5s +
+  // closeable) about any size this platform doesn't support.
+  const [sizeNotice, setSizeNotice] = useState<{ added: number; unsupported: string[] } | null>(null)
+  useEffect(() => {
+    if (!sizeNotice) return
+    const t = window.setTimeout(() => setSizeNotice(null), 5000)
+    return () => window.clearTimeout(t)
+  }, [sizeNotice])
+  function applyPastedSizes(text: string): boolean {
+    const parsed = parseSizes(text)
+    if (parsed.length === 0) return false
+    const supported = parsed.filter((s) => meta.sizes.includes(s))
+    const unsupported = parsed.filter((s) => !meta.sizes.includes(s))
+    const addedNow = supported.filter((s) => !sizes.has(s))
+    if (addedNow.length) {
+      setSizes((prev) => {
+        const next = new Set(prev)
+        addedNow.forEach((s) => next.add(s))
+        return next
+      })
+    }
+    setSizeNotice({ added: addedNow.length, unsupported })
+    setSizeQuery('')
+    return true
+  }
 
   // Floating command bar popovers.
   const [barPopover, setBarPopover] = useState<null | 'model' | 'brand' | 'lang'>(null)
@@ -673,8 +718,14 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             <input
               value={sizeQuery}
               onChange={(e) => setSizeQuery(e.target.value)}
+              onPaste={(e) => {
+                if (applyPastedSizes(e.clipboardData.getData('text'))) e.preventDefault()
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && applyPastedSizes(sizeQuery)) e.preventDefault()
+              }}
               aria-label="Search banner sizes"
-              placeholder="Search sizes — e.g. 1080, 728x90"
+              placeholder="Search — or paste many sizes (e.g. 1080x1080, 300x250)"
               className="h-8 w-full rounded-md border border-input bg-secondary pl-8 pr-7 text-xs text-foreground transition-colors placeholder:text-muted-foreground hover:border-foreground/25 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
             />
             {sizeQuery && (
@@ -1232,7 +1283,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
                 cancel a run from its own card. */}
             <Button
               className={cn(
-                'ml-auto shrink-0 bg-emerald-600 px-6 font-display text-white hover:bg-emerald-700',
+                'ml-auto min-w-[180px] shrink-0 bg-emerald-600 px-10 font-display text-white hover:bg-emerald-700',
                 canRun && !submitting && 'tb-glow-success',
               )}
               size="lg"
@@ -1357,6 +1408,44 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
         onClose={() => setCopyDetectOpen(false)}
         onDetected={applyDetected}
       />
+
+      {/* Bulk-paste sizes feedback — auto-fades after 5s, closeable */}
+      {sizeNotice && (
+        <div className="animate-fade-up fixed left-1/2 top-4 z-[200] w-full max-w-md -translate-x-1/2 px-4">
+          <div
+            className={cn(
+              'flex items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg backdrop-blur-md',
+              sizeNotice.unsupported.length
+                ? 'border-amber-400/50 bg-amber-400/10 text-amber-700 dark:text-amber-300'
+                : 'border-primary/40 bg-primary/10 text-primary',
+            )}
+          >
+            <div className="min-w-0 flex-1">
+              {sizeNotice.added > 0 && (
+                <div className="font-medium">
+                  Added {sizeNotice.added} size{sizeNotice.added === 1 ? '' : 's'}.
+                </div>
+              )}
+              {sizeNotice.unsupported.length > 0 && (
+                <div className={sizeNotice.added > 0 ? 'mt-0.5' : 'font-medium'}>
+                  Not supported here: {sizeNotice.unsupported.join(', ')}
+                </div>
+              )}
+              {sizeNotice.added === 0 && sizeNotice.unsupported.length === 0 && (
+                <div>No new sizes found in the pasted text.</div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSizeNotice(null)}
+              aria-label="Dismiss"
+              className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

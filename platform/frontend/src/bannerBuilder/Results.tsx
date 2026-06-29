@@ -352,7 +352,7 @@ function OverviewBar({
         {running ? (
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
         ) : (
-          <span className={cn('h-2.5 w-2.5 rounded-full', failed ? 'bg-destructive' : awaiting ? 'bg-amber-500' : 'bg-primary ring-4 ring-primary/20')} />
+          <span className={cn('h-2.5 w-2.5 rounded-full', failed ? 'bg-destructive' : awaiting ? 'bg-amber-500' : 'bg-emerald-500 ring-4 ring-emerald-500/20')} />
         )}
         {label}
       </span>
@@ -597,11 +597,21 @@ function AssetCard({
             className="h-full w-full object-contain transition-transform duration-300 ease-out group-hover:scale-[1.03]"
           />
 
-          {/* Status dot (top-right) — green = ready */}
-          <span
-            title="Ready"
-            className="absolute right-2 top-2 z-10 h-3 w-3 rounded-full bg-emerald-500 shadow ring-2 ring-background"
-          />
+          {/* Delete (top-right) — shows on hover */}
+          {onDelete && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(b.label)
+              }}
+              title="Delete this banner"
+              aria-label="Delete banner"
+              className="absolute right-2 top-2 z-10 inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background/90 text-muted-foreground opacity-0 shadow transition-colors hover:border-destructive hover:text-destructive group-hover:opacity-100"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
 
           {/* Multi-select checkbox (top-left) — shows on hover, or always when selected */}
           {onToggleSelect && (

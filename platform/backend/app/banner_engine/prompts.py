@@ -56,9 +56,9 @@ LAYOUT_BASE = {
     "1200x1200": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge.",
     "1080x1080": "Aspect 1:1 square. ONE integrated premium ad composition — subject, typography, background and graphics share lighting, palette and depth as a single campaign visual, NOT pasted blocks. The headline/ticker is the dominant, fully legible element; the subject may overlap the background graphics. Balanced integrated layout with real subject + background depth. Avoid hard vertical split-panels unless explicitly requested. Generous breathing room; keep text ~6% clear of every edge.",
     "1200x628":  "Aspect 1.91:1 wide banner. ONE integrated composition (subject, type and background share lighting and depth — not pasted blocks): compressed but readable, fewer elements, a strong left-to-right reading flow. Headline/ticker dominant and legible. Avoid hard split-panels unless requested; 12% safe top+bottom.",
-    "1080x1920": "Aspect 9:16 tall. ONE integrated composition with a STACKED hierarchy — headline/ticker toward the top, the hero subject/scene filling below, with breathing room between. Subject, type and background share one lighting and palette (not pasted blocks). Mobile safe top 8% + bottom 12%; 10% safe left+right.",
-    "1080x1350": "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker is the dominant element, positioned in the UPPER-MIDDLE of the SURVIVING central band — NOT pushed to the top edge, which is cropped. Hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right; the exact-size-crop clearances stated below own the top/bottom margins (every headline line must sit fully inside the central band).",
-    "960x1200":  "Aspect 4:5 portrait. ONE integrated, editorial-premium composition with a stacked hierarchy — headline/ticker is the dominant element, positioned in the UPPER-MIDDLE of the SURVIVING central band — NOT pushed to the top edge, which is cropped. Hero subject below or full-bleed with the type integrated over it. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right; the exact-size-crop clearances stated below own the top/bottom margins (every headline line must sit fully inside the central band).",
+    "1080x1920": "Aspect 9:16 tall. ONE integrated, STACKED composition: the headline/hook sits in the UPPER area (top, fully legible); the hero subject (person/product) is anchored at the BOTTOM, filling the lower portion; the CTA button is bottom-center, IN FRONT OF / overlapping the subject, inside the bottom safe band. Subject, type and background share one lighting and palette (not pasted blocks). Mobile safe top 8% + bottom 12%; 10% safe left+right.",
+    "1080x1350": "Aspect 4:5 portrait. ONE integrated, editorial-premium STACKED composition: the headline/hook is dominant in the UPPER part of the SURVIVING central band — NOT pushed to the cropped top edge; the hero subject (person/product) is anchored at the BOTTOM; the CTA button is bottom-center, IN FRONT OF / overlapping the subject, inside the bottom safe band. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right; the exact-size-crop clearances below own the top/bottom margins (every headline line sits fully inside the central band).",
+    "960x1200":  "Aspect 4:5 portrait. ONE integrated, editorial-premium STACKED composition: the headline/hook is dominant in the UPPER part of the SURVIVING central band — NOT pushed to the cropped top edge; the hero subject (person/product) is anchored at the BOTTOM; the CTA button is bottom-center, IN FRONT OF / overlapping the subject, inside the bottom safe band. Shared lighting, palette and depth (not pasted blocks). 10% safe left+right; the exact-size-crop clearances below own the top/bottom margins (every headline line sits fully inside the central band).",
     "1920x1080": "Aspect 16:9 landscape. ONE integrated cinematic composition — compressed, fewer elements, strong left-to-right flow; subject and background share lighting and depth (not pasted blocks). Headline/ticker dominant and legible. Avoid hard split-panels unless requested.",
     "1200x960":  "Aspect 5:4 mild-wide. ONE integrated composition — headline/ticker dominant and legible, subject and background sharing lighting and depth (not pasted blocks). Avoid hard split-panels unless requested.",
 }
@@ -270,14 +270,17 @@ def hierarchy_rule(has_cta: bool, size: str = "") -> str:
                 "treat THAT band as the whole canvas): " + line + cta +
                 "No subtitle, no stacked extra lines.")
     if has_cta:
+        pct, _ = _crop_info(size) if size else (0, "")
+        cta_cap = "~10-13%" if (size and pct >= 4) else "~14-18%"
         return (
             "Visual hierarchy: hook prominent at ~30-40% canvas height (confident, "
             "not consuming the canvas). Body title legible at ~6-8% canvas height "
-            "(readable support, not crowding). CTA button LARGE at ~14-18% canvas "
-            "height with very generous internal padding (button text never cramped — "
-            "vertical breathing room ~30-40% of label height on each side). "
-            "Command-presence sized. The action anchor — impossible to miss. "
-            "Breathing room between all elements."
+            f"(readable support, not crowding). CTA button at {cta_cap} canvas height "
+            "with very generous internal padding (button text never cramped — vertical "
+            "breathing room ~30-40% of label height on each side). Command-presence — but "
+            "its FULL body MUST stay inside the safe area: if the size would reach a cropped "
+            "edge, SHRINK it (clearance beats size). Clear breathing-room gap between the "
+            "subheadline and the button, and between all elements."
         )
     return (
         "Visual hierarchy: hook is the primary visual anchor at ~40-50% canvas height "
@@ -420,16 +423,26 @@ def _crop_safe_note(size: str) -> str:
 
 
 def button_placement(size: str) -> str:
-    """CTA VERTICAL band + crop-safety only. HORIZONTAL alignment is NOT fixed here —
-    it is inherited from the copy stack (see COPY_STACK_ALIGNMENT), so a centered
-    layout gets a centered button and a side layout a side button, automatically."""
-    # Phrase the button's horizontal position purely relative to the copy.
+    """CTA band + crop-safety. Portrait/tall formats get a bottom-CENTER button IN
+    FRONT OF the hero subject; other formats inherit the copy stack's horizontal
+    alignment (see COPY_STACK_ALIGNMENT)."""
     align = ("on the SAME horizontal alignment and axis as the headline + subheadline "
              "(centered under centered copy, left under left copy) — never a fixed corner")
     pct, axis = _crop_info(size)
     if _is_strip(size):
         return (f"as a COMPACT inline pill on the headline's baseline, {align}, scaled to "
                 "the surviving strip (NOT 14-18% of the full canvas)")
+    # Portrait / tall formats: bottom-CENTER, in front of (overlapping) the hero subject,
+    # inside the bottom safe band — the high-converting vertical layout.
+    try:
+        w, h = (int(x) for x in size.lower().split("x"))
+    except Exception:  # noqa: BLE001
+        w, h = 1, 1
+    if h > w * 1.05:
+        m = (pct + 6) if pct >= 4 else 8
+        return (f"BOTTOM-CENTER, horizontally centered, sitting IN FRONT OF / overlapping the "
+                f"hero subject (person/product), inside the bottom safe band — its ENTIRE body "
+                f"at least {m}% clear of the bottom edge (which is cropped), never touching it")
     if pct < 4:
         return f"in the lower third, directly beneath the copy, {align}"
     m = pct + 6
@@ -613,7 +626,13 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
             f"on cropped strips, otherwise ~14-18% of canvas height) with generous internal "
             f"padding. Command-presence. No trailing punctuation on the label."
         )
-    preserve.append("- Subject, background and visual elements from the master, repositioned for the new aspect")
+    preserve.append(
+        "- The hero subject (person/product) from the master — keep it a REAL, prominent "
+        "presence at similar visual weight; reposition for the new aspect but NEVER shrink it "
+        "into a corner badge, tiny circular crop, or sticker. For tall/portrait formats, "
+        "anchor the subject at the BOTTOM with the CTA button in front of it."
+    )
+    preserve.append("- Background and supporting visual elements from the master, repositioned for the new aspect")
     preserve.append("- Palette from the master (no new colors introduced)")
 
     sections = [
