@@ -19,7 +19,7 @@ import { assetUrl, bulkDelete, fetchStorage, type StorageInfo } from '../api'
 import { listRuns } from '../bannerBuilder/campaignApi'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, formatUserName } from '@/lib/utils'
 
 /** Subtle checkerboard so transparent PNGs read against any theme. */
 const CHECKER: CSSProperties = {
@@ -619,6 +619,11 @@ function GalleryCard({
         <SelectBox checked={runSel} onClick={() => onToggleRun(runId)} />
         <h3 className="font-display text-[15px] font-bold tracking-tight">{r.title}</h3>
         <span className="text-xs text-muted-foreground">{fmtDate(r.run.created_at)}</span>
+        {r.run.created_by && (
+          <span className="text-xs text-muted-foreground" title={r.run.created_by}>
+            · by {formatUserName(r.run.created_by)}
+          </span>
+        )}
         <span className="text-xs text-muted-foreground">
           · {r.okBanners.length} image{r.okBanners.length === 1 ? '' : 's'} · {human(r.bytes)}
         </span>
@@ -759,7 +764,14 @@ function ListRow({
           <ChevronRight
             className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', expanded && 'rotate-90')}
           />
-          <span className="truncate font-medium text-foreground">{r.title}</span>
+          <span className="min-w-0 leading-tight">
+            <span className="block truncate font-medium text-foreground">{r.title}</span>
+            {r.run.created_by && (
+              <span className="block truncate text-[11px] text-muted-foreground" title={r.run.created_by}>
+                by {formatUserName(r.run.created_by)}
+              </span>
+            )}
+          </span>
         </button>
         <span className="text-right tabular-nums text-muted-foreground">{r.okBanners.length}</span>
         <span className="text-right tabular-nums text-muted-foreground">{human(r.bytes)}</span>

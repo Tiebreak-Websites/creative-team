@@ -89,6 +89,7 @@ class Run:
     updated_at: str
     api_key: str = ""                  # never serialized
     error: Optional[str] = None
+    created_by: str = ""               # email of the user who started the run (shown in the gallery)
     style: str = ""                    # campaign look/vibe (fed to the director)
     effort: Optional[str] = None       # per-run GPT-5.5 thinking effort (None -> admin default)
     intent: str = "general_ad"         # heuristic campaign intent (steers director + negatives)
@@ -457,7 +458,7 @@ def _resolve_brand(req: RunRequest):
 
 
 def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
-                         sizes: List[str], api_key: str) -> Run:
+                         sizes: List[str], api_key: str, created_by: str = "") -> Run:
     run_id = "r_" + uuid.uuid4().hex[:12]
     run_dir = settings.ARTIFACT_ROOT / TOOL_ID / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -491,6 +492,7 @@ def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
         sizes=sizes, concepts=concepts, frames_plan=plan,
         frame_results=frame_results, dir=run_dir,
         created_at=now, updated_at=now, api_key=api_key,
+        created_by=created_by,
         style=style, effort=req.effort, cards=cards,
         references=ref_paths, logo_raster=logo_raster, logo_corner=logo_corner,
         logo=logo_status,
@@ -977,6 +979,7 @@ def run_to_dict(run: Run) -> dict:
         "completed": sum(1 for fr in run.frame_results.values() if fr.status == "ok"),
         "counts": _counts(run),
         "created_at": run.created_at, "updated_at": run.updated_at,
+        "created_by": run.created_by,
         "intent": run.intent,
         "intent_meta": run.intent_meta,
         "director": run.director,
@@ -1090,6 +1093,7 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
         frame_results=frame_results, dir=run_dir, cards=cards,
         size_briefs=size_briefs, style=d.get("style", ""),
         created_at=d.get("created_at", now), updated_at=d.get("updated_at", now),
+        created_by=d.get("created_by", ""),
         intent=d.get("intent", "general_ad"), intent_meta=d.get("intent_meta") or {},
         director=d.get("director") or {}, logo=d.get("logo") or {},
         cancelled=(d.get("status") == "cancelled"), error=d.get("error"),

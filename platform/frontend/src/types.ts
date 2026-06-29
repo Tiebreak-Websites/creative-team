@@ -96,6 +96,7 @@ export interface RunData {
   counts: { ok: number; failed: number; pending: number; running: number; cancelled: number }
   created_at: string
   updated_at: string
+  created_by?: string // email of the user who started the run
   director?: RunDirector
   style?: string // the composed art-direction string fed to the generator
   banners: Banner[]

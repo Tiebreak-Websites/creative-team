@@ -85,7 +85,7 @@ def build_router() -> APIRouter:
                 status_code=429,
                 detail={"errors": ["You've started a lot of runs in a short time. Please wait a minute, then try again."]},
             )
-        run = runner.create_and_start_run(req, concepts, sizes, api_key)
+        run = runner.create_and_start_run(req, concepts, sizes, api_key, created_by=user_key)
         runner.remember_run(idem, run.id)
         return JSONResponse(status_code=202, content=runner.run_to_dict(run))
 

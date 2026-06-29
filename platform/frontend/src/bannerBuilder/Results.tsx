@@ -15,7 +15,7 @@ import { assetUrl, selectionZipUrl, versionZipUrl, zipAllUrl } from '../api'
 import { BannerLibrary, type LibraryItem } from './BannerLibrary'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, formatUserName } from '@/lib/utils'
 
 const RUNNING = ['queued', 'classifying', 'directing', 'running_master', 'running_recomp', 'evaluating']
 
@@ -45,6 +45,7 @@ interface ConceptGroup {
   total: number
   running: boolean
   createdAt: string
+  createdBy?: string
 }
 
 /** Flatten all runs into per-concept groups (newest run first). */
@@ -76,6 +77,7 @@ function buildGroups(runs: RunData[]): ConceptGroup[] {
         total: bs.length,
         running: RUNNING.includes(run.status),
         createdAt: run.created_at,
+        createdBy: run.created_by,
       })
     })
   }
@@ -373,6 +375,11 @@ function ConceptGroupBlock({
             title={`Requested ${new Date(g.createdAt).toLocaleString()}`}
           >
             · requested {fmtRequested(g.createdAt)}
+          </span>
+        )}
+        {g.createdBy && (
+          <span className="text-xs text-muted-foreground/80" title={g.createdBy}>
+            · by {formatUserName(g.createdBy)}
           </span>
         )}
         <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
