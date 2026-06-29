@@ -71,8 +71,8 @@ function UpdatePrompt() {
   )
 }
 
-/** Compact disk-usage gauge for the header — the shared banner artifact disk. */
-function StorageBadge() {
+/** Header disk-usage gauge. For admins it's a button that opens the Disk Manager. */
+function StorageBadge({ onOpen, active }: { onOpen?: () => void; active?: boolean }) {
   const [s, setS] = useState<{ used_bytes: number; total_bytes: number; free_bytes: number } | null>(null)
   useEffect(() => {
     const load = () =>
@@ -93,18 +93,42 @@ function StorageBadge() {
   const human = (b: number) =>
     b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${Math.round(b / 1e6)} MB` : `${Math.round(b / 1e3)} KB`
   const bar = pct >= 90 ? 'bg-destructive' : pct >= 75 ? 'bg-amber-500' : 'bg-primary'
-  return (
-    <div
-      className="hidden items-center gap-1.5 rounded-md border border-border bg-secondary/50 px-2 py-1 sm:flex"
-      title={`Banner storage — ${human(s.used_bytes)} of ${human(s.total_bytes)} used · ${human(s.free_bytes)} free`}
-    >
+  const usage = `${human(s.used_bytes)} of ${human(s.total_bytes)} used · ${human(s.free_bytes)} free`
+  const inner = (
+    <>
       <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
       <div className="h-1.5 w-14 overflow-hidden rounded-full bg-secondary">
         <div className={cn('h-full rounded-full transition-all', bar)} style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-[11px] tabular-nums text-muted-foreground">
+      <span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
         {human(s.used_bytes)}/{human(s.total_bytes)}
       </span>
+    </>
+  )
+  // Always visible (it's the admin's entry to the Disk Manager); numbers collapse
+  // on very small screens, leaving a tappable icon + bar.
+  const base = 'flex items-center gap-1.5 rounded-md border px-2 py-1'
+  // Admins: the gauge IS the entry to the Disk Manager. Everyone else: read-only.
+  if (onOpen) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        title={`Open Disk Manager — ${usage}`}
+        aria-label="Open Disk Manager"
+        className={cn(
+          base,
+          'transition-colors hover:border-foreground/30 hover:bg-secondary',
+          active ? 'border-primary/60 bg-secondary' : 'border-border bg-secondary/50',
+        )}
+      >
+        {inner}
+      </button>
+    )
+  }
+  return (
+    <div className={cn(base, 'border-border bg-secondary/50')} title={`Banner storage — ${usage}`}>
+      {inner}
     </div>
   )
 }
@@ -144,8 +168,8 @@ function Tab({
   )
 }
 
-// Banner Builder + LP Builder (placeholder). Admins also get a Disk Manager tab
-// in the top nav and a Brands panel.
+// Banner Builder + LP Builder (placeholder). Admins also get the Disk Manager
+// (opened from the header storage gauge) and a Brands panel.
 function Workspace() {
   const { user } = useAuth()
   const [page, setPage] = useState<Page>('banner')
@@ -202,15 +226,9 @@ function Workspace() {
             <span className="sm:hidden">LP</span>
             <span className="hidden sm:inline">LP Builder</span>
           </Tab>
-          {isAdmin && (
-            <Tab active={diskActive} onClick={goDisk}>
-              <HardDrive className="h-4 w-4" />
-              Disk
-            </Tab>
-          )}
         </nav>
         <div className="ml-auto flex items-center gap-2">
-          <StorageBadge />
+          <StorageBadge onOpen={isAdmin ? goDisk : undefined} active={diskActive} />
           <span className="hidden sm:inline-flex">
             <VersionBadge />
           </span>

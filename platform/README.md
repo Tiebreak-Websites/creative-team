@@ -105,7 +105,7 @@ The banner engine itself was lightly refactored to give the web layer a clean se
 
 Logged-in **admins** get two extra surfaces:
 
-- **Disk Manager** — a top-nav **Disk** tab (`frontend/src/admin/DiskManager.tsx`) — browse every generated
+- **Disk Manager** — opened from the header **storage gauge** (`frontend/src/admin/DiskManager.tsx`); defaults to a list view, newest first — browse every generated
   batch (run) and banner held on the persistent artifact disk, sort by
   **date / size / name** (ascending or descending) in a **gallery** or **list**
   view, and delete a single banner, a whole batch, or a multi-selected mix. Each

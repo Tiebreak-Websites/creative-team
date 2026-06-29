@@ -89,7 +89,7 @@ export function DiskManager() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const [view, setView] = useState<ViewMode>('gallery')
+  const [view, setView] = useState<ViewMode>('list') // default: list, newest first
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
