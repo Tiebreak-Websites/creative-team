@@ -264,7 +264,7 @@ def build_router() -> APIRouter:
         buf.seek(0)
         return StreamingResponse(
             buf, media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="banners_{run_id}.zip"'},
+            headers={"Content-Disposition": f'attachment; filename="{runner.batch_zip_name(run)}.zip"'},
         )
 
     @router.get("/runs/{run_id}/version.zip")
@@ -297,11 +297,13 @@ def build_router() -> APIRouter:
         run_ids = [x.strip() for x in ids.split(",") if x.strip()]
         buf = io.BytesIO()
         seen: set[str] = set()
+        dates: list[str] = []
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for rid in run_ids:
                 run = runner.STORE.get(rid)
                 if run is None:
                     continue
+                dates.append((run.created_at or runner._now())[:10])
                 for fr in run.frame_results.values():
                     if fr.status == "ok" and fr.png_path and Path(fr.png_path).exists():
                         arc = runner.export_name(run, fr.concept, fr.size) + ".png"
@@ -310,9 +312,10 @@ def build_router() -> APIRouter:
                         seen.add(arc)
                         zf.write(fr.png_path, arcname=arc)
         buf.seek(0)
+        zname = f"all-banners_{min(dates)}.zip" if dates else "banners.zip"
         return StreamingResponse(
             buf, media_type="application/zip",
-            headers={"Content-Disposition": 'attachment; filename="banners.zip"'},
+            headers={"Content-Disposition": f'attachment; filename="{zname}"'},
         )
 
     @router.get("/selection.zip")
@@ -346,7 +349,7 @@ def build_router() -> APIRouter:
         buf.seek(0)
         return StreamingResponse(
             buf, media_type="application/zip",
-            headers={"Content-Disposition": 'attachment; filename="banners-selected.zip"'},
+            headers={"Content-Disposition": f'attachment; filename="banners-selected_{runner._now()[:10]}.zip"'},
         )
 
     @router.get("/storage")

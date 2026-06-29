@@ -2,12 +2,14 @@ import { useState, type CSSProperties, type ReactNode } from 'react'
 import {
   Check,
   Download,
+  Eye,
   HelpCircle,
   ImageIcon,
   Loader2,
   Maximize2,
   Sparkles,
   Trash2,
+  Users,
   X,
 } from 'lucide-react'
 import type { Banner, RunData } from '../types'
@@ -113,19 +115,24 @@ export function OutputPane({
   onDeleteBanner,
   onCancel,
   onCancelRun,
+  myBannersOnly,
+  onMyBannersToggle,
 }: {
   runs: RunData[]
   onHelp?: () => void
   onDeleteBanner?: (runId: string, label: string) => void
   onCancel?: () => void
   onCancelRun?: (runId: string) => void
+  myBannersOnly?: boolean
+  onMyBannersToggle?: () => void
 }) {
   const [libOpen, setLibOpen] = useState(false)
   const [libIndex, setLibIndex] = useState(0)
   const [libItems, setLibItems] = useState<LibraryItem[]>([])
   const [libDownloadAll, setLibDownloadAll] = useState<string | undefined>(undefined)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  if (!runs.length) return <EmptyOutput onHelp={onHelp} />
+  if (!runs.length)
+    return <EmptyOutput onHelp={onHelp} myBannersOnly={myBannersOnly} onShowAll={onMyBannersToggle} />
   const groups = buildGroups(runs)
   const firstError = runs.map((r) => r.error).find(Boolean)
 
@@ -191,7 +198,12 @@ export function OutputPane({
   return (
     <div className="flex min-h-full flex-col animate-fade-in">
       <div className="sticky top-0 z-10">
-        <OverviewBar runs={runs} onCancel={onCancel} />
+        <OverviewBar
+          runs={runs}
+          onCancel={onCancel}
+          myBannersOnly={myBannersOnly}
+          onMyBannersToggle={onMyBannersToggle}
+        />
         {selected.size > 0 && (
           <div className="flex animate-pop-in items-center gap-3 border-b border-primary/30 bg-primary/10 px-5 py-2.5 backdrop-blur-md">
             <span className="font-display text-sm font-semibold text-primary">
@@ -263,7 +275,17 @@ export function OutputPane({
   )
 }
 
-function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => void }) {
+function OverviewBar({
+  runs,
+  onCancel,
+  myBannersOnly,
+  onMyBannersToggle,
+}: {
+  runs: RunData[]
+  onCancel?: () => void
+  myBannersOnly?: boolean
+  onMyBannersToggle?: () => void
+}) {
   // Progress reflects ONLY the currently-generating runs (the current task) —
   // not the historical total of every run in the gallery.
   const activeRuns = runs.filter((r) => RUNNING.includes(r.status))
@@ -316,6 +338,23 @@ function OverviewBar({ runs, onCancel }: { runs: RunData[]; onCancel?: () => voi
       )}
 
       <div className="ml-auto" />
+
+      {onMyBannersToggle && (
+        <Button
+          size="sm"
+          variant={myBannersOnly ? 'secondary' : 'outline'}
+          className="shrink-0 gap-1.5"
+          onClick={onMyBannersToggle}
+          title={
+            myBannersOnly
+              ? 'Showing only your banners — click to show everyone’s'
+              : 'Showing everyone’s banners — click to show only yours'
+          }
+        >
+          {myBannersOnly ? <Eye className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+          <span className="hidden sm:inline">{myBannersOnly ? 'My banners' : 'Everyone'}</span>
+        </Button>
+      )}
 
       {activeCount > 1 && onCancel && (
         <Button
@@ -478,6 +517,12 @@ function AssetCard({
             className="h-full w-full object-contain transition-transform duration-300 ease-out group-hover:scale-[1.03]"
           />
 
+          {/* Status dot (top-right) — green = ready */}
+          <span
+            title="Ready"
+            className="absolute right-2 top-2 z-10 h-3 w-3 rounded-full bg-emerald-500 shadow ring-2 ring-background"
+          />
+
           {/* Multi-select checkbox (top-left) — shows on hover, or always when selected */}
           {onToggleSelect && (
             <button
@@ -540,7 +585,14 @@ function AssetCard({
       style={delay}
       className="animate-fade-up overflow-hidden rounded-xl border border-dashed border-border bg-muted/40"
     >
-      <div className="flex aspect-square flex-col items-center justify-center gap-1.5 p-3 text-center">
+      <div className="relative flex aspect-square flex-col items-center justify-center gap-1.5 p-3 text-center">
+        <span
+          title={broken ? 'Image unavailable' : phLabel(b)}
+          className={cn(
+            'absolute right-2 top-2 h-3 w-3 rounded-full shadow ring-2 ring-background',
+            cornerDotClass(broken ? 'missing' : b.status),
+          )}
+        />
         <span className="flex items-center gap-1.5 text-xs font-medium">
           <StatusDot status={broken ? 'missing' : b.status} /> {b.size}
         </span>
@@ -567,6 +619,13 @@ function AssetCard({
       </div>
     </div>
   )
+}
+
+/** Top-corner banner status dot: green = ready, amber = generating, red = problem. */
+function cornerDotClass(status: string): string {
+  if (status === 'ok') return 'bg-emerald-500'
+  if (status === 'running' || status === 'pending') return 'animate-pulse bg-amber-400'
+  return 'bg-destructive'
 }
 
 function StatusDot({ status }: { status: string }) {
@@ -615,7 +674,15 @@ function statusLabel(s: string): string {
   }
 }
 
-function EmptyOutput({ onHelp }: { onHelp?: () => void }) {
+function EmptyOutput({
+  onHelp,
+  myBannersOnly,
+  onShowAll,
+}: {
+  onHelp?: () => void
+  myBannersOnly?: boolean
+  onShowAll?: () => void
+}) {
   return (
     <div className="flex h-full items-center justify-center p-8 animate-fade-up">
       <div className="w-full max-w-sm text-center">
@@ -642,6 +709,13 @@ function EmptyOutput({ onHelp }: { onHelp?: () => void }) {
           <Button variant="outline" size="sm" className="mt-5" onClick={onHelp}>
             <HelpCircle className="h-4 w-4" /> How it works
           </Button>
+        )}
+        {myBannersOnly && onShowAll && (
+          <div>
+            <Button variant="ghost" size="sm" className="mt-3 gap-1.5 text-muted-foreground" onClick={onShowAll}>
+              <Users className="h-4 w-4" /> Showing only yours — show everyone’s
+            </Button>
+          </div>
         )}
       </div>
     </div>

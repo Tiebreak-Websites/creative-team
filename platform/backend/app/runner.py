@@ -1043,6 +1043,22 @@ def export_name(run: Run, concept: str, size: str) -> str:
     return f"v{v}-{size}" + (f"-{slug}" if slug else "")
 
 
+def batch_zip_name(run: Run) -> str:
+    """Filesystem-safe name for a whole-batch ZIP: {slug}_{YYYY-MM-DD}, where slug
+    is the batch's first concept title reduced to 1-2 words. Used ONLY for the ZIP
+    filename — the PNG names inside the archive are unchanged. Falls back to 'banners'."""
+    title = ""
+    for f in run.frames_plan:
+        t = (run.concepts.get(f["concept"]) or {}).get("title", "") or ""
+        if t.strip():
+            title = t
+            break
+    words = re.findall(r"[A-Za-z0-9]+", title)[:2]
+    slug = "-".join(words).lower()[:40] or "banners"
+    date = (run.created_at or _now())[:10]
+    return f"{slug}_{date}"
+
+
 def delete_run(run: Run) -> None:
     """Delete a run entirely: remove its dir from the disk + drop it from the store."""
     try:

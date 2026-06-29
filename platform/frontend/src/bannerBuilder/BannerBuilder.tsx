@@ -30,6 +30,7 @@ import {
 import { loadBrand } from './brand'
 import { detectLocale } from './detectLocale'
 import { listBrands, type Brand } from './brandsApi'
+import { useAuth } from '../auth/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -280,12 +281,34 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
         .filter((r) => r.banners.length > 0 || !TERMINAL_STATUSES.includes(r.status)),
     )
   }
-  const visibleRuns = useMemo(
+  // "My banners" filter — default ON, persisted. Shows only the current user's
+  // own generations so people work on their own output and don't touch others'.
+  const { user } = useAuth()
+  const myEmail = (user?.email || '').toLowerCase()
+  const [myBannersOnly, setMyBannersOnly] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('bb:my-banners-only') !== 'false' // default ON
+    } catch {
+      return true
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('bb:my-banners-only', String(myBannersOnly))
+    } catch {
+      /* best-effort */
+    }
+  }, [myBannersOnly])
+
+  const visibleRuns = useMemo(() => {
     // Keep an active run visible even with no banners yet (so progress shows);
     // hide finished, fully-emptied runs.
-    () => runs.filter((r) => r.banners.length > 0 || !TERMINAL_STATUSES.includes(r.status)),
-    [runs],
-  )
+    const live = runs.filter((r) => r.banners.length > 0 || !TERMINAL_STATUSES.includes(r.status))
+    // Then scope to the current user's own runs when "My banners" is on. A run the
+    // user just started carries their created_by, so it's never hidden.
+    if (!myBannersOnly || !myEmail) return live
+    return live.filter((r) => (r.created_by || '').toLowerCase() === myEmail)
+  }, [runs, myBannersOnly, myEmail])
 
   // Poll every non-terminal run until all reach a terminal status.
   useEffect(() => {
@@ -699,6 +722,8 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             onDeleteBanner={deleteBanner}
             onCancel={cancelRuns}
             onCancelRun={cancelOneRun}
+            myBannersOnly={myBannersOnly}
+            onMyBannersToggle={() => setMyBannersOnly((v) => !v)}
           />
         </div>
 
@@ -744,18 +769,18 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
                 return (
                   <span
                     key={s}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 py-1 pl-3.5 pr-2 font-display text-[13px] font-semibold text-primary"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary py-1 pl-3.5 pr-2 font-display text-[13px] font-semibold text-primary-foreground shadow-sm"
                   >
                     {s}
                     {isMaster ? (
-                      <span className="rounded bg-primary px-1.5 py-0.5 text-[9px] uppercase text-primary-foreground">MVP</span>
+                      <span className="rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[9px] uppercase text-primary-foreground">MVP</span>
                     ) : (
                       <button
                         type="button"
                         onClick={() => toggleSize(s)}
                         title="Remove size"
                         aria-label={`Remove size ${s}`}
-                        className="text-primary/70 hover:text-primary"
+                        className="text-primary-foreground/80 hover:text-primary-foreground"
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -1171,7 +1196,10 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             {/* Generate is ALWAYS available — start more runs while others generate;
                 cancel a run from its own card. */}
             <Button
-              className={cn('ml-auto shrink-0 px-6 font-display', canRun && !submitting && 'tb-glow')}
+              className={cn(
+                'ml-auto shrink-0 bg-emerald-600 px-6 font-display text-white hover:bg-emerald-700',
+                canRun && !submitting && 'tb-glow-success',
+              )}
               size="lg"
               onClick={startRun}
               disabled={!canRun || submitting}
