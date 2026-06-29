@@ -31,6 +31,13 @@ services:
       # Secrets — set these in the Render dashboard (sync:false keeps them out of git):
       - key: ADMIN_PASSWORD_HASH
         sync: false
+      # Extra users (whole team in one var). One per line OR ';'-separated:
+      #   email|password-or-bcrypt-hash|role     (role = admin | user; default user)
+      # e.g.  alice@tiebreak.solutions|S0meStrongPass|admin
+      #       bob@tiebreak.solutions|$2b$12$...|user
+      # Paste plaintext passwords to avoid the bcrypt-hash copy/paste pitfalls.
+      - key: PLATFORM_USERS
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY

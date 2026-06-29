@@ -53,6 +53,7 @@ declared them but left them blank):
 | Key | Value |
 | --- | --- |
 | `ADMIN_PASSWORD_HASH` | the **HASH** from step 1 |
+| `PLATFORM_USERS` | extra team logins (optional) — see **Users** below |
 | `OPENAI_API_KEY` | your OpenAI key (Banner Builder) |
 | `ANTHROPIC_API_KEY` | your Anthropic key (AI-assist / Creative Summary) — optional |
 | `FIGMA_API_KEY` | your Figma token (Figma QA / Translate) — optional |
@@ -69,6 +70,36 @@ Render builds and deploys. When it's live, open
 > Standard plan note: the service is **always-on** — it doesn't spin down on idle, so
 > there's no cold-start wake-up delay. A persistent 5GB disk (mounted at the configured
 > path) keeps generated banners across restarts and redeploys.
+
+### 5. Users — adding your team
+
+Two ways to define logins; use either or both (they **merge by email**):
+
+- **One admin** — `ADMIN_EMAIL` + `ADMIN_PASSWORD_HASH` (or `ADMIN_PASSWORD`), as above.
+- **A whole team** — `PLATFORM_USERS`, one user per line (or `;`-separated), fields
+  joined by `|`:
+
+  ```
+  alice@tiebreak.solutions|S0meStrongPass|admin
+  bob@tiebreak.solutions|AnotherPass|user
+  carol@tiebreak.solutions|$2b$12$<bcrypt-hash>|user
+  ```
+
+  `email | credential | role`:
+  - **credential** — a **plaintext password** (hashed on startup) **or** a bcrypt
+    hash (`$2...`). Plaintext is easiest and sidesteps hash copy/paste mistakes.
+  - **role** — `admin` (sees **Settings** → Disk Manager + Brands) or `user`
+    (Banner Builder only). Defaults to `user`.
+
+  Edit the var → **Save** → Render redeploys → the new logins work. At least one
+  `admin` must exist (via either method) or the app refuses to start in production.
+
+> **"I set `ADMIN_PASSWORD_HASH` but can't log in."** Almost always a stray character
+> in the pasted hash — a trailing newline, a leading/trailing space, or wrapping
+> quotes — which makes bcrypt reject it (shown only as "invalid email or password").
+> The app now trims those automatically, but the fool-proof fix is a **plaintext**
+> password via `ADMIN_PASSWORD` or a `PLATFORM_USERS` entry. Also confirm the email
+> you type matches `ADMIN_EMAIL` exactly (matching is case-insensitive).
 
 ---
 

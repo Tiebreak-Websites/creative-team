@@ -14,6 +14,8 @@ so the cookie is first-party and `samesite="lax"` is enough (no CORS creds).
 """
 from __future__ import annotations
 
+import logging
+import re
 import secrets as _secrets
 import time
 from datetime import datetime, timezone
@@ -35,6 +37,8 @@ _SECRET_KEY_FILE = BACKEND_DIR / ".secret_key"
 
 # bcrypt via passlib; verify is constant-time.
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+log = logging.getLogger(__name__)
 
 
 # --- Signing key (persisted so sessions survive restarts) ------------------
@@ -67,30 +71,104 @@ SECRET_KEY = _load_secret_key()
 
 
 # --- User store (seeded with one admin; extensible) ------------------------
+_DEV_ADMIN_EMAIL = "kristiyan.rusev@tiebreak.dev"
+
+
+def _clean(value: str) -> str:
+    """Strip whitespace and one layer of wrapping quotes from an env value.
+
+    Pasting a bcrypt hash into a dashboard env field very often picks up a
+    trailing newline or surrounding quotes; left in place those make passlib
+    RAISE on verify — which verify_password swallows into a generic "invalid
+    password", so a correct password mysteriously won't log in. Sanitizing on
+    the way in removes that whole class of "I set the hash but can't log in" bugs.
+    """
+    return (value or "").strip().strip('"').strip("'").strip()
+
+
+def _resolve_hash(credential: str) -> str:
+    """A credential is either a bcrypt hash (used as-is) or a plaintext password
+    (hashed now). Detection: bcrypt hashes start with the '$2' modular-crypt tag.
+    Plaintext support lets users be managed in the env without the hash-paste trap."""
+    c = _clean(credential)
+    return c if c.startswith("$2") else _pwd.hash(c)
+
+
+def _parse_users_env() -> dict[str, dict]:
+    """Parse the PLATFORM_USERS env var into a {email: user} store.
+
+    Format — one user per line (or ';'-separated), pipe-delimited fields:
+        email|credential|role
+    `credential` is a bcrypt hash ($2...) OR a plaintext password (hashed on
+    load); `role` is 'admin' or 'user' (default 'user'). '|' is used because it
+    never appears in emails, bcrypt hashes, or typical passwords. Blank/malformed
+    entries are skipped and logged BY EMAIL ONLY (never the secret). Returns {}
+    when PLATFORM_USERS is unset.
+
+    Example:
+        alice@acme.com|$2b$12$....|admin
+        bob@acme.com|hunter2|user
+    """
+    raw = get_secret("PLATFORM_USERS") or ""
+    out: dict[str, dict] = {}
+    if not raw.strip():
+        return out
+    for record in re.split(r"[\n;]+", raw):
+        record = record.strip()
+        if not record:
+            continue
+        parts = record.split("|")
+        email = _clean(parts[0]).lower() if parts else ""
+        credential = parts[1] if len(parts) > 1 else ""
+        role = _clean(parts[2]).lower() if len(parts) > 2 else ""
+        if not email or not _clean(credential):
+            log.warning("auth: skipping malformed PLATFORM_USERS entry for %r", email or "?")
+            continue
+        if role not in ("admin", "user"):
+            role = "user"
+        out[email] = {"email": email, "role": role, "password_hash": _resolve_hash(credential)}
+    return out
+
+
+def _seed_legacy_admin() -> dict[str, dict]:
+    """The single admin from ADMIN_EMAIL + ADMIN_PASSWORD[_HASH] (back-compat).
+
+    Returns {} when no password is configured behind TLS (prod): the caller then
+    relies on PLATFORM_USERS, and fails closed if neither yields an admin. Local
+    dev (no TLS) keeps the convenience 'parola' default.
+    """
+    email = (get_secret("ADMIN_EMAIL") or _DEV_ADMIN_EMAIL).strip().lower()
+    pre_hashed = _clean(get_secret("ADMIN_PASSWORD_HASH") or "")
+    if pre_hashed:
+        if not pre_hashed.startswith("$2"):
+            # Surface the most common misconfig in the logs without leaking the value.
+            log.warning("auth: ADMIN_PASSWORD_HASH does not look like a bcrypt hash "
+                        "(should start with '$2'); login will fail until it's corrected.")
+        return {email: {"email": email, "role": "admin", "password_hash": pre_hashed}}
+    plaintext = get_secret("ADMIN_PASSWORD")
+    if plaintext:
+        return {email: {"email": email, "role": "admin", "password_hash": _pwd.hash(plaintext)}}
+    if settings.COOKIE_SECURE:
+        return {}  # no weak default behind TLS — rely on PLATFORM_USERS / fail closed below
+    return {email: {"email": email, "role": "admin", "password_hash": _pwd.hash("parola")}}
+
+
 def _seed_users() -> dict[str, dict]:
     """Module-level user store keyed by lowercased email.
 
-    Seeds exactly one admin from env. Accepts a pre-hashed `ADMIN_PASSWORD_HASH`
-    (preferred for shared deploys) or hashes `ADMIN_PASSWORD` at import time.
+    Combines the legacy single admin (ADMIN_EMAIL + ADMIN_PASSWORD[_HASH]) with
+    any PLATFORM_USERS entries, which ADD to — and may override by email — the
+    legacy admin, so a whole team can be managed from one env var. Fails closed in
+    production if no admin is configured by either path.
     """
-    email = (get_secret("ADMIN_EMAIL") or "kristiyan.rusev@tiebreak.dev").strip().lower()
-    pre_hashed = get_secret("ADMIN_PASSWORD_HASH")
-    if pre_hashed:
-        pw_hash = pre_hashed
-    else:
-        plaintext = get_secret("ADMIN_PASSWORD")
-        if not plaintext:
-            # Fail closed in production (COOKIE_SECURE is the prod signal): never
-            # seed the weak convenience default behind TLS. Local dev keeps it.
-            if settings.COOKIE_SECURE:
-                raise RuntimeError(
-                    "Refusing to start in production: set ADMIN_PASSWORD_HASH (or ADMIN_PASSWORD)."
-                )
-            plaintext = "parola"
-        pw_hash = _pwd.hash(plaintext)
-    return {
-        email: {"email": email, "role": "admin", "password_hash": pw_hash},
-    }
+    users = _seed_legacy_admin()
+    users.update(_parse_users_env())
+    if settings.COOKIE_SECURE and not any(u["role"] == "admin" for u in users.values()):
+        raise RuntimeError(
+            "Refusing to start in production: configure an admin via ADMIN_PASSWORD_HASH "
+            "(or ADMIN_PASSWORD), or a PLATFORM_USERS entry with role 'admin'."
+        )
+    return users
 
 
 _USERS: dict[str, dict] = _seed_users()
