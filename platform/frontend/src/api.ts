@@ -85,6 +85,47 @@ export async function deleteBanner(runId: string, label: string): Promise<void> 
   ).catch(() => {})
 }
 
+export interface BulkDeleteResult {
+  deleted_runs: number
+  deleted_banners: number
+  freed_bytes: number
+  errors: string[]
+}
+
+/**
+ * Admin disk cleanup — delete whole runs and/or individual banners in one call.
+ * Removes the real files from the mounted disk; returns counts + bytes reclaimed.
+ */
+export async function bulkDelete(payload: {
+  runs?: string[]
+  banners?: { runId: string; label: string }[]
+}): Promise<BulkDeleteResult> {
+  const body = {
+    runs: payload.runs ?? [],
+    banners: (payload.banners ?? []).map((b) => ({ run_id: b.runId, label: b.label })),
+  }
+  const r = await fetch(`${BASE}/tools/banner-builder/runs/bulk-delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) throw new ApiError(r.status, `Delete failed (HTTP ${r.status}).`)
+  return r.json()
+}
+
+export interface StorageInfo {
+  used_bytes: number
+  total_bytes: number
+  free_bytes: number
+}
+
+/** Disk usage of the banner artifact disk (used / total / free bytes). */
+export async function fetchStorage(): Promise<StorageInfo> {
+  const r = await fetch(`${BASE}/tools/banner-builder/storage`)
+  if (!r.ok) throw new ApiError(r.status, `Failed to load storage (HTTP ${r.status})`)
+  return r.json()
+}
+
 /** Upload 1–4 style-reference images; returns server ids to pass in the run payload. */
 export async function uploadReferences(files: File[]): Promise<string[]> {
   const fd = new FormData()

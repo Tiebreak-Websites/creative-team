@@ -101,6 +101,25 @@ The banner engine itself was lightly refactored to give the web layer a clean se
 
 ---
 
+## Admin Settings
+
+Logged-in **admins** get a **Settings** surface (header → **Settings**) with two panels:
+
+- **Disk Manager** (`frontend/src/admin/DiskManager.tsx`) — browse every generated
+  batch (run) and banner held on the persistent artifact disk, sort by
+  **date / size / name** (ascending or descending) in a **gallery** or **list**
+  view, and delete a single banner, a whole batch, or a multi-selected mix. Each
+  delete calls `POST /api/tools/banner-builder/runs/bulk-delete` (admin-only),
+  which unlinks the real files from `PLATFORM_ARTIFACT_DIR` (reusing
+  `runner.delete_frame` / `runner.delete_run`) and returns the bytes reclaimed — so
+  it genuinely frees disk space, then refreshes the on-screen usage gauge.
+- **Brands** — the read-only built-in brand catalog (palette + logo).
+
+Admin access is role-based (`require_admin`); the seeded admin comes from
+`ADMIN_EMAIL` / `ADMIN_PASSWORD(_HASH)` (see `app/auth.py`).
+
+---
+
 ## How to add a tool
 
 The Banner Builder ships a **custom UI** (`custom_ui=True`). Most future tools are simpler headless batch jobs and use the **generic form** path instead. To add one:

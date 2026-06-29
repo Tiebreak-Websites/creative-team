@@ -9,6 +9,8 @@ React (Vite) frontend.
 - **Banner Builder** — generate on-brand ad banners with OpenAI `gpt-image-2`; multi-concept, multi-size, download as PNG.
 - **LP Builder** — landing-page generation (in progress).
 
+Admins also get a **Settings → Disk Manager** to browse, sort (by date / size / name, in gallery or list view), and delete generated banners — single, whole batches, or a multi-selected mix — straight off the persistent disk, freeing storage for everyone.
+
 The backend also bundles Figma helpers (QA, Creative Summary, Translate) used via the companion Figma plugin; they aren't surfaced in the current two-tool UI.
 
 ## Run it locally

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { HardDrive, HelpCircle, Library, RefreshCw } from 'lucide-react'
+import { HardDrive, HelpCircle, RefreshCw, Settings, Tag } from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
@@ -14,6 +14,7 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { InstallButton } from './components/InstallButton'
 import { VersionBadge } from './components/VersionBadge'
 import { BrandsSettings } from './admin/BrandsSettings'
+import { DiskManager } from './admin/DiskManager'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -149,6 +150,7 @@ function Workspace() {
   const { user } = useAuth()
   const [page, setPage] = useState<Page>('banner')
   const [view, setView] = useState<'tool' | 'settings'>('tool')
+  const [settingsTab, setSettingsTab] = useState<'disk' | 'brands'>('disk')
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -209,8 +211,8 @@ function Workspace() {
               className="font-display"
               onClick={() => setView((v) => (v === 'settings' ? 'tool' : 'settings'))}
             >
-              <Library className="h-4 w-4" />
-              <span className="hidden sm:inline">Catalog</span>
+              <Settings className="h-4 w-4" />
+              <span className="hidden sm:inline">Settings</span>
             </Button>
           )}
           <span className="hidden sm:inline-flex">
@@ -235,7 +237,38 @@ function Workspace() {
       <main className="min-h-0 flex-1 overflow-hidden">
         {view === 'settings' ? (
           <div className="h-full overflow-y-auto">
-            <BrandsSettings />
+            <div className="px-5 pt-5">
+              <div className="inline-flex items-center rounded-lg border border-border bg-secondary p-0.5">
+                {(
+                  [
+                    { id: 'disk', label: 'Disk Manager', icon: <HardDrive className="h-4 w-4" /> },
+                    { id: 'brands', label: 'Brands', icon: <Tag className="h-4 w-4" /> },
+                  ] as const
+                ).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setSettingsTab(t.id)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-display text-[13px] font-medium transition-colors',
+                      settingsTab === t.id
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {t.icon}
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {settingsTab === 'disk' ? (
+              <DiskManager />
+            ) : (
+              <div className="p-5">
+                <BrandsSettings />
+              </div>
+            )}
           </div>
         ) : page === 'lp' ? (
           <LPBuilder />

@@ -16,7 +16,7 @@ from typing import List
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
-from ...auth import require_user
+from ...auth import require_admin, require_user
 from ... import copy_parse
 from ... import references as references_store
 from ... import runner
@@ -33,6 +33,25 @@ def _slug(s: str) -> str:
     """Filesystem-safe slug for download filenames (alnum + dashes, lowercased)."""
     s = re.sub(r"[^A-Za-z0-9]+", "-", (s or "").strip()).strip("-").lower()
     return s[:80]
+
+
+def _dir_bytes(d: Path) -> int:
+    """Total size of the files directly inside a run dir (PNGs + run.json).
+
+    Best-effort — lets the bulk-delete response report how much disk space it
+    actually reclaimed, so the Disk Manager can prove the Render disk was freed.
+    """
+    total = 0
+    try:
+        for p in d.iterdir():
+            if p.is_file():
+                try:
+                    total += p.stat().st_size
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
 
 
 def build_router() -> APIRouter:
@@ -153,6 +172,69 @@ def build_router() -> APIRouter:
         if not runner.delete_frame(run, label):
             raise HTTPException(status_code=404, detail="unknown banner")
         return Response(status_code=204)
+
+    @router.post("/runs/bulk-delete")
+    def bulk_delete(payload: dict = Body(default={}), user: dict = Depends(require_admin)):
+        """Admin disk cleanup — delete banners and/or whole runs in one call.
+
+        body: {"runs": ["r_x", ...],
+               "banners": [{"run_id": "r_x", "label": "c1__1200x1200"}, ...]}
+
+        Removes the real PNGs (and, for runs, the whole folder + run.json) from the
+        mounted artifact disk, so it genuinely frees space — not just a UI hide.
+        Best-effort per item: an unknown id is skipped and recorded in `errors`
+        rather than failing the whole batch. Returns counts + freed_bytes so the
+        Disk Manager can confirm exactly how much was reclaimed.
+        """
+        runs_in = payload.get("runs") or []
+        banners_in = payload.get("banners") or []
+        deleted_runs = 0
+        deleted_banners = 0
+        freed_bytes = 0
+        errors: List[str] = []
+
+        # Banners first: deleting them before their runs means a per-banner request
+        # is never invalidated by its run disappearing out from under it.
+        for item in banners_in:
+            if not isinstance(item, dict):
+                errors.append(f"bad banner entry: {item!r}")
+                continue
+            rid = str(item.get("run_id") or "")
+            label = str(item.get("label") or "")
+            run = runner.STORE.get(rid)
+            if run is None:
+                errors.append(f"run not found: {rid}")
+                continue
+            png = run.dir / f"{label}.png"
+            try:
+                size = png.stat().st_size if png.exists() else 0
+            except OSError:
+                size = 0
+            if runner.delete_frame(run, label):
+                deleted_banners += 1
+                freed_bytes += size
+            else:
+                errors.append(f"unknown banner: {rid}:{label}")
+
+        # Then whole runs (folder + every PNG + run.json).
+        for rid in runs_in:
+            rid = str(rid)
+            run = runner.STORE.get(rid)
+            if run is None:
+                # Already gone (e.g. emptied by a banner delete above) — not an error
+                # worth surfacing if we just deleted its last banner; otherwise note it.
+                errors.append(f"run not found: {rid}")
+                continue
+            freed_bytes += _dir_bytes(run.dir)
+            runner.delete_run(run)
+            deleted_runs += 1
+
+        return {
+            "deleted_runs": deleted_runs,
+            "deleted_banners": deleted_banners,
+            "freed_bytes": freed_bytes,
+            "errors": errors,
+        }
 
     @router.get("/runs/{run_id}/download.zip")
     def download_zip(run_id: str):
