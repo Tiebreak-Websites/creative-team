@@ -1,10 +1,14 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   Check,
+  ChevronRight,
   Download,
   Eye,
   HelpCircle,
   ImageIcon,
+  Layers,
+  LayoutGrid,
+  List as ListIcon,
   Loader2,
   Maximize2,
   Sparkles,
@@ -88,6 +92,46 @@ function buildGroups(runs: RunData[]): ConceptGroup[] {
   return groups
 }
 
+/** One generation = all concepts (versions) from a single run, grouped together. */
+interface GenerationGroup {
+  runId: string
+  number: number
+  name: string
+  createdAt: string
+  createdBy?: string
+  concepts: ConceptGroup[]
+}
+
+/** Group the per-concept groups by run into "Generation N" blocks (newest first).
+ * The number is chronological (oldest = 1) so it's stable as new runs arrive. */
+function groupByGeneration(groups: ConceptGroup[]): GenerationGroup[] {
+  const byRun = new Map<string, ConceptGroup[]>()
+  const order: string[] = []
+  for (const g of groups) {
+    if (!byRun.has(g.runId)) {
+      byRun.set(g.runId, [])
+      order.push(g.runId)
+    }
+    byRun.get(g.runId)!.push(g)
+  }
+  const chrono = [...order].sort((a, b) =>
+    byRun.get(a)![0].createdAt < byRun.get(b)![0].createdAt ? -1 : 1,
+  )
+  const numberOf = new Map(chrono.map((rid, i) => [rid, i + 1]))
+  return order.map((rid) => {
+    const cs = byRun.get(rid)!
+    const n = numberOf.get(rid)!
+    return {
+      runId: rid,
+      number: n,
+      name: cs[0].title || '',
+      createdAt: cs[0].createdAt,
+      createdBy: cs[0].createdBy,
+      concepts: cs,
+    }
+  })
+}
+
 function fmtTime(ms: number): string {
   const s = ms / 1000
   if (s < 60) return `${s.toFixed(1)}s`
@@ -142,11 +186,68 @@ export function OutputPane({
   const [libDownloadAll, setLibDownloadAll] = useState<string | undefined>(undefined)
   const [libApprove, setLibApprove] = useState<{ approve: () => void; reject: () => void } | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // View prefs (persisted): batches (grouped) | all (flat grid) | list; tile size; collapse.
+  const [viewMode, setViewMode] = useState<'grouped' | 'flat' | 'list'>(() => {
+    try {
+      const v = localStorage.getItem('bb:view-mode')
+      return v === 'flat' || v === 'list' ? v : 'grouped'
+    } catch {
+      return 'grouped'
+    }
+  })
+  const [tileSize, setTileSize] = useState<'small' | 'large'>(() => {
+    try {
+      return localStorage.getItem('bb:tile-size') === 'large' ? 'large' : 'small'
+    } catch {
+      return 'small'
+    }
+  })
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('bb:collapsed-gens') || '[]'))
+    } catch {
+      return new Set()
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('bb:view-mode', viewMode)
+    } catch {
+      /* best-effort */
+    }
+  }, [viewMode])
+  useEffect(() => {
+    try {
+      localStorage.setItem('bb:tile-size', tileSize)
+    } catch {
+      /* best-effort */
+    }
+  }, [tileSize])
+  useEffect(() => {
+    try {
+      localStorage.setItem('bb:collapsed-gens', JSON.stringify([...collapsed]))
+    } catch {
+      /* best-effort */
+    }
+  }, [collapsed])
+  function toggleCollapsed(runId: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(runId)) next.delete(runId)
+      else next.add(runId)
+      return next
+    })
+  }
   const isOwner = (createdBy?: string) =>
     !createdBy || createdBy === currentUserEmail || !!isAdmin
+  const gridClass =
+    tileSize === 'large'
+      ? 'grid-cols-[repeat(auto-fill,minmax(220px,1fr))]'
+      : 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))]'
   if (!runs.length)
     return <EmptyOutput onHelp={onHelp} myBannersOnly={myBannersOnly} onShowAll={onMyBannersToggle} />
   const groups = buildGroups(runs)
+  const generations = groupByGeneration(groups)
   const firstError = runs.map((r) => r.error).find(Boolean)
 
   const styleByRun = new Map(runs.map((r) => [r.run_id, r.style ?? '']))
@@ -234,6 +335,12 @@ export function OutputPane({
           myBannersOnly={myBannersOnly}
           onMyBannersToggle={onMyBannersToggle}
         />
+        <ViewControls
+          viewMode={viewMode}
+          onViewMode={setViewMode}
+          tileSize={tileSize}
+          onTileSize={setTileSize}
+        />
         {selected.size > 0 && (
           <div className="flex animate-pop-in items-center gap-3 border-b border-primary/30 bg-primary/10 px-5 py-2.5 backdrop-blur-md">
             <span className="font-display text-sm font-semibold text-primary">
@@ -280,20 +387,58 @@ export function OutputPane({
             </details>
           </div>
         )}
-        {groups.map((g) => (
-          <ConceptGroupBlock
-            key={g.id}
-            g={g}
-            onView={openLibrary}
-            onDelete={onDeleteBanner}
-            onCancelRun={onCancelRun}
-            selected={selected}
-            onToggleSelect={toggleSelect}
-            owner={isOwner(g.createdBy)}
-            onApprove={onApprove}
-            onReject={onReject}
-          />
-        ))}
+        {viewMode === 'grouped' &&
+          generations.map((gen) => (
+            <GenerationSection
+              key={gen.runId}
+              gen={gen}
+              collapsed={collapsed.has(gen.runId)}
+              onToggleCollapse={() => toggleCollapsed(gen.runId)}
+              gridClass={gridClass}
+              onView={openLibrary}
+              onDelete={onDeleteBanner}
+              onCancelRun={onCancelRun}
+              selected={selected}
+              onToggleSelect={toggleSelect}
+              owner={isOwner(gen.createdBy)}
+              onApprove={onApprove}
+              onReject={onReject}
+            />
+          ))}
+        {viewMode === 'flat' && (
+          <div className={cn('grid gap-3', gridClass)}>
+            {groups.flatMap((g) =>
+              g.banners.map((b) => (
+                <AssetCard
+                  key={`${g.runId}|${b.label}`}
+                  b={b}
+                  version={g.number}
+                  onView={(label) => openLibrary(g.runId, label)}
+                  onDelete={onDeleteBanner ? (label) => onDeleteBanner(g.runId, label) : undefined}
+                  selected={selected.has(`${g.runId}|${b.label}`)}
+                  onToggleSelect={() => toggleSelect(g.runId, b.label)}
+                />
+              )),
+            )}
+          </div>
+        )}
+        {viewMode === 'list' && (
+          <div className="overflow-hidden rounded-xl border border-border">
+            {groups.flatMap((g) =>
+              g.banners.map((b) => (
+                <AssetListRow
+                  key={`${g.runId}|${b.label}`}
+                  b={b}
+                  version={g.number}
+                  onView={() => openLibrary(g.runId, b.label)}
+                  onDelete={onDeleteBanner ? () => onDeleteBanner(g.runId, b.label) : undefined}
+                  selected={selected.has(`${g.runId}|${b.label}`)}
+                  onToggleSelect={() => toggleSelect(g.runId, b.label)}
+                />
+              )),
+            )}
+          </div>
+        )}
       </div>
       <BannerLibrary
         open={libOpen}
@@ -423,6 +568,199 @@ function OverviewBar({
   )
 }
 
+function ViewControls({
+  viewMode,
+  onViewMode,
+  tileSize,
+  onTileSize,
+}: {
+  viewMode: 'grouped' | 'flat' | 'list'
+  onViewMode: (v: 'grouped' | 'flat' | 'list') => void
+  tileSize: 'small' | 'large'
+  onTileSize: (s: 'small' | 'large') => void
+}) {
+  const modes = [
+    { v: 'grouped' as const, label: 'Batches', icon: <Layers className="h-4 w-4" /> },
+    { v: 'flat' as const, label: 'All', icon: <LayoutGrid className="h-4 w-4" /> },
+    { v: 'list' as const, label: 'List', icon: <ListIcon className="h-4 w-4" /> },
+  ]
+  const seg = 'inline-flex items-center rounded-lg border border-border bg-secondary p-0.5'
+  const btn = (on: boolean) =>
+    cn(
+      'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-medium capitalize transition-colors',
+      on ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+    )
+  return (
+    <div className="flex items-center gap-2 border-b border-border bg-card/50 px-5 py-2 backdrop-blur-md">
+      <div className={seg}>
+        {modes.map((m) => (
+          <button key={m.v} type="button" onClick={() => onViewMode(m.v)} className={btn(viewMode === m.v)}>
+            {m.icon}
+            <span className="hidden sm:inline">{m.label}</span>
+          </button>
+        ))}
+      </div>
+      {viewMode !== 'list' && (
+        <div className={cn(seg, 'ml-auto')}>
+          {(['small', 'large'] as const).map((s) => (
+            <button key={s} type="button" onClick={() => onTileSize(s)} className={btn(tileSize === s)}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GenerationSection({
+  gen,
+  collapsed,
+  onToggleCollapse,
+  gridClass,
+  onView,
+  onDelete,
+  onCancelRun,
+  selected,
+  onToggleSelect,
+  owner,
+  onApprove,
+  onReject,
+}: {
+  gen: GenerationGroup
+  collapsed: boolean
+  onToggleCollapse: () => void
+  gridClass?: string
+  onView: (runId: string, label: string) => void
+  onDelete?: (runId: string, label: string) => void
+  onCancelRun?: (runId: string) => void
+  selected: Set<string>
+  onToggleSelect: (runId: string, label: string) => void
+  owner?: boolean
+  onApprove?: (runId: string, concept: string) => void
+  onReject?: (runId: string, concept: string) => void
+}) {
+  const hasOk = gen.concepts.some((c) => c.ok > 0)
+  return (
+    <section className="rounded-2xl border border-border bg-card/40">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-3">
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="flex min-w-0 items-center gap-2 text-left"
+          title={collapsed ? 'Expand' : 'Collapse'}
+        >
+          <ChevronRight
+            className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', !collapsed && 'rotate-90')}
+          />
+          <span className="font-display text-[15px] font-bold tracking-tight">Generation {gen.number}</span>
+        </button>
+        {gen.name && <span className="truncate text-sm text-muted-foreground">{gen.name}</span>}
+        {gen.createdAt && (
+          <span className="text-xs text-muted-foreground/80" title={`Requested ${new Date(gen.createdAt).toLocaleString()}`}>
+            · {fmtRequested(gen.createdAt)}
+          </span>
+        )}
+        {gen.createdBy && (
+          <span className="text-xs text-muted-foreground/80" title={gen.createdBy}>
+            · by {formatUserName(gen.createdBy)}
+          </span>
+        )}
+        <span className="ml-auto text-xs text-muted-foreground">
+          {gen.concepts.length} version{gen.concepts.length === 1 ? '' : 's'}
+        </span>
+        {hasOk && (
+          <Button asChild size="sm" variant="outline" className="h-7 px-2.5">
+            <a href={zipAllUrl([gen.runId])} title="Download this whole generation as a zip">
+              <Download className="h-3.5 w-3.5" /> All
+            </a>
+          </Button>
+        )}
+      </div>
+      {!collapsed && (
+        <div className="space-y-5 border-t border-border px-4 py-4">
+          {gen.concepts.map((g) => (
+            <ConceptGroupBlock
+              key={g.id}
+              g={g}
+              gridClass={gridClass}
+              onView={onView}
+              onDelete={onDelete}
+              onCancelRun={onCancelRun}
+              selected={selected}
+              onToggleSelect={onToggleSelect}
+              owner={owner}
+              onApprove={onApprove}
+              onReject={onReject}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function AssetListRow({
+  b,
+  version,
+  onView,
+  onDelete,
+  selected,
+  onToggleSelect,
+}: {
+  b: Banner
+  version: number
+  onView: () => void
+  onDelete?: () => void
+  selected?: boolean
+  onToggleSelect?: () => void
+}) {
+  const ok = b.status === 'ok' && b.url
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0',
+        selected && 'bg-primary/5',
+      )}
+    >
+      {onToggleSelect && (
+        <button
+          type="button"
+          onClick={onToggleSelect}
+          aria-pressed={selected}
+          title={selected ? 'Deselect' : 'Select'}
+          className={cn(
+            'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors',
+            selected
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border bg-background text-transparent hover:border-foreground/40',
+          )}
+        >
+          <Check className="h-3.5 w-3.5" />
+        </button>
+      )}
+      <span className="h-10 w-10 shrink-0 overflow-hidden rounded border border-border" style={CHECKER}>
+        {ok ? (
+          <img src={assetUrl(b.url as string)} alt="" loading="lazy" className="h-full w-full object-contain" />
+        ) : null}
+      </span>
+      <span className="font-display text-sm font-semibold">{b.size}</span>
+      <span className="rounded border border-primary/30 px-1 text-[10px] text-primary">v{version}</span>
+      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{b.title}</span>
+      {ok && (
+        <button type="button" onClick={onView} title="Open" aria-label="Open banner" className="text-muted-foreground hover:text-foreground">
+          <Maximize2 className="h-4 w-4" />
+        </button>
+      )}
+      {onDelete && (
+        <button type="button" onClick={onDelete} title="Delete" aria-label="Delete banner" className="text-muted-foreground hover:text-destructive">
+          <Trash2 className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  )
+}
+
 function ConceptGroupBlock({
   g,
   onView,
@@ -433,6 +771,7 @@ function ConceptGroupBlock({
   owner,
   onApprove,
   onReject,
+  gridClass,
 }: {
   g: ConceptGroup
   onView: (runId: string, label: string) => void
@@ -443,6 +782,7 @@ function ConceptGroupBlock({
   owner?: boolean
   onApprove?: (runId: string, concept: string) => void
   onReject?: (runId: string, concept: string) => void
+  gridClass?: string
 }) {
   // Bind this group's run id so view + delete are scoped to the right run.
   const onDeleteLabel = onDelete ? (label: string) => onDelete(g.runId, label) : undefined
@@ -532,7 +872,7 @@ function ConceptGroupBlock({
           )}
         </span>
       </div>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
+      <div className={cn('grid gap-3', gridClass ?? 'grid-cols-[repeat(auto-fill,minmax(160px,1fr))]')}>
         {g.banners.map((b, i) => (
           <AssetCard
             key={b.label}
