@@ -240,6 +240,14 @@ export function OutputPane({
   }
   const isOwner = (createdBy?: string) =>
     !createdBy || createdBy === currentUserEmail || !!isAdmin
+  // Stopping a run is stricter than approving it: only the person who started a
+  // generation may interrupt it (admins included ONLY for legacy runs that have
+  // no recorded owner). One user must never see a cancel control for another
+  // user's in-flight batch.
+  const canCancel = (createdBy?: string) =>
+    createdBy
+      ? createdBy.toLowerCase() === (currentUserEmail || '').toLowerCase()
+      : !!isAdmin
   const gridClass =
     tileSize === 'large'
       ? 'grid-cols-[repeat(auto-fill,minmax(220px,1fr))]'
@@ -334,6 +342,8 @@ export function OutputPane({
           onCancel={onCancel}
           myBannersOnly={myBannersOnly}
           onMyBannersToggle={onMyBannersToggle}
+          currentUserEmail={currentUserEmail}
+          isAdmin={isAdmin}
         />
         <ViewControls
           viewMode={viewMode}
@@ -401,6 +411,7 @@ export function OutputPane({
               selected={selected}
               onToggleSelect={toggleSelect}
               owner={isOwner(gen.createdBy)}
+              canCancel={canCancel(gen.createdBy)}
               onApprove={onApprove}
               onReject={onReject}
             />
@@ -460,16 +471,27 @@ function OverviewBar({
   onCancel,
   myBannersOnly,
   onMyBannersToggle,
+  currentUserEmail,
+  isAdmin,
 }: {
   runs: RunData[]
   onCancel?: () => void
   myBannersOnly?: boolean
   onMyBannersToggle?: () => void
+  currentUserEmail?: string
+  isAdmin?: boolean
 }) {
   // Progress reflects ONLY the currently-generating runs (the current task) —
   // not the historical total of every run in the gallery.
   const activeRuns = runs.filter((r) => RUNNING.includes(r.status))
   const activeCount = activeRuns.length
+  // "Stop all" only governs the current user's own in-flight runs — never
+  // anyone else's (admins included, except for legacy runs with no owner).
+  const myActiveCount = activeRuns.filter((r) =>
+    r.created_by
+      ? r.created_by.toLowerCase() === (currentUserEmail || '').toLowerCase()
+      : !!isAdmin,
+  ).length
   const total = activeRuns.reduce((a, r) => a + r.total, 0)
   const ready = activeRuns.reduce((a, r) => a + r.completed, 0)
   const pct = total ? Math.round((ready / total) * 100) : 0
@@ -539,13 +561,13 @@ function OverviewBar({
         </Button>
       )}
 
-      {activeCount > 1 && onCancel && (
+      {myActiveCount > 1 && onCancel && (
         <Button
           size="sm"
           variant="outline"
           className="shrink-0 gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
           onClick={onCancel}
-          title="Stop all running generations"
+          title="Stop all of your running generations"
         >
           <X className="h-4 w-4" /> Stop all
         </Button>
@@ -624,6 +646,7 @@ function GenerationSection({
   selected,
   onToggleSelect,
   owner,
+  canCancel,
   onApprove,
   onReject,
 }: {
@@ -637,6 +660,7 @@ function GenerationSection({
   selected: Set<string>
   onToggleSelect: (runId: string, label: string) => void
   owner?: boolean
+  canCancel?: boolean
   onApprove?: (runId: string, concept: string) => void
   onReject?: (runId: string, concept: string) => void
 }) {
@@ -690,6 +714,7 @@ function GenerationSection({
               selected={selected}
               onToggleSelect={onToggleSelect}
               owner={owner}
+              canCancel={canCancel}
               onApprove={onApprove}
               onReject={onReject}
             />
@@ -769,6 +794,7 @@ function ConceptGroupBlock({
   selected,
   onToggleSelect,
   owner,
+  canCancel,
   onApprove,
   onReject,
   gridClass,
@@ -780,6 +806,7 @@ function ConceptGroupBlock({
   selected: Set<string>
   onToggleSelect: (runId: string, label: string) => void
   owner?: boolean
+  canCancel?: boolean
   onApprove?: (runId: string, concept: string) => void
   onReject?: (runId: string, concept: string) => void
   gridClass?: string
@@ -849,7 +876,7 @@ function ConceptGroupBlock({
               </Button>
             </>
           )}
-          {g.running && onCancelRun && owner && (
+          {g.running && onCancelRun && canCancel && (
             <Button
               size="sm"
               variant="outline"

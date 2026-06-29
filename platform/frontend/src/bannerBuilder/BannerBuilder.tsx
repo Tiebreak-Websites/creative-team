@@ -6,6 +6,7 @@ import {
   Loader2,
   Paintbrush,
   Plus,
+  ScanText,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -596,12 +597,28 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   // backend is slow or wedged, `running` flips false immediately and they can start a
   // new generation. (A reload re-fetches real status, so finished banners aren't lost.)
   function cancelRuns() {
-    const active = runsRef.current.filter((r) => !TERMINAL_STATUSES.includes(r.status))
+    // Only the current user's own runs may be stopped — never another user's
+    // in-flight batch (admins included, except legacy runs with no owner). This
+    // mirrors the backend owner-enforcement so the UI never offers to do
+    // something the server would reject.
+    const mine = (cb?: string | null) =>
+      cb ? cb.toLowerCase() === myEmail : user?.role === 'admin'
+    const active = runsRef.current.filter(
+      (r) => !TERMINAL_STATUSES.includes(r.status) && mine(r.created_by),
+    )
     active.forEach((r) => cancelRun(r.run_id))
     setRuns((prev) =>
-      prev.map((r) => (TERMINAL_STATUSES.includes(r.status) ? r : { ...r, status: 'cancelled' })),
+      prev.map((r) =>
+        !TERMINAL_STATUSES.includes(r.status) && mine(r.created_by)
+          ? { ...r, status: 'cancelled' }
+          : r,
+      ),
     )
-    setPolling(false)
+    // Keep polling if someone else's run is still going; otherwise stop.
+    const othersActive = runsRef.current.some(
+      (r) => !TERMINAL_STATUSES.includes(r.status) && !mine(r.created_by),
+    )
+    if (!othersActive) setPolling(false)
   }
 
   // Stop ONE run (from its generating concept card). Optimistically settles just
@@ -893,7 +910,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
               addRefs(e.dataTransfer.files)
             }}
             className={cn(
-              'relative flex w-full max-w-3xl flex-col gap-2 rounded-2xl border bg-card/95 p-2 shadow-[0_18px_44px_-14px_rgba(0,0,0,0.75)] backdrop-blur-md transition-colors',
+              'relative flex w-full max-w-3xl flex-col gap-2 rounded-2xl border bg-card/95 p-2 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md transition-colors',
               dragOver ? 'border-primary' : 'border-border',
             )}
           >
@@ -1327,7 +1344,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
               aria-label="Detect copy from pasted text"
               className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
             >
-              <Sparkles className="h-3.5 w-3.5" /> Text Detect
+              <ScanText className="h-3.5 w-3.5" /> Text Detect
             </button>
           </div>
 
