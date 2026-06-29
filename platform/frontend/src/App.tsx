@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { HardDrive, HelpCircle, RefreshCw, Settings, Tag } from 'lucide-react'
+import { HardDrive, HelpCircle, RefreshCw, Tag } from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
@@ -118,7 +118,7 @@ function Gate() {
   return <Workspace />
 }
 
-type Page = 'banner' | 'lp'
+type Page = 'banner' | 'lp' | 'disk'
 
 function Tab({
   active,
@@ -133,7 +133,7 @@ function Tab({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-md px-3 py-1.5 font-display text-sm font-medium transition-[transform,background-color,color] active:scale-95 ${
+      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-display text-sm font-medium transition-[transform,background-color,color] active:scale-95 ${
         active
           ? 'bg-secondary text-foreground'
           : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
@@ -144,13 +144,12 @@ function Tab({
   )
 }
 
-// Two tools, no home page: Banner Builder + LP Builder (placeholder).
-// Admins also get a Settings surface (Brands).
+// Banner Builder + LP Builder (placeholder). Admins also get a Disk Manager tab
+// in the top nav and a Brands panel.
 function Workspace() {
   const { user } = useAuth()
   const [page, setPage] = useState<Page>('banner')
   const [view, setView] = useState<'tool' | 'settings'>('tool')
-  const [settingsTab, setSettingsTab] = useState<'disk' | 'brands'>('disk')
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -168,12 +167,17 @@ function Workspace() {
   const isAdmin = user?.role === 'admin'
   const bannerActive = page === 'banner' && view === 'tool'
   const lpActive = page === 'lp' && view === 'tool'
+  const diskActive = page === 'disk' && view === 'tool'
   function goBanner() {
     setPage('banner')
     setView('tool')
   }
   function goLp() {
     setPage('lp')
+    setView('tool')
+  }
+  function goDisk() {
+    setPage('disk')
     setView('tool')
   }
 
@@ -198,6 +202,12 @@ function Workspace() {
             <span className="sm:hidden">LP</span>
             <span className="hidden sm:inline">LP Builder</span>
           </Tab>
+          {isAdmin && (
+            <Tab active={diskActive} onClick={goDisk}>
+              <HardDrive className="h-4 w-4" />
+              Disk
+            </Tab>
+          )}
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <StorageBadge />
@@ -211,8 +221,8 @@ function Workspace() {
               className="font-display"
               onClick={() => setView((v) => (v === 'settings' ? 'tool' : 'settings'))}
             >
-              <Settings className="h-4 w-4" />
-              <span className="hidden sm:inline">Settings</span>
+              <Tag className="h-4 w-4" />
+              <span className="hidden sm:inline">Brands</span>
             </Button>
           )}
           <span className="hidden sm:inline-flex">
@@ -237,38 +247,13 @@ function Workspace() {
       <main className="min-h-0 flex-1 overflow-hidden">
         {view === 'settings' ? (
           <div className="h-full overflow-y-auto">
-            <div className="px-5 pt-5">
-              <div className="inline-flex items-center rounded-lg border border-border bg-secondary p-0.5">
-                {(
-                  [
-                    { id: 'disk', label: 'Disk Manager', icon: <HardDrive className="h-4 w-4" /> },
-                    { id: 'brands', label: 'Brands', icon: <Tag className="h-4 w-4" /> },
-                  ] as const
-                ).map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setSettingsTab(t.id)}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-display text-[13px] font-medium transition-colors',
-                      settingsTab === t.id
-                        ? 'bg-card text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {t.icon}
-                    {t.label}
-                  </button>
-                ))}
-              </div>
+            <div className="p-5">
+              <BrandsSettings />
             </div>
-            {settingsTab === 'disk' ? (
-              <DiskManager />
-            ) : (
-              <div className="p-5">
-                <BrandsSettings />
-              </div>
-            )}
+          </div>
+        ) : page === 'disk' && isAdmin ? (
+          <div className="h-full overflow-y-auto">
+            <DiskManager />
           </div>
         ) : page === 'lp' ? (
           <LPBuilder />

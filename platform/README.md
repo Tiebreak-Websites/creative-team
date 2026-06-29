@@ -101,11 +101,11 @@ The banner engine itself was lightly refactored to give the web layer a clean se
 
 ---
 
-## Admin Settings
+## Admin features
 
-Logged-in **admins** get a **Settings** surface (header → **Settings**) with two panels:
+Logged-in **admins** get two extra surfaces:
 
-- **Disk Manager** (`frontend/src/admin/DiskManager.tsx`) — browse every generated
+- **Disk Manager** — a top-nav **Disk** tab (`frontend/src/admin/DiskManager.tsx`) — browse every generated
   batch (run) and banner held on the persistent artifact disk, sort by
   **date / size / name** (ascending or descending) in a **gallery** or **list**
   view, and delete a single banner, a whole batch, or a multi-selected mix. Each
@@ -113,10 +113,12 @@ Logged-in **admins** get a **Settings** surface (header → **Settings**) with t
   which unlinks the real files from `PLATFORM_ARTIFACT_DIR` (reusing
   `runner.delete_frame` / `runner.delete_run`) and returns the bytes reclaimed — so
   it genuinely frees disk space, then refreshes the on-screen usage gauge.
-- **Brands** — the read-only built-in brand catalog (palette + logo).
+- **Brands** — a read-only built-in brand catalog (header → **Brands**).
 
-Admin access is role-based (`require_admin`); the seeded admin comes from
-`ADMIN_EMAIL` / `ADMIN_PASSWORD(_HASH)` (see `app/auth.py`).
+Both the shared gallery and the Disk Manager label each batch with **who generated
+it** (run `created_by`, captured from the session). Admin access is role-based
+(`require_admin`); users come from `ADMIN_EMAIL` + `ADMIN_PASSWORD(_HASH)` and/or
+the `PLATFORM_USERS` env var (see `app/auth.py` and `DEPLOY.md`).
 
 ---
 
