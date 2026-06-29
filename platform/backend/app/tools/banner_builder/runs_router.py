@@ -128,6 +128,36 @@ def build_router() -> APIRouter:
         runner.cancel(run_id)
         return {"status": "cancelled"}
 
+    @router.post("/runs/{run_id}/approve")
+    def approve_run(run_id: str, payload: dict = Body(default={}), user: dict = Depends(require_user)):
+        """Owner approves one or more versions (concepts) → recompose them to every
+        size. Body {"concepts":[...]}; omit/empty to approve ALL awaiting. Owner-only."""
+        run = runner.STORE.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        _enforce_owner(run, user)
+        body = payload.get("concepts")
+        if isinstance(body, list) and body:
+            concepts = [str(c) for c in body]
+        else:
+            concepts = [ck for ck, st in run.approval_state.items() if st == "awaiting"]
+        api_key = get_secret("OPENAI_API_KEY")
+        if not api_key:
+            return JSONResponse(status_code=424, content={"missing_secrets": [_OPENAI_SECRET]})
+        return runner.approve_concepts(run, concepts, api_key=api_key)
+
+    @router.post("/runs/{run_id}/reject")
+    def reject_run(run_id: str, payload: dict = Body(default={}), user: dict = Depends(require_user)):
+        """Owner rejects one or more versions — keep the MVP only, skip recompose.
+        Body {"concepts":[...]} (required). Owner-only."""
+        run = runner.STORE.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        _enforce_owner(run, user)
+        body = payload.get("concepts")
+        concepts = [str(c) for c in body] if isinstance(body, list) else []
+        return runner.reject_concepts(run, concepts)
+
     @router.post("/references")
     async def upload_references(files: List[UploadFile] = File(...)):
         """Save 1-4 style-only reference images (png/jpg/webp, ~8MB each).

@@ -120,6 +120,17 @@ it** (run `created_by`, captured from the session). Admin access is role-based
 (`require_admin`); users come from `ADMIN_EMAIL` + `ADMIN_PASSWORD(_HASH)` and/or
 the `PLATFORM_USERS` env var (see `app/auth.py` and `DEPLOY.md`).
 
+## Approval gate (MVP-first)
+
+Each generation renders the **1200×1200 master (MVP) first**, then pauses at
+`awaiting_approval`. The run **owner** reviews each version and **approves**
+(recompose into all selected sizes) or **rejects** (keep the MVP only) — from the
+gallery's version header or the banner lightbox. Approve / reject / cancel are
+**owner-only** (`_enforce_owner`, 403 otherwise). Controlled by the
+`BANNER_APPROVAL_MODE` env var (default **on**; set to `off` to auto-recompose) and
+durable across restarts — the awaiting state + per-version approvals are persisted
+and rehydrated (an interrupted recompose reverts to awaiting for re-approval).
+
 ---
 
 ## How to add a tool

@@ -48,6 +48,7 @@ interface ConceptGroup {
   running: boolean
   createdAt: string
   createdBy?: string
+  approvalStatus?: string // awaiting | approved | rejected (from run.approval_state)
 }
 
 /** Flatten all runs into per-concept groups (newest run first). */
@@ -80,6 +81,7 @@ function buildGroups(runs: RunData[]): ConceptGroup[] {
         running: RUNNING.includes(run.status),
         createdAt: run.created_at,
         createdBy: run.created_by,
+        approvalStatus: run.approval_state?.[ck],
       })
     })
   }
@@ -117,6 +119,10 @@ export function OutputPane({
   onCancelRun,
   myBannersOnly,
   onMyBannersToggle,
+  currentUserEmail,
+  isAdmin,
+  onApprove,
+  onReject,
 }: {
   runs: RunData[]
   onHelp?: () => void
@@ -125,12 +131,19 @@ export function OutputPane({
   onCancelRun?: (runId: string) => void
   myBannersOnly?: boolean
   onMyBannersToggle?: () => void
+  currentUserEmail?: string
+  isAdmin?: boolean
+  onApprove?: (runId: string, concept: string) => void
+  onReject?: (runId: string, concept: string) => void
 }) {
   const [libOpen, setLibOpen] = useState(false)
   const [libIndex, setLibIndex] = useState(0)
   const [libItems, setLibItems] = useState<LibraryItem[]>([])
   const [libDownloadAll, setLibDownloadAll] = useState<string | undefined>(undefined)
+  const [libApprove, setLibApprove] = useState<{ approve: () => void; reject: () => void } | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const isOwner = (createdBy?: string) =>
+    !createdBy || createdBy === currentUserEmail || !!isAdmin
   if (!runs.length)
     return <EmptyOutput onHelp={onHelp} myBannersOnly={myBannersOnly} onShowAll={onMyBannersToggle} />
   const groups = buildGroups(runs)
@@ -149,6 +162,9 @@ export function OutputPane({
         return {
           label: b.label,
           runId: g.runId,
+          concept: g.concept,
+          approvalStatus: g.approvalStatus,
+          createdBy: g.createdBy,
           src,
           downloadHref: `${src}?download=1&name=${encodeURIComponent(fileName)}`,
           size: b.size,
@@ -172,6 +188,20 @@ export function OutputPane({
     if (i < 0) return
     setLibItems(items)
     setLibDownloadAll(items.length > 1 ? versionZipUrl(g.runId, g.concept, g.number, g.title) : undefined)
+    setLibApprove(
+      g.approvalStatus === 'awaiting' && isOwner(g.createdBy)
+        ? {
+            approve: () => {
+              onApprove?.(g.runId, g.concept)
+              setLibOpen(false)
+            },
+            reject: () => {
+              onReject?.(g.runId, g.concept)
+              setLibOpen(false)
+            },
+          }
+        : null,
+    )
     setLibIndex(i)
     setLibOpen(true)
   }
@@ -259,6 +289,9 @@ export function OutputPane({
             onCancelRun={onCancelRun}
             selected={selected}
             onToggleSelect={toggleSelect}
+            owner={isOwner(g.createdBy)}
+            onApprove={onApprove}
+            onReject={onReject}
           />
         ))}
       </div>
@@ -270,6 +303,8 @@ export function OutputPane({
         onClose={() => setLibOpen(false)}
         onDelete={(runId, label) => onDeleteBanner?.(runId, label)}
         downloadAllHref={libDownloadAll}
+        onApprove={libApprove?.approve}
+        onReject={libApprove?.reject}
       />
     </div>
   )
@@ -298,15 +333,18 @@ function OverviewBar({
   // while — show an animated indeterminate bar so it reads as "working", not 0%.
   const preRender = running && ready === 0
   const failed = runs.some((r) => r.status === 'failed')
+  const awaiting = runs.some((r) => r.status === 'awaiting_approval')
   const directed = runs.some((r) => r.director?.used)
   const okRunIds = runs.filter((r) => r.banners.some((b) => b.status === 'ok')).map((r) => r.run_id)
   const label = running
     ? activeCount > 1
       ? `Generating ${activeCount} batches…`
       : statusLabel(activeRuns[0].status)
-    : failed
-      ? 'Some runs failed'
-      : 'All banners ready'
+    : awaiting
+      ? 'Awaiting your approval'
+      : failed
+        ? 'Some runs failed'
+        : 'All banners ready'
 
   return (
     <div className="flex items-center gap-4 border-b border-border bg-card/70 px-5 py-3 backdrop-blur-md">
@@ -314,7 +352,7 @@ function OverviewBar({
         {running ? (
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
         ) : (
-          <span className={cn('h-2.5 w-2.5 rounded-full', failed ? 'bg-destructive' : 'bg-primary ring-4 ring-primary/20')} />
+          <span className={cn('h-2.5 w-2.5 rounded-full', failed ? 'bg-destructive' : awaiting ? 'bg-amber-500' : 'bg-primary ring-4 ring-primary/20')} />
         )}
         {label}
       </span>
@@ -392,6 +430,9 @@ function ConceptGroupBlock({
   onCancelRun,
   selected,
   onToggleSelect,
+  owner,
+  onApprove,
+  onReject,
 }: {
   g: ConceptGroup
   onView: (runId: string, label: string) => void
@@ -399,6 +440,9 @@ function ConceptGroupBlock({
   onCancelRun?: (runId: string) => void
   selected: Set<string>
   onToggleSelect: (runId: string, label: string) => void
+  owner?: boolean
+  onApprove?: (runId: string, concept: string) => void
+  onReject?: (runId: string, concept: string) => void
 }) {
   // Bind this group's run id so view + delete are scoped to the right run.
   const onDeleteLabel = onDelete ? (label: string) => onDelete(g.runId, label) : undefined
@@ -421,6 +465,22 @@ function ConceptGroupBlock({
             · by {formatUserName(g.createdBy)}
           </span>
         )}
+        {g.approvalStatus && (
+          <span
+            className={cn(
+              'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold',
+              g.approvalStatus === 'awaiting' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+              g.approvalStatus === 'approved' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+              g.approvalStatus === 'rejected' && 'bg-destructive/15 text-destructive',
+            )}
+          >
+            {g.approvalStatus === 'awaiting'
+              ? 'Awaiting approval'
+              : g.approvalStatus === 'approved'
+                ? 'Approved'
+                : 'Rejected — MVP only'}
+          </span>
+        )}
         <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
           {g.running && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           <span>
@@ -429,7 +489,27 @@ function ConceptGroupBlock({
           {g.genMs > 0 && (
             <span title="Total image render time across this version's sizes">· {fmtTime(g.genMs)}</span>
           )}
-          {g.running && onCancelRun && (
+          {g.approvalStatus === 'awaiting' && owner && onApprove && (
+            <>
+              <Button
+                size="sm"
+                onClick={() => onReject?.(g.runId, g.concept)}
+                title="Reject — keep the MVP only, skip the other sizes"
+                className="h-7 gap-1 bg-destructive px-2.5 text-destructive-foreground hover:bg-destructive/90"
+              >
+                <X className="h-3.5 w-3.5" /> Reject
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => onApprove(g.runId, g.concept)}
+                title="Approve — recompose this version into all selected sizes"
+                className="h-7 gap-1 bg-emerald-600 px-2.5 text-white hover:bg-emerald-700"
+              >
+                <Check className="h-3.5 w-3.5" /> Approve
+              </Button>
+            </>
+          )}
+          {g.running && onCancelRun && owner && (
             <Button
               size="sm"
               variant="outline"
@@ -661,6 +741,8 @@ function statusLabel(s: string): string {
       return 'Rendering master concepts…'
     case 'running_recomp':
       return 'Recomposing other sizes…'
+    case 'awaiting_approval':
+      return 'Awaiting your approval'
     case 'completed':
       return 'All banners ready'
     case 'partial':

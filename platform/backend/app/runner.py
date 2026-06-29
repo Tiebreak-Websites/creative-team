@@ -45,6 +45,17 @@ _OPENAI_SEM = threading.BoundedSemaphore(settings.OPENAI_CONCURRENCY)
 
 # Terminal run states the frontend stops polling on.
 TERMINAL = {"completed", "partial", "failed", "cancelled"}
+# "Settled" = terminal OR legitimately paused at the approval gate. The run
+# orchestrator's finally-guard treats SETTLED as "don't force-fail"; awaiting is
+# deliberately NOT in TERMINAL (the gallery keeps it and the owner can still act).
+SETTLED = TERMINAL | {"awaiting_approval"}
+
+
+def _approval_mode() -> bool:
+    """Whether the MVP approval gate is active. Env kill-switch BANNER_APPROVAL_MODE
+    (default ON); set it to off/false/0/no to revert to straight auto-recompose."""
+    import os
+    return os.environ.get("BANNER_APPROVAL_MODE", "on").strip().lower() not in ("off", "false", "0", "no")
 
 
 def _now() -> str:
@@ -104,6 +115,11 @@ class Run:
     logo_raster: Optional[bytes] = None
     logo_corner: Optional[str] = None
     logo: dict = field(default_factory=dict)
+    # Approval gate (Phase 1): per-concept state — "awaiting" | "approved" | "rejected".
+    # Empty when the gate is off (auto-recompose). awaiting_at marks gate entry.
+    approval_state: Dict[str, str] = field(default_factory=dict)
+    approval_history: Dict[str, dict] = field(default_factory=dict)
+    awaiting_at: Optional[str] = None
 
     def __post_init__(self):
         # Concurrency primitives — never serialized. _lock serializes read-then-write
@@ -629,17 +645,27 @@ def _run_phase(run: Run, frames: List[dict]):
 
 
 def _finalize(run: Run) -> str:
-    # A cancelled run is terminal as "cancelled" regardless of partial output;
-    # any banners that finished before the cancel are kept on disk.
+    # A cancelled run is terminal as "cancelled" regardless of partial output.
     if run.cancelled:
         return "cancelled"
-    statuses = [fr.status for fr in run.frame_results.values()]
-    ok = sum(1 for s in statuses if s == "ok")
-    if ok == 0:
+    # Status is judged over INTENDED outputs: a deliberately-rejected version
+    # (kept MVP only) is NOT a failure, so its skipped recomp frames don't count.
+    rejected = {ck for ck, st in run.approval_state.items() if st == "rejected"}
+    intended = []
+    any_ok = False
+    for f in run.frames_plan:
+        fr = run.frame_results.get(_label(f["concept"], f["size"]))
+        if fr is None:
+            continue
+        if fr.status == "ok":
+            any_ok = True
+        if f["phase"] == "recomp" and f["concept"] in rejected:
+            continue  # intentionally skipped — excluded from the success tally
+        intended.append(fr)
+    if not any_ok:
         return "failed"
-    if ok == len(statuses):
-        return "completed"
-    return "partial"
+    intended_ok = sum(1 for fr in intended if fr.status == "ok")
+    return "completed" if intended_ok == len(intended) else "partial"
 
 
 def _mark_unfinished_cancelled(run: Run):
@@ -913,6 +939,24 @@ def execute_run(run_id: str):
             run.touch()
             return
 
+        # Approval gate (Phase 1) — with the gate on, pause after the masters and
+        # wait for the owner to approve/reject each version before recomposing.
+        # Concepts whose master failed are marked here so their tiles don't hang.
+        if _approval_mode():
+            with run._lock:
+                for ck in ok_masters:
+                    run.approval_state[ck] = "awaiting"
+                for f in run.frames_plan:
+                    if f["phase"] == "recomp" and f["concept"] not in ok_masters:
+                        fr = run.fr(f["concept"], f["size"])
+                        if fr.status == "pending":
+                            fr.status, fr.error = "master_missing", "master generation failed"
+                run.status = "awaiting_approval"
+                run.awaiting_at = _now()
+            run.touch()
+            _persist(run)
+            return  # recompose happens later, per concept, on approve
+
         # Phase 2 — recomps (parallel). Concepts whose master failed are
         # pre-marked master_missing rather than attempted.
         recomp_frames = [f for f in run.frames_plan if f["phase"] == "recomp"]
@@ -938,10 +982,10 @@ def execute_run(run_id: str):
         # state — that is exactly what produces an endless frontend spinner. If we
         # somehow exit without a terminal status, force 'failed' so the run settles
         # and the UI stops polling.
-        if run.status not in TERMINAL:
+        if run.status not in SETTLED:
             run.status, run.error = "failed", run.error or "run did not finish"
             run.touch()
-        # Persist the terminal run so its banners + metadata survive a restart.
+        # Persist the run (terminal OR paused at the gate) so it survives a restart.
         _persist(run)
 
 
@@ -951,6 +995,137 @@ def _finish_cancelled(run: Run):
     _mark_unfinished_cancelled(run)
     run.status = "cancelled"
     run.touch()
+
+
+# ---------------------------------------------------------------------------
+# Approval gate (Phase 1) — pause after masters; recompose per approved concept
+# ---------------------------------------------------------------------------
+def _maybe_finalize(run: Run) -> None:
+    """Recompute run.status from the concepts' approval + frame states. Caller MUST
+    hold run._lock. Idempotent; never reopens a terminal run. Drives the run from
+    running_recomp → back to awaiting_approval (other versions still pending a
+    decision) or → completed/partial once every version is decided and done."""
+    if run.status in TERMINAL:
+        return
+    if run.cancelled:
+        run.status = "cancelled"
+        return
+    concepts = {f["concept"] for f in run.frames_plan}
+    any_inprogress = False
+    for ck in concepts:
+        if run.approval_state.get(ck) == "approved":
+            for f in run.frames_plan:
+                if (f["phase"] == "recomp" and f["concept"] == ck
+                        and run.frame_results[_label(ck, f["size"])].status in ("pending", "running")):
+                    any_inprogress = True
+                    break
+        if any_inprogress:
+            break
+    if any_inprogress:
+        run.status = "running_recomp"
+    elif any(run.approval_state.get(ck) == "awaiting" for ck in concepts):
+        run.status = "awaiting_approval"
+    else:
+        run.status = _finalize(run)
+
+
+def execute_recompose_concept(run_id: str, concept: str) -> None:
+    """Daemon: recompose every still-pending size of one APPROVED concept. Serialized
+    per concept by its recomp lock; OpenAI calls are capped by the global semaphore.
+    A finally-net always recomputes terminality so the run never strands."""
+    run = STORE.get(run_id)
+    if run is None:
+        return
+    with run.recomp_lock(concept):
+        try:
+            if run.cancelled:
+                return
+            frames = [f for f in run.frames_plan
+                      if f["phase"] == "recomp" and f["concept"] == concept
+                      and run.frame_results[_label(concept, f["size"])].status == "pending"]
+            _run_phase(run, frames)
+        except Exception as e:  # noqa: BLE001
+            log.warning("banner-builder: recompose failed for %s/%s: %s", run_id, concept, e)
+        finally:
+            with run._lock:
+                _maybe_finalize(run)
+            run.touch()
+            _persist(run)
+
+
+def approve_concepts(run: Run, concepts: List[str], api_key: str = "") -> dict:
+    """Owner approved one or more versions → recompose each into all sizes. The
+    locked compare-and-set on approval_state is both the spawn decision AND the
+    idempotency record (a double-approve returns already_approved)."""
+    approved, already, not_awaiting = [], [], []
+    with run._lock:
+        if run.cancelled or run.status in TERMINAL:
+            return {"approved": [], "already_approved": [], "not_awaiting": list(concepts)}
+        if api_key:
+            run.api_key = api_key  # re-fetched by the route; never persisted
+        for ck in concepts:
+            st = run.approval_state.get(ck)
+            if st == "awaiting":
+                run.approval_state[ck] = "approved"
+                run.approval_history[ck] = {"approved_at": _now()}
+                approved.append(ck)
+            elif st == "approved":
+                already.append(ck)
+            else:
+                not_awaiting.append(ck)
+        if approved and run.status == "awaiting_approval":
+            run.status = "running_recomp"
+        run.touch()
+    if approved:
+        _persist(run)
+        for ck in approved:
+            threading.Thread(target=execute_recompose_concept, args=(run.id, ck),
+                             daemon=True, name=f"bb-recomp-{run.id}-{ck}").start()
+    return {"approved": approved, "already_approved": already, "not_awaiting": not_awaiting}
+
+
+def reject_concepts(run: Run, concepts: List[str]) -> dict:
+    """Owner rejected one or more versions → keep the MVP only, skip recompose."""
+    rejected, not_awaiting = [], []
+    with run._lock:
+        if run.cancelled or run.status in TERMINAL:
+            return {"rejected": [], "not_awaiting": list(concepts)}
+        for ck in concepts:
+            if run.approval_state.get(ck) == "awaiting":
+                run.approval_state[ck] = "rejected"
+                run.approval_history[ck] = {"rejected_at": _now()}
+                for f in run.frames_plan:
+                    if f["phase"] == "recomp" and f["concept"] == ck:
+                        fr = run.frame_results[_label(ck, f["size"])]
+                        if fr.status in ("pending", "running"):
+                            fr.status, fr.error = "rejected", "version rejected — kept MVP only"
+                rejected.append(ck)
+            else:
+                not_awaiting.append(ck)
+        _maybe_finalize(run)
+        run.touch()
+    if rejected:
+        _persist(run)
+    return {"rejected": rejected, "not_awaiting": not_awaiting}
+
+
+def _normalize_rehydrated(run: Run) -> None:
+    """After a restart, revert any approved-but-incomplete version to 'awaiting'
+    (its recompose thread died and can't resume without an api_key) and recompute
+    the run status, so a run never restarts stuck in running_recomp."""
+    for ck, st in list(run.approval_state.items()):
+        if st != "approved":
+            continue
+        incomplete = [f for f in run.frames_plan
+                      if f["phase"] == "recomp" and f["concept"] == ck
+                      and run.frame_results[_label(ck, f["size"])].status in ("pending", "running")]
+        if incomplete:
+            run.approval_state[ck] = "awaiting"
+            for f in incomplete:
+                fr = run.frame_results[_label(ck, f["size"])]
+                fr.status, fr.error = "pending", None
+    with run._lock:
+        _maybe_finalize(run)
 
 
 # ---------------------------------------------------------------------------
@@ -990,6 +1165,7 @@ def run_to_dict(run: Run) -> dict:
                 "brief": run.size_briefs.get(f["concept"], {}).get(f["size"], ""),
                 "prompt": fr.prompt,
                 "mode": f["mode"], "phase": f["phase"], "status": fr.status,
+                "approval_status": run.approval_state.get(f["concept"]),
                 "openai_size": f.get("openai_size", ""),
                 "attempts": fr.attempts, "gen_ms": fr.gen_ms, "bytes": fr.bytes,
                 "error": fr.error,
@@ -1010,6 +1186,8 @@ def run_to_dict(run: Run) -> dict:
             "director": run.director,
             "logo": run.logo or None,
             "style": run.style or "",
+            "approval_state": dict(run.approval_state),
+            "awaiting_at": run.awaiting_at,
             "banners": banners,
         }
 
@@ -1140,6 +1318,9 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
         created_by=d.get("created_by", ""),
         intent=d.get("intent", "general_ad"), intent_meta=d.get("intent_meta") or {},
         director=d.get("director") or {}, logo=d.get("logo") or {},
+        approval_state=d.get("approval_state") or {},
+        approval_history=d.get("approval_history") or {},
+        awaiting_at=d.get("awaiting_at"),
         cancelled=(d.get("status") == "cancelled"), error=d.get("error"),
     )
 
@@ -1162,6 +1343,11 @@ def rehydrate_runs() -> int:
             # only show a card full of "unavailable" placeholders.
             if not any(fr.status == "ok" for fr in run.frame_results.values()):
                 continue
+            # A run interrupted mid-gate/recompose by the restart: revert any
+            # approved-but-incomplete version to "awaiting" and recompute status so
+            # it never restarts stuck in running_recomp.
+            if run.approval_state or run.status in ("awaiting_approval", "running_recomp"):
+                _normalize_rehydrated(run)
             STORE.add(run)
             n += 1
         except Exception:  # noqa: BLE001

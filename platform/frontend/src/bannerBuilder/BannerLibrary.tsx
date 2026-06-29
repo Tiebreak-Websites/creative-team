@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -26,6 +27,9 @@ export interface LibraryItem {
   brief?: string // the creative-director's per-size brief
   prompt?: string // the exact prompt sent to the image model
   style?: string // the composed art-direction string
+  concept?: string // owning concept (for approve/reject)
+  approvalStatus?: string // awaiting | approved | rejected
+  createdBy?: string
 }
 
 /** Subtle checkerboard so transparent PNGs read against any theme. */
@@ -51,6 +55,8 @@ export function BannerLibrary({
   onClose,
   onDelete,
   downloadAllHref,
+  onApprove,
+  onReject,
 }: {
   open: boolean
   items: LibraryItem[]
@@ -59,6 +65,8 @@ export function BannerLibrary({
   onClose: () => void
   onDelete: (runId: string, label: string) => void
   downloadAllHref?: string
+  onApprove?: () => void
+  onReject?: () => void
 }): JSX.Element | null {
   const count = items.length
   // Clamp the requested index into range so a shrinking list never points past the end.
@@ -164,6 +172,27 @@ export function BannerLibrary({
                 <DownloadCloud className="h-4 w-4" /> Download all
               </a>
             </Button>
+          )}
+
+          {(onApprove || onReject) && (
+            <>
+              <Button
+                size="sm"
+                onClick={onReject}
+                title="Reject — keep the MVP only, skip the other sizes"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                <X className="h-4 w-4" /> Reject
+              </Button>
+              <Button
+                size="sm"
+                onClick={onApprove}
+                title="Approve — recompose this version into all selected sizes"
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                <Check className="h-4 w-4" /> Approve
+              </Button>
+            </>
           )}
 
           <Button

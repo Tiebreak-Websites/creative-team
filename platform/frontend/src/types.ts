@@ -69,6 +69,7 @@ export interface Banner {
   mode: string
   phase: string
   status: string
+  approval_status?: string | null // this version's gate state: awaiting | approved | rejected
   attempts: number
   gen_ms: number | null
   bytes: number
@@ -104,6 +105,8 @@ export interface RunData {
   intent?: string
   intent_meta?: Record<string, unknown>
   logo?: unknown
+  approval_state?: Record<string, string> // concept -> awaiting | approved | rejected
+  awaiting_at?: string | null
 }
 
 export const TERMINAL_STATUSES = ['completed', 'partial', 'failed', 'cancelled']

@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import type { Meta, RunData } from '../types'
 import { TERMINAL_STATUSES } from '../types'
-import { ApiError, cancelRun, deleteBanner as deleteBannerApi, getRun, uploadReferences, type DetectedConcept } from '../api'
+import { ApiError, approveConcepts, cancelRun, deleteBanner as deleteBannerApi, getRun, rejectConcepts, uploadReferences, type DetectedConcept } from '../api'
 import { createRun, listRuns } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
@@ -316,7 +316,11 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     let cancelled = false
     let timer: number | undefined
     const tick = async () => {
-      const active = runsRef.current.filter((r) => !TERMINAL_STATUSES.includes(r.status))
+      // Awaiting-approval is paused, not generating — don't actively poll it every
+      // 2s (the 5s shared refresh still catches the approve→recompose transition).
+      const active = runsRef.current.filter(
+        (r) => !TERMINAL_STATUSES.includes(r.status) && r.status !== 'awaiting_approval',
+      )
       if (active.length === 0) {
         if (!cancelled) setPolling(false)
         return
@@ -566,6 +570,33 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     )
   }
 
+  // Approve a version → recompose it into all sizes. Optimistically mark it
+  // approved + flip the run to recomposing so the UI updates instantly; the
+  // server is authoritative and reconciles on the next poll.
+  function approveVersion(runId: string, concept: string) {
+    void approveConcepts(runId, [concept]).catch(() => {})
+    setRuns((prev) =>
+      prev.map((r) =>
+        r.run_id === runId
+          ? { ...r, status: 'running_recomp', approval_state: { ...(r.approval_state || {}), [concept]: 'approved' } }
+          : r,
+      ),
+    )
+    setPolling(true)
+  }
+
+  // Reject a version → keep the MVP only, skip recompose.
+  function rejectVersion(runId: string, concept: string) {
+    void rejectConcepts(runId, [concept]).catch(() => {})
+    setRuns((prev) =>
+      prev.map((r) =>
+        r.run_id === runId
+          ? { ...r, approval_state: { ...(r.approval_state || {}), [concept]: 'rejected' } }
+          : r,
+      ),
+    )
+  }
+
   // Upload dropped/picked reference images (max 4); store ids + local previews.
   async function addRefs(files: FileList | null) {
     if (!files || !files.length) return
@@ -724,6 +755,10 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             onCancelRun={cancelOneRun}
             myBannersOnly={myBannersOnly}
             onMyBannersToggle={() => setMyBannersOnly((v) => !v)}
+            currentUserEmail={myEmail}
+            isAdmin={user?.role === 'admin'}
+            onApprove={approveVersion}
+            onReject={rejectVersion}
           />
         </div>
 

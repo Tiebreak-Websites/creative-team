@@ -126,6 +126,26 @@ export async function fetchStorage(): Promise<StorageInfo> {
   return r.json()
 }
 
+/** Owner approves version(s) → recompose to all sizes. Omit concepts to approve all awaiting. */
+export async function approveConcepts(runId: string, concepts?: string[]): Promise<void> {
+  const r = await fetch(`${BASE}/tools/banner-builder/runs/${runId}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(concepts && concepts.length ? { concepts } : {}),
+  })
+  if (!r.ok) throw new ApiError(r.status, `Approve failed (HTTP ${r.status}).`)
+}
+
+/** Owner rejects version(s) — keep the MVP only, skip recompose. */
+export async function rejectConcepts(runId: string, concepts: string[]): Promise<void> {
+  const r = await fetch(`${BASE}/tools/banner-builder/runs/${runId}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ concepts }),
+  })
+  if (!r.ok) throw new ApiError(r.status, `Reject failed (HTTP ${r.status}).`)
+}
+
 /** Upload 1–4 style-reference images; returns server ids to pass in the run payload. */
 export async function uploadReferences(files: File[]): Promise<string[]> {
   const fd = new FormData()

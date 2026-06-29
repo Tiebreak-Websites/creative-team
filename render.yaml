@@ -28,6 +28,11 @@ services:
         value: "false"
       - key: ADMIN_EMAIL
         value: creative.operations@tiebreak.solutions
+      # MVP approval gate: pause each generation after the 1200x1200 master so the
+      # owner approves/rejects each version before the other sizes are recomposed.
+      # Kill-switch — set to "off" to revert to straight auto-recompose.
+      - key: BANNER_APPROVAL_MODE
+        value: "on"
       # Secrets — set these in the Render dashboard (sync:false keeps them out of git):
       - key: ADMIN_PASSWORD_HASH
         sync: false
