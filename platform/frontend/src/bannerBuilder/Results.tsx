@@ -3,7 +3,6 @@ import {
   Check,
   ChevronRight,
   Download,
-  Eye,
   HelpCircle,
   ImageIcon,
   Layers,
@@ -11,7 +10,6 @@ import {
   List as ListIcon,
   Loader2,
   Maximize2,
-  Sparkles,
   Trash2,
   Users,
   X,
@@ -336,7 +334,7 @@ export function OutputPane({
 
   return (
     <div className="flex min-h-full flex-col animate-fade-in">
-      <div className="sticky top-0 z-10">
+      <div className="sticky top-0 z-10 bg-card">
         <OverviewBar
           runs={runs}
           onCancel={onCancel}
@@ -350,7 +348,7 @@ export function OutputPane({
           onTileSize={setTileSize}
         />
         {selected.size > 0 && (
-          <div className="flex animate-pop-in items-center gap-3 border-b border-primary/30 bg-primary/10 px-5 py-2.5 backdrop-blur-md">
+          <div className="flex animate-pop-in items-center gap-3 border-b border-primary/30 bg-primary/10 px-5 py-2.5">
             <span className="font-display text-sm font-semibold text-primary">
               {selected.size} selected
             </span>
@@ -518,7 +516,6 @@ function OverviewBar({
   const preRender = running && ready === 0
   const failed = runs.some((r) => r.status === 'failed')
   const awaiting = runs.some((r) => r.status === 'awaiting_approval')
-  const directed = runs.some((r) => r.director?.used)
   const okRunIds = runs.filter((r) => r.banners.some((b) => b.status === 'ok')).map((r) => r.run_id)
   const label = running
     ? activeCount > 1
@@ -531,7 +528,7 @@ function OverviewBar({
         : 'All banners ready'
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card/70 px-5 py-3 backdrop-blur-md">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card px-5 py-3">
       <span className="flex shrink-0 items-center gap-2 font-display text-sm font-semibold">
         {running ? (
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -581,20 +578,38 @@ function OverviewBar({
       )}
 
       {onMyBannersToggle && (
-        <Button
-          size="sm"
-          variant={myBannersOnly ? 'secondary' : 'outline'}
-          className="shrink-0 gap-1.5"
+        <button
+          type="button"
+          role="switch"
+          aria-checked={myBannersOnly}
           onClick={onMyBannersToggle}
           title={
             myBannersOnly
-              ? 'Showing only your banners — click to show everyone’s'
-              : 'Showing everyone’s banners — click to show only yours'
+              ? 'Showing only your banners — toggle to show everyone’s'
+              : 'Showing everyone’s banners — toggle to show only yours'
           }
+          className="flex shrink-0 items-center gap-2 text-sm font-medium"
         >
-          {myBannersOnly ? <Eye className="h-4 w-4" /> : <Users className="h-4 w-4" />}
-          <span className="hidden sm:inline">{myBannersOnly ? 'My banners' : 'Everyone'}</span>
-        </Button>
+          <span className={cn('transition-colors', myBannersOnly ? 'text-muted-foreground' : 'text-foreground')}>
+            Everyone
+          </span>
+          <span
+            className={cn(
+              'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+              myBannersOnly ? 'bg-primary' : 'border border-border bg-secondary',
+            )}
+          >
+            <span
+              className={cn(
+                'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                myBannersOnly ? 'translate-x-[18px]' : 'translate-x-0.5',
+              )}
+            />
+          </span>
+          <span className={cn('transition-colors', myBannersOnly ? 'text-foreground' : 'text-muted-foreground')}>
+            My banners
+          </span>
+        </button>
       )}
 
       {myActiveCount > 1 && onCancel && (
@@ -607,12 +622,6 @@ function OverviewBar({
         >
           <X className="h-4 w-4" /> Stop all
         </Button>
-      )}
-
-      {directed && (
-        <Badge variant="soft" className="shrink-0 gap-1">
-          <Sparkles className="h-3 w-3" /> GPT-5.5
-        </Badge>
       )}
 
       {okRunIds.length > 0 && (
