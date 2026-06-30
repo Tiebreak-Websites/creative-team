@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import type { Meta, RunData } from '../types'
 import { TERMINAL_STATUSES } from '../types'
-import { ApiError, approveConcepts, assetUrl, cancelRun, deleteBanner as deleteBannerApi, getRun, regenerateBanner, rejectConcepts, selectionZipUrl, uploadReferences, type DetectedConcept } from '../api'
+import { ApiError, approveConcepts, cancelRun, deleteBanner as deleteBannerApi, getRun, regenerateBanner, rejectConcepts, selectionZipUrl, uploadReferences, type DetectedConcept } from '../api'
 import { createRun, listRuns } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
@@ -367,16 +367,6 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
     const i = k.indexOf('|')
     return { runId: k.slice(0, i), label: k.slice(i + 1) }
   })
-  // Thumbnails of the first selected banners (up to 3) for the selection console's
-  // little fanned-card preview.
-  const selectedThumbs = selectedItems
-    .map((it) => {
-      const r = runs.find((x) => x.run_id === it.runId)
-      const b = r?.banners.find((bn) => bn.label === it.label)
-      return b?.url ? assetUrl(b.url) : null
-    })
-    .filter((s): s is string => !!s)
-    .slice(0, 3)
   // Delete only the selected banners the user owns (creator, or admin for legacy
   // runs) — matches the gallery's per-card gate + the backend, so an optimistic
   // remove never fights a 403.
@@ -1460,30 +1450,32 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
           <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-3 lg:absolute lg:bottom-5 lg:pb-0">
             <div className="relative flex w-full max-w-xl animate-fade-up items-center gap-3 rounded-2xl border border-primary/40 bg-card/95 p-3 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md">
               <div className="flex shrink-0 items-center gap-3 pl-1">
-                {/* Fanned mini-card deck — grows to 3 cards as you select; beyond
-                    3 only the number animates. */}
-                {selectedThumbs.length > 0 && (
-                  <div
-                    className="relative h-10 shrink-0 transition-all duration-300"
-                    style={{ width: `${40 + (selectedThumbs.length - 1) * 14}px` }}
-                  >
-                    {selectedThumbs.map((src, i) => {
-                      const mid = (selectedThumbs.length - 1) / 2
-                      return (
+                {/* Fanned deck of abstract blue cards (NOT real banners) — just a
+                    visual cue of the stack. Grows to 3 cards as you select; beyond
+                    3 only the number animates. Different shades show the layering. */}
+                {(() => {
+                  const deck = Math.min(selected.size, 3)
+                  const mid = (deck - 1) / 2
+                  const shades = ['hsl(217 90% 46%)', 'hsl(217 90% 57%)', 'hsl(217 92% 68%)']
+                  return (
+                    <div
+                      className="relative h-10 shrink-0 transition-all duration-300"
+                      style={{ width: `${40 + (deck - 1) * 14}px` }}
+                    >
+                      {Array.from({ length: deck }).map((_, i) => (
                         <span
                           key={i}
-                          className="absolute left-0 top-0 h-10 w-10 animate-pop-in overflow-hidden rounded-md border-2 border-card bg-secondary shadow-md transition-transform duration-300"
+                          className="absolute left-0 top-0 h-10 w-9 animate-pop-in rounded-md border-2 border-card shadow-md transition-transform duration-300"
                           style={{
                             transform: `translateX(${i * 14}px) rotate(${(i - mid) * 8}deg)`,
                             zIndex: i,
+                            backgroundColor: shades[i] ?? shades[shades.length - 1],
                           }}
-                        >
-                          <img src={src} alt="" className="h-full w-full object-cover" />
-                        </span>
-                      )
-                    })}
-                  </div>
-                )}
+                        />
+                      ))}
+                    </div>
+                  )
+                })()}
                 <span className="text-sm font-medium text-foreground">
                   <span
                     key={selected.size}
