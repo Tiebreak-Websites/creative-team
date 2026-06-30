@@ -83,6 +83,7 @@ class FrameResult:
     png_path: Optional[str] = None
     error: Optional[str] = None
     prompt: Optional[str] = None       # the exact prompt sent to the image model
+    qa: Optional[str] = None           # post-generation QA warning (size/blank/palette), else None
 
 
 @dataclass
@@ -466,11 +467,25 @@ def _resolve_brand(req: RunRequest):
         logo_status["reason"] = "brand not found"
         return style, None, None, logo_status
 
-    # Fold the palette into the art-direction text.
+    # Fold the brand kit (palette + optional typography / accent / tone hints) into
+    # the art-direction text so the director keeps everything on-brand.
+    brand_bits: list[str] = []
     colors = [c for c in (brand.get("colors") or []) if isinstance(c, str)]
     if colors:
-        brand_line = (f"Brand palette: {', '.join(colors)}; keep the design on-brand "
-                      f"using these brand colors.")
+        brand_bits.append(f"Brand palette: {', '.join(colors)}; keep the design on-brand "
+                          f"using these brand colors.")
+    font = brand.get("font")
+    if isinstance(font, str) and font.strip():
+        brand_bits.append(f"Brand typography to echo in the headline style: {font.strip()}.")
+    accent = brand.get("accent")
+    if isinstance(accent, str) and accent.strip():
+        brand_bits.append(f"Prefer {accent.strip()} as the CTA/accent colour where it keeps "
+                          f"strong contrast against the background.")
+    voice = brand.get("voice")
+    if isinstance(voice, str) and voice.strip():
+        brand_bits.append(f"Brand tone of voice: {voice.strip()}.")
+    if brand_bits:
+        brand_line = " ".join(brand_bits)
         style = f"{style} {brand_line}".strip() if style else brand_line
 
     if not corner:
@@ -482,10 +497,12 @@ def _resolve_brand(req: RunRequest):
         logo_status["reason"] = None
         return style, raster, corner, logo_status
     if kind == "svg":
-        # No SVG rasterizer in python:3.12-slim — apply colors, skip the overlay.
-        logo_status["reason"] = "svg logo not rasterized (no rasterizer installed); colors applied"
+        # SVG but the rasterizer (cairosvg/libcairo2) wasn't available — apply the
+        # brand colours, skip the pixel overlay. Normally cairosvg rasterizes SVGs
+        # to a raster above; this branch is the graceful fallback only.
+        logo_status["reason"] = "svg logo not rasterized (rasterizer unavailable); colors applied"
         log.info("banner-builder: SVG brand logo for brand %s not overlaid "
-                 "(no rasterizer); TODO add cairosvg/resvg to enable.", req.brand_id)
+                 "(cairosvg unavailable).", req.brand_id)
         return style, None, None, logo_status
     logo_status["reason"] = "no usable logo on brand"
     return style, None, None, logo_status
@@ -535,6 +552,44 @@ def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
     threading.Thread(target=execute_run, args=(run_id,), daemon=True,
                      name=f"bb-run-{run_id}").start()
     return run
+
+
+# ---------------------------------------------------------------------------
+# Post-generation QA — cheap, deterministic checks that the output is sane
+# ---------------------------------------------------------------------------
+def _qa_check(png_bytes: bytes, width: int, height: int,
+              master_png_path: Optional[str] = None) -> Optional[str]:
+    """Return a short QA warning for a freshly-generated banner, or None if it
+    looks fine. Deterministic + cheap (Pillow only — no OCR, no network):
+
+      - exact export dimensions (a reshape failure leaves the wrong size),
+      - not blank / near-solid (a failed render often comes back flat),
+      - for a recompose, the palette hasn't drifted far from its master.
+
+    Surfaced (never fails the frame) so the user can eyeball flagged tiles — the
+    recompose stage has no other human check between the master and the export.
+    """
+    try:
+        import io as _io
+        from PIL import Image, ImageStat
+        im = Image.open(_io.BytesIO(png_bytes)).convert("RGB")
+        if im.size != (width, height):
+            return f"exported at {im.size[0]}x{im.size[1]} (expected {width}x{height})"
+        if (ImageStat.Stat(im.convert("L")).stddev or [0])[0] < 4.0:
+            return "looks blank or near-solid — check the render"
+        if master_png_path:
+            try:
+                master = Image.open(master_png_path).convert("RGB")
+                a = ImageStat.Stat(im).mean
+                b = ImageStat.Stat(master).mean
+                dist = sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
+                if dist > 70:
+                    return "palette drifted noticeably from the master"
+            except Exception:  # noqa: BLE001
+                pass
+        return None
+    except Exception:  # noqa: BLE001 — QA must never break a frame
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -633,6 +688,13 @@ def _gen_one_frame(run: Run, frame: dict):
         fr.status, fr.error = "gen_failed", f"disk write failed: {type(e).__name__}: {e}"
         run.touch()
         return
+    # Cheap post-gen QA — surface (don't fail) blank/wrong-size/palette-drift tiles
+    # so the recompose stage isn't a black box between the master and the export.
+    try:
+        _w, _h = (int(x) for x in frame["size"].split("x"))
+        fr.qa = _qa_check(png, _w, _h, master_png if mode == "edit" else None)
+    except Exception:  # noqa: BLE001
+        fr.qa = None
     fr.status, fr.gen_ms, fr.bytes, fr.png_path = "ok", int((time.time() - t0) * 1000), len(png), str(out_png)
     run.touch()
 
@@ -1109,6 +1171,64 @@ def reject_concepts(run: Run, concepts: List[str]) -> dict:
     return {"rejected": rejected, "not_awaiting": not_awaiting}
 
 
+# ---------------------------------------------------------------------------
+# Per-banner regenerate — re-roll ONE size when it comes out wrong
+# ---------------------------------------------------------------------------
+def _regen_one(run_id: str, label: str) -> None:
+    """Daemon: regenerate exactly one frame, then re-persist + recompute status."""
+    run = STORE.get(run_id)
+    if run is None:
+        return
+    plan = next((f for f in run.frames_plan if _label(f["concept"], f["size"]) == label), None)
+    if plan is None:
+        return
+    try:
+        _gen_one_frame(run, plan)
+    except Exception as e:  # noqa: BLE001
+        log.warning("banner-builder: regenerate failed for %s/%s: %s", run_id, label, e)
+    finally:
+        with run._lock:
+            _maybe_finalize(run)
+        run.touch()
+        _persist(run)
+
+
+def regenerate_frame(run: Run, label: str, api_key: str = "") -> dict:
+    """Re-generate ONE banner (a single size) in place — re-roll a tile that came
+    out wrong without re-running (and re-paying for) the whole batch.
+
+    Resets just that frame to pending, re-opens the run so the UI shows it working,
+    and spawns a daemon to call the image model for only that frame. A recompose
+    needs its master PNG still on disk to edit from. Returns {"ok": bool, ...};
+    never raises. OpenAI concurrency stays capped by the global semaphore.
+    """
+    plan = next((f for f in run.frames_plan if _label(f["concept"], f["size"]) == label), None)
+    if plan is None:
+        return {"ok": False, "reason": "unknown banner"}
+    with run._lock:
+        if run.cancelled:
+            return {"ok": False, "reason": "run was cancelled"}
+        if api_key:
+            run.api_key = api_key  # re-fetched by the route; never persisted
+        if not run.api_key:
+            return {"ok": False, "reason": "no OpenAI key available for this run"}
+        if plan["phase"] == "recomp":
+            master = run.dir / f"{plan['concept']}__{engine.MASTER_SIZE}.png"
+            if not master.is_file():
+                return {"ok": False, "reason": "the master image is gone — regenerate the master size first"}
+        fr = run.frame_results.get(label)
+        if fr is None:
+            return {"ok": False, "reason": "unknown banner"}
+        fr.status, fr.error, fr.qa = "pending", None, None
+        # Re-open a settled run so the poller resumes and the tile shows as working.
+        if run.status in TERMINAL:
+            run.status = "running_master" if plan["phase"] == "master" else "running_recomp"
+        run.touch()
+    threading.Thread(target=_regen_one, args=(run.id, label), daemon=True,
+                     name=f"bb-regen-{run.id}-{label}").start()
+    return {"ok": True, "label": label}
+
+
 def _normalize_rehydrated(run: Run) -> None:
     """After a restart, revert any approved-but-incomplete version to 'awaiting'
     (its recompose thread died and can't resume without an api_key) and recompute
@@ -1168,7 +1288,7 @@ def run_to_dict(run: Run) -> dict:
                 "approval_status": run.approval_state.get(f["concept"]),
                 "openai_size": f.get("openai_size", ""),
                 "attempts": fr.attempts, "gen_ms": fr.gen_ms, "bytes": fr.bytes,
-                "error": fr.error,
+                "error": fr.error, "qa": fr.qa,
                 "url": (f"/api/tools/{TOOL_ID}/runs/{run.id}/banners/{label}.png"
                         if fr.status == "ok" else None),
             })
@@ -1297,7 +1417,7 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
             concept=ck, size=size, openai_size=openai_size, mode=mode, phase=phase,
             status=status, attempts=b.get("attempts", 0),
             gen_ms=b.get("gen_ms"), bytes=b.get("bytes", 0),
-            png_path=str(png), error=error, prompt=b.get("prompt"),
+            png_path=str(png), error=error, prompt=b.get("prompt"), qa=b.get("qa"),
         )
         concepts.setdefault(ck, {"title": b.get("title", "")})
         cards.setdefault(ck, {"title": b.get("title", ""),

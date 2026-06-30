@@ -6,9 +6,8 @@
 // server-side — so it owns its own typed POST here. Polling, asset URLs, the
 // zip link, and ApiError are reused from the shared api module unchanged.
 import { ApiError } from '../api'
+import { API_BASE as BASE, asJson } from '../http'
 import type { RunData } from '../types'
-
-const BASE = import.meta.env.VITE_API_BASE ?? '/api'
 
 /** One concept card as the user types it. Engine fields are derived on the server. */
 export interface ConceptCardPayload {
@@ -30,10 +29,6 @@ export interface CampaignRunRequest {
   references?: string[] // style-reference image ids from uploadReferences()
   brand_id?: string // selected brand (folds colors into art direction)
   logo_corner?: string // 'tl' | 'tr' | 'bl' | 'br' — overlay the brand logo
-}
-
-async function asJson(r: Response): Promise<any> {
-  return r.json().catch(() => ({}))
 }
 
 /**

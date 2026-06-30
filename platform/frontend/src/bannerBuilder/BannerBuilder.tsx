@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  Bookmark,
   ChevronDown,
   ChevronUp,
   ImagePlus,
@@ -11,15 +12,18 @@ import {
   SlidersHorizontal,
   Sparkles,
   Tag,
+  Trash2,
   X,
 } from 'lucide-react'
 import type { Meta, RunData } from '../types'
 import { TERMINAL_STATUSES } from '../types'
-import { ApiError, approveConcepts, cancelRun, deleteBanner as deleteBannerApi, getRun, rejectConcepts, uploadReferences, type DetectedConcept } from '../api'
+import { ApiError, approveConcepts, cancelRun, deleteBanner as deleteBannerApi, getRun, regenerateBanner, rejectConcepts, uploadReferences, type DetectedConcept } from '../api'
 import { createRun, listRuns } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
 import { CopyDetectModal } from './CopyDetectModal'
+import { listPresets, createPreset, deletePreset, type Preset, type PresetData } from './presetsApi'
+import { Modal } from '@/components/ui/modal'
 import {
   ArtDirectionModal,
   artActiveCount,
@@ -212,7 +216,7 @@ function parseSizes(text: string): string[] {
   return out
 }
 
-export function BannerBuilder({ meta }: { meta: Meta }) {
+export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => void }) {
   // ---- Campaign settings ----
   const efforts = meta.thinking_efforts ?? [
     { value: 'high', label: 'High' },
@@ -298,6 +302,13 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
 
   // ---- Concept cards ----
   const [cards, setCards] = useState<ConceptCard[]>([blankCard()])
+
+  // ---- Saved campaign presets (shared team library) ----
+  const [presetsOpen, setPresetsOpen] = useState(false)
+  const [presets, setPresets] = useState<Preset[]>([])
+  const [presetName, setPresetName] = useState('')
+  const [presetBusy, setPresetBusy] = useState(false)
+  const [presetError, setPresetError] = useState<string | null>(null)
 
   const [formError, setFormError] = useState<string | null>(null)
   const [formErrors, setFormErrors] = useState<string[]>([])
@@ -659,6 +670,15 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     )
   }
 
+  // Re-roll ONE banner (a single size) in place. Optimistically swap in the
+  // server's updated run and resume polling so the tile shows working → ok.
+  function regenerateBannerFrame(runId: string, label: string) {
+    void regenerateBanner(runId, label)
+      .then((updated) => setRuns((prev) => prev.map((r) => (r.run_id === runId ? updated : r))))
+      .catch(() => {})
+    setPolling(true)
+  }
+
   // Upload dropped/picked reference images (max 4); store ids + local previews.
   async function addRefs(files: FileList | null) {
     if (!files || !files.length) return
@@ -678,6 +698,73 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   }
   function removeRef(id: string) {
     setRefs((prev) => prev.filter((r) => r.id !== id))
+  }
+
+  // ---- Presets: capture the whole campaign setup and replay it later ----
+  useEffect(() => {
+    void listPresets().then(setPresets).catch(() => {})
+  }, [])
+
+  function buildPresetData(): PresetData {
+    return {
+      sizes: Array.from(sizes),
+      style,
+      art,
+      brandId: brandId || null,
+      logoCorner,
+      model,
+      quality,
+      effort,
+      locale,
+      concepts: cards.map((c) => ({ key: c.key, title: c.title, subtitle: c.subtitle, button: c.button })),
+    }
+  }
+
+  function applyPreset(data: PresetData) {
+    if (data.sizes) setSizes(new Set(data.sizes))
+    if (typeof data.style === 'string') setStyle(data.style)
+    if (data.art) setArt({ ...DEFAULT_ART, ...data.art })
+    if ('brandId' in data) setBrandId(data.brandId ?? '')
+    if ('logoCorner' in data) setLogoCorner(data.logoCorner ?? null)
+    if (data.model) setModel(data.model)
+    if (data.quality) setQuality(data.quality)
+    if (data.effort) setEffort(data.effort)
+    if (data.locale) {
+      setLocale(data.locale)
+      setLocaleAuto(false)
+    }
+    if (data.concepts && data.concepts.length) {
+      setCards(
+        data.concepts.map((c) => ({
+          ...blankCard(),
+          title: c.title || '',
+          subtitle: c.subtitle || '',
+          button: c.button || '',
+        })),
+      )
+    }
+    setPresetsOpen(false)
+  }
+
+  async function savePreset() {
+    const name = presetName.trim()
+    if (!name) return
+    setPresetBusy(true)
+    setPresetError(null)
+    try {
+      const p = await createPreset(name, buildPresetData())
+      setPresets((prev) => [...prev, p])
+      setPresetName('')
+    } catch (e) {
+      setPresetError(e instanceof Error ? e.message : 'Could not save the preset.')
+    } finally {
+      setPresetBusy(false)
+    }
+  }
+
+  function removePreset(id: string) {
+    setPresets((prev) => prev.filter((p) => p.id !== id))
+    void deletePreset(id).catch(() => {})
   }
 
   async function startRun() {
@@ -818,6 +905,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
         <div className="lg:h-full lg:overflow-y-auto lg:pb-56">
           <OutputPane
             runs={visibleRuns}
+            onHelp={onHelp}
             onDeleteBanner={deleteBanner}
             onCancel={cancelRuns}
             onCancelRun={cancelOneRun}
@@ -827,6 +915,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             isAdmin={user?.role === 'admin'}
             onApprove={approveVersion}
             onReject={rejectVersion}
+            onRegenerate={regenerateBannerFrame}
           />
         </div>
 
@@ -1337,15 +1426,26 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
         <div className="space-y-4 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <div className="flex items-center justify-between gap-2">
             <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Versions</h2>
-            <button
-              type="button"
-              onClick={() => setCopyDetectOpen(true)}
-              title="Detect copy — paste a block of text and split it into versions"
-              aria-label="Detect copy from pasted text"
-              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
-            >
-              <ScanText className="h-3.5 w-3.5" /> Text Detect
-            </button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPresetsOpen(true)}
+                title="Save this whole setup as a preset, or load a saved one"
+                aria-label="Campaign presets"
+                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-border bg-secondary px-2 text-[11px] font-semibold text-foreground transition-colors hover:border-foreground/25"
+              >
+                <Bookmark className="h-3.5 w-3.5" /> Presets
+              </button>
+              <button
+                type="button"
+                onClick={() => setCopyDetectOpen(true)}
+                title="Detect copy — paste a block of text and split it into versions"
+                aria-label="Detect copy from pasted text"
+                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
+              >
+                <ScanText className="h-3.5 w-3.5" /> Text Detect
+              </button>
+            </div>
           </div>
 
           {cards.map((c, i) => (
@@ -1425,6 +1525,79 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
         onClose={() => setCopyDetectOpen(false)}
         onDetected={applyDetected}
       />
+
+      <Modal
+        open={presetsOpen}
+        onClose={() => setPresetsOpen(false)}
+        title="Campaign presets"
+        description="Save this whole setup — sizes, art direction, brand, model & language — and reuse it in one click. Presets are shared with the team."
+        className="max-w-lg"
+      >
+        <div className="space-y-4">
+          {/* Save current */}
+          <div className="rounded-xl border border-border bg-secondary/40 p-3">
+            <label className="text-xs font-medium text-muted-foreground">Save the current setup as a preset</label>
+            <div className="mt-1.5 flex items-center gap-2">
+              <Input
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    void savePreset()
+                  }
+                }}
+                placeholder="e.g. Q3 Launch — India"
+                className="h-9"
+              />
+              <Button size="sm" onClick={() => void savePreset()} disabled={!presetName.trim() || presetBusy}>
+                {presetBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bookmark className="h-4 w-4" />} Save
+              </Button>
+            </div>
+            {presetError && <p className="mt-1.5 text-xs text-destructive">{presetError}</p>}
+          </div>
+
+          {/* Load existing */}
+          <div>
+            <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Saved presets
+            </div>
+            {presets.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-border bg-secondary/40 px-4 py-6 text-center text-sm text-muted-foreground">
+                No presets yet — save your first above.
+              </p>
+            ) : (
+              <ul className="max-h-72 space-y-1.5 overflow-y-auto">
+                {presets.map((p) => (
+                  <li
+                    key={p.id}
+                    className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-foreground">{p.name}</div>
+                      {p.created_by && (
+                        <div className="truncate text-[11px] text-muted-foreground">by {p.created_by}</div>
+                      )}
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => applyPreset(p.data)}>
+                      Load
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => removePreset(p.id)}
+                      title="Delete preset"
+                      aria-label={`Delete preset ${p.name}`}
+                      className="text-muted-foreground transition-colors hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </Modal>
 
       {/* Bulk-paste sizes feedback — auto-fades after 5s, closeable */}
       {sizeNotice && (

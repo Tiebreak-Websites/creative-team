@@ -130,6 +130,29 @@ function BrandCard({ brand }: { brand: Brand }) {
           ) : (
             <div className="mt-2 text-xs text-muted-foreground">No colours</div>
           )}
+
+          {/* Brand kit — typography / accent / tone hints folded into the art direction. */}
+          {(brand.font || brand.accent || brand.voice) && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              {brand.font && (
+                <span>
+                  <span className="font-medium text-foreground/80">Type:</span> {brand.font}
+                </span>
+              )}
+              {brand.accent && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="font-medium text-foreground/80">Accent:</span>
+                  <span className="h-3 w-3 rounded border border-border" style={{ backgroundColor: brand.accent }} />
+                  <span className="font-mono">{brand.accent.toUpperCase()}</span>
+                </span>
+              )}
+              {brand.voice && (
+                <span>
+                  <span className="font-medium text-foreground/80">Voice:</span> {brand.voice}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

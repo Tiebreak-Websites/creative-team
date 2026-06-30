@@ -21,6 +21,7 @@ from ... import copy_parse
 from ... import references as references_store
 from ... import runner
 from ...brands import build_brands_router
+from ...presets import build_presets_router
 from ...creative_director import VALID_EFFORTS
 from ...models import RunRequest
 from ...secrets import get_secret
@@ -55,12 +56,20 @@ def _dir_bytes(d: Path) -> int:
 
 
 def _enforce_owner(run, user: dict) -> None:
-    """Only the person who started a run may cancel/approve/reject it; admins may
-    too. Legacy runs with no recorded creator are ungoverned. Raises 403 otherwise.
-    Enforced server-side so one user can never interrupt another's generation."""
+    """Only the person who started a run may cancel/approve/reject/delete it; admins
+    may too. Raises 403 otherwise. Enforced server-side so one user can never act on
+    another's generation.
+
+    Fails CLOSED for a run with no recorded creator (every pre-attribution run that
+    was rehydrated from disk hits this): such a run is admin-only, never open to
+    every logged-in user — otherwise a non-owner could approve/cancel/delete it.
+    """
+    role = (user or {}).get("role")
+    if role == "admin":
+        return
     creator = (getattr(run, "created_by", "") or "").strip().lower()
     email = ((user or {}).get("email") or "").strip().lower()
-    if not creator or (user or {}).get("role") == "admin" or creator == email:
+    if creator and creator == email:
         return
     raise HTTPException(status_code=403,
                         detail="Only the person who started this generation can do that.")
@@ -207,16 +216,41 @@ def build_router() -> APIRouter:
         )
 
     @router.delete("/runs/{run_id}/banners/{label}.png", status_code=204)
-    def delete_banner(run_id: str, label: str):
+    def delete_banner(run_id: str, label: str, user: dict = Depends(require_user)):
         """Delete one banner for EVERYONE — removes the PNG from the disk and drops
         it from the run (re-persisted). Not a per-user hide, so it disappears from
-        the shared gallery for all users."""
+        the shared gallery for all users.
+
+        Owner-only (same guard as cancel/approve/reject): the deletion is shared and
+        irreversible, so only the user who started the run — or an admin — may do it.
+        """
         run = runner.STORE.get(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
+        _enforce_owner(run, user)
         if not runner.delete_frame(run, label):
             raise HTTPException(status_code=404, detail="unknown banner")
         return Response(status_code=204)
+
+    @router.post("/runs/{run_id}/banners/{label}/regenerate")
+    def regenerate_banner(run_id: str, label: str, user: dict = Depends(require_user)):
+        """Re-roll ONE banner (a single size) in place — fixes a tile that came out
+        wrong without re-running (and re-paying for) the whole batch. Owner-only.
+        Returns the updated run; the frontend polls it back to 'ok'."""
+        run = runner.STORE.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        _enforce_owner(run, user)
+        # Validate the label against the run's plan (also blocks path-y input).
+        if label not in {runner._label(f["concept"], f["size"]) for f in run.frames_plan}:
+            raise HTTPException(status_code=404, detail="unknown banner")
+        api_key = get_secret("OPENAI_API_KEY")
+        if not api_key:
+            return JSONResponse(status_code=424, content={"missing_secrets": [_OPENAI_SECRET]})
+        result = runner.regenerate_frame(run, label, api_key=api_key)
+        if not result.get("ok"):
+            raise HTTPException(status_code=409, detail=result.get("reason") or "cannot regenerate this banner")
+        return runner.run_to_dict(run)
 
     @router.post("/runs/bulk-delete")
     def bulk_delete(payload: dict = Body(default={}), user: dict = Depends(require_admin)):
@@ -395,8 +429,17 @@ def build_router() -> APIRouter:
         except Exception:  # noqa: BLE001
             return {"used_bytes": 0, "total_bytes": 0, "free_bytes": 0}
 
+    @router.get("/storage-diagnostic")
+    def storage_diagnostic(_admin: dict = Depends(require_admin)):
+        """Deep disk diagnostics (scans every run dir + run.json). Admin-only and
+        on-demand — it used to run on every /api/health poll and grew with the
+        gallery; moved here so the readiness probe stays cheap."""
+        return runner.storage_stats()
+
     # Brands CRUD lives under this same prefix (/api/tools/banner-builder/brands).
     # GET is any logged-in user; writes self-gate with require_admin.
     router.include_router(build_brands_router())
+    # Saved campaign presets (shared team library) under the same prefix.
+    router.include_router(build_presets_router())
 
     return router

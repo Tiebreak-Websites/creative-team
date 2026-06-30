@@ -74,6 +74,7 @@ export interface Banner {
   gen_ms: number | null
   bytes: number
   error: string | null
+  qa?: string | null // post-generation QA warning (size/blank/palette drift), else null
   url: string | null
 }
 

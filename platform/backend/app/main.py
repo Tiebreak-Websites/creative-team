@@ -137,12 +137,27 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     def health():
+        """Readiness probe Render polls (healthCheckPath). Cheap + HONEST: a deploy
+        that's missing the OpenAI key or can't write the artifact disk would let
+        every Generate fail while still reporting healthy — so gate readiness on
+        those and return 503 when not ready, which fails the health check and keeps
+        the previous good deploy live. Deliberately does NOT run the full
+        storage_stats() disk scan (that grew with the gallery and ran on every
+        poll) — heavy diagnostics live behind the admin /storage-diagnostic route."""
+        import os
+        from .secrets import get_secret
         from . import runner
-        return {
-            "status": "ok",
-            "tools": len(ToolRegistry.all()),
-            "storage": runner.storage_stats(),
-        }
+        checks = {"openai_key": bool(get_secret("OPENAI_API_KEY")), "disk_writable": False}
+        try:
+            art = runner.settings.ARTIFACT_ROOT
+            art.mkdir(parents=True, exist_ok=True)
+            checks["disk_writable"] = os.access(art, os.W_OK)
+        except Exception:  # noqa: BLE001
+            checks["disk_writable"] = False
+        ready = checks["openai_key"] and checks["disk_writable"]
+        body = {"status": "ok" if ready else "degraded",
+                "tools": len(ToolRegistry.all()), "checks": checks}
+        return body if ready else JSONResponse(status_code=503, content=body)
 
     @app.get("/api/app-build")
     def app_build():

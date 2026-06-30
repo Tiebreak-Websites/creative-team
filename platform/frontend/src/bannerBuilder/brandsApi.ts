@@ -3,7 +3,7 @@
 // VITE_API_BASE handling. Brand mutations are admin-only on the backend, so we
 // send credentials explicitly (matching the tool-config writes in admin/).
 
-const BASE = import.meta.env.VITE_API_BASE ?? '/api'
+import { API_BASE as BASE, asJson } from '../http'
 
 const BRANDS_URL = `${BASE}/tools/banner-builder/brands`
 
@@ -13,12 +13,18 @@ export interface BrandSwatch {
   role: string
 }
 
-/** A reusable brand: a name, an ordered palette, and an optional inline SVG logo. */
+/** A reusable brand: name, palette, optional logo, plus optional brand-kit hints. */
 export interface Brand {
   id: string
   name: string
   colors: string[]
   logo_svg: string | null
+  /** Typography hint folded into the art direction (e.g. "Inter / geometric sans"). */
+  font?: string | null
+  /** Preferred CTA / accent hex hint (the director still ensures contrast). */
+  accent?: string | null
+  /** Tone of voice folded into the art direction (e.g. "confident, concise"). */
+  voice?: string | null
   /** Built-in brands ship with the app: always present, not editable/deletable. */
   builtin?: boolean
   /** Optional role-annotated palette (built-ins) for the showcase card. */
@@ -30,14 +36,13 @@ export interface BrandInput {
   name: string
   colors: string[]
   logo_svg: string | null
+  font?: string | null
+  accent?: string | null
+  voice?: string | null
 }
 
 /** Partial update — any subset of the brand's editable fields. */
 export type BrandPatch = Partial<BrandInput>
-
-async function asJson(r: Response): Promise<any> {
-  return r.json().catch(() => ({}))
-}
 
 /** Throw a useful Error for a failed response, preferring a backend `detail`/`error`. */
 async function fail(r: Response, fallback: string): Promise<never> {

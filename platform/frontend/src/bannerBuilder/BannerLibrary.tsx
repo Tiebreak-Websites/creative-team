@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
+  AlertTriangle,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -8,6 +9,7 @@ import {
   DownloadCloud,
   ExternalLink,
   Info,
+  RefreshCw,
   Trash2,
   X,
 } from 'lucide-react'
@@ -30,6 +32,7 @@ export interface LibraryItem {
   concept?: string // owning concept (for approve/reject)
   approvalStatus?: string // awaiting | approved | rejected
   createdBy?: string
+  qa?: string | null // post-generation QA warning, else null
 }
 
 /** Subtle checkerboard so transparent PNGs read against any theme. */
@@ -57,16 +60,20 @@ export function BannerLibrary({
   downloadAllHref,
   onApprove,
   onReject,
+  onRegenerate,
 }: {
   open: boolean
   items: LibraryItem[]
   index: number
   onIndexChange: (i: number) => void
   onClose: () => void
-  onDelete: (runId: string, label: string) => void
+  /** Delete the current banner. Provided only for the run's owner. */
+  onDelete?: (runId: string, label: string) => void
   downloadAllHref?: string
   onApprove?: () => void
   onReject?: () => void
+  /** Re-roll the current banner in place. Provided only for the run's owner. */
+  onRegenerate?: (runId: string, label: string) => void
 }): JSX.Element | null {
   const count = items.length
   // Clamp the requested index into range so a shrinking list never points past the end.
@@ -147,6 +154,14 @@ export function BannerLibrary({
           {current.title && (
             <span className="truncate text-sm text-muted-foreground">{current.title}</span>
           )}
+          {current.qa && (
+            <span
+              title={`Heads up: ${current.qa}`}
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400"
+            >
+              <AlertTriangle className="h-3 w-3" /> Check
+            </span>
+          )}
         </div>
 
         <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
@@ -195,15 +210,28 @@ export function BannerLibrary({
             </>
           )}
 
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onDelete(current.runId, current.label)}
-            title="Delete this banner"
-            className="text-destructive hover:border-destructive hover:text-destructive"
-          >
-            <Trash2 className="h-4 w-4" /> Delete
-          </Button>
+          {onRegenerate && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onRegenerate(current.runId, current.label)}
+              title="Regenerate just this size (re-roll without re-running the whole batch)"
+            >
+              <RefreshCw className="h-4 w-4" /> Regenerate
+            </Button>
+          )}
+
+          {onDelete && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onDelete(current.runId, current.label)}
+              title="Delete this banner"
+              className="text-destructive hover:border-destructive hover:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" /> Delete
+            </Button>
+          )}
 
           <Button
             size="sm"

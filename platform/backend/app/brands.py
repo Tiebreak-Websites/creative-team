@@ -151,6 +151,21 @@ def _clean_logo(logo_svg: Any) -> Optional[str]:
     return None
 
 
+def _clean_text(value: Any, limit: int = 200) -> Optional[str]:
+    """A short free-text brand-kit hint (typography / tone of voice), trimmed."""
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
+    return s[:limit] or None
+
+
+def _clean_accent(value: Any) -> Optional[str]:
+    """A single #RGB/#RRGGBB accent / CTA-colour hint, uppercased, or None."""
+    if isinstance(value, str) and _HEX_RE.match(value.strip()):
+        return value.strip().upper()
+    return None
+
+
 def _public(brand: dict) -> dict:
     """The Brand shape returned to clients (stable key order)."""
     out: dict = {
@@ -158,6 +173,10 @@ def _public(brand: dict) -> dict:
         "name": brand.get("name", ""),
         "colors": brand.get("colors", []) or [],
         "logo_svg": brand.get("logo_svg"),
+        # Brand-kit hints (all optional) folded into the art direction at run time.
+        "font": brand.get("font"),
+        "accent": brand.get("accent"),
+        "voice": brand.get("voice"),
         "builtin": bool(brand.get("builtin")),
     }
     # Built-ins may annotate each colour with a human role (CTA / Background / …).
@@ -191,6 +210,9 @@ def build_brands_router() -> APIRouter:
             "name": name,
             "colors": _clean_colors(payload.get("colors")),
             "logo_svg": _clean_logo(payload.get("logo_svg")),
+            "font": _clean_text(payload.get("font")),
+            "accent": _clean_accent(payload.get("accent")),
+            "voice": _clean_text(payload.get("voice"), limit=300),
         }
         brands = _load()
         brands.append(brand)
@@ -212,6 +234,12 @@ def build_brands_router() -> APIRouter:
                     b["colors"] = _clean_colors(payload.get("colors"))
                 if "logo_svg" in payload:
                     b["logo_svg"] = _clean_logo(payload.get("logo_svg"))
+                if "font" in payload:
+                    b["font"] = _clean_text(payload.get("font"))
+                if "accent" in payload:
+                    b["accent"] = _clean_accent(payload.get("accent"))
+                if "voice" in payload:
+                    b["voice"] = _clean_text(payload.get("voice"), limit=300)
                 _save(brands)
                 return {"brand": _public(b)}
         raise HTTPException(status_code=404, detail="brand not found")

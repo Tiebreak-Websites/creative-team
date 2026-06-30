@@ -69,8 +69,9 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
               colours, mood and overall look — not the text or logos inside it.
             </Feature>
             <Feature icon={<Wand2 className="h-4 w-4" />} title="Art Director">
-              Optional creative steering: the overall vibe, colours, who’s in the picture, what they wear, and
-              whether to make it feel local. Leave anything blank and the AI chooses for you.
+              Optional creative steering: the hero (a person, a trading-app screen, a product…), the headline
+              type, mood, lighting, colours, who’s in the picture, and which market to localise the visuals for.
+              Leave anything blank and the AI chooses for you.
             </Feature>
             <Feature icon={<Palette className="h-4 w-4" />} title="Quality">
               <b>Medium</b> is the quick default (about a minute). <b>High</b> is sharper but takes longer. You
@@ -83,9 +84,9 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
               The language of the words shown on the banner. It’s auto-detected from what you typed — click to
               change it.
             </Feature>
-            <Feature icon={<Sparkles className="h-4 w-4" />} title="Generate / Stop">
-              Starts the run. While it’s working the button becomes <b>Stop</b> — you can always stop and start a
-              fresh one, and your inputs stay put.
+            <Feature icon={<Sparkles className="h-4 w-4" />} title="Generate">
+              Always available — start more batches while others are still running, and your inputs stay put. To
+              stop a run, use the <b>Stop</b> button on its own card (only the person who started it sees it).
             </Feature>
           </div>
         </Section>
@@ -100,6 +101,14 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
             <Feature icon={<Download className="h-4 w-4" />} title="Download">
               From the open view, download the banner. Files are named by version, size, then title — e.g.
               <code className="mx-1 rounded bg-secondary px-1 font-mono text-[11px]">v1-1200x1200-summer-sale</code>.
+            </Feature>
+            <Feature icon={<CheckSquare className="h-4 w-4" />} title="Approve the master first">
+              Each version pauses after its main square so you can <b>Approve</b> it (the AI then recomposes every
+              other size) or <b>Reject</b> it (keeps just the square). Only the person who started the run decides.
+            </Feature>
+            <Feature icon={<Sparkles className="h-4 w-4" />} title="Regenerate one size">
+              If a single size comes out wrong, open it and press <b>Regenerate</b> to re-roll just that one — no
+              need to re-run (or re-pay for) the whole batch. A small ⚠ flags any tile worth a second look.
             </Feature>
             <Feature icon={<CheckSquare className="h-4 w-4" />} title="Pick several at once">
               Tick the checkbox in the corner of any banners you want, then <b>Download</b> to get them all in a

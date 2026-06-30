@@ -13,5 +13,11 @@ bcrypt<4.1
 # raster brand-logo compositing onto finished banners.
 Pillow>=10
 
+# cairosvg — rasterize SVG brand logos so they can be composited as pixels
+# (needs the native libcairo2, installed in the Dockerfile). The import in
+# banner_engine/logo_overlay.py is guarded, so a missing native lib degrades to
+# "skip the overlay" instead of crashing the app.
+cairosvg>=2.7
+
 # Multipart form parsing — POST /references uploads style reference images.
 python-multipart>=0.0.9

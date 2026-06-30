@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import {
+  AlertTriangle,
   Check,
   ChevronRight,
   Download,
@@ -165,6 +166,7 @@ export function OutputPane({
   isAdmin,
   onApprove,
   onReject,
+  onRegenerate,
 }: {
   runs: RunData[]
   onHelp?: () => void
@@ -177,12 +179,15 @@ export function OutputPane({
   isAdmin?: boolean
   onApprove?: (runId: string, concept: string) => void
   onReject?: (runId: string, concept: string) => void
+  onRegenerate?: (runId: string, label: string) => void
 }) {
   const [libOpen, setLibOpen] = useState(false)
   const [libIndex, setLibIndex] = useState(0)
   const [libItems, setLibItems] = useState<LibraryItem[]>([])
   const [libDownloadAll, setLibDownloadAll] = useState<string | undefined>(undefined)
   const [libApprove, setLibApprove] = useState<{ approve: () => void; reject: () => void } | null>(null)
+  const [libRegen, setLibRegen] = useState<((runId: string, label: string) => void) | null>(null)
+  const [libCanDelete, setLibCanDelete] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   // View prefs (persisted): batches (grouped) | all (flat grid) | list; tile size; collapse.
   const [viewMode, setViewMode] = useState<'grouped' | 'flat' | 'list'>(() => {
@@ -236,13 +241,13 @@ export function OutputPane({
       return next
     })
   }
-  const isOwner = (createdBy?: string) =>
-    !createdBy || createdBy === currentUserEmail || !!isAdmin
-  // Stopping a run is stricter than approving it: only the person who started a
-  // generation may interrupt it (admins included ONLY for legacy runs that have
-  // no recorded owner). One user must never see a cancel control for another
-  // user's in-flight batch.
-  const canCancel = (createdBy?: string) =>
+  // One predicate gates every per-run action in the gallery (stop, approve,
+  // reject, delete, regenerate): only the person who started a generation sees
+  // those controls on it. Admins are included ONLY for legacy runs with no
+  // recorded owner — for cross-user cleanup admins use the Disk Manager, and the
+  // backend independently enforces this. So one user never sees an action control
+  // on another user's banners.
+  const canModify = (createdBy?: string) =>
     createdBy
       ? createdBy.toLowerCase() === (currentUserEmail || '').toLowerCase()
       : !!isAdmin
@@ -254,7 +259,9 @@ export function OutputPane({
     return <EmptyOutput onHelp={onHelp} myBannersOnly={myBannersOnly} onShowAll={onMyBannersToggle} />
   const groups = buildGroups(runs)
   const generations = groupByGeneration(groups)
-  const firstError = runs.map((r) => r.error).find(Boolean)
+  // Surface EVERY distinct run error, not just the first — otherwise a second
+  // concurrent batch's quota/failure is masked by the first one's message.
+  const runErrors = Array.from(new Set(runs.map((r) => r.error).filter((e): e is string => !!e)))
 
   const styleByRun = new Map(runs.map((r) => [r.run_id, r.style ?? '']))
   // The viewable (ok) banners of ONE version → lightbox items. The lightbox is
@@ -281,6 +288,7 @@ export function OutputPane({
           button: b.button,
           brief: b.brief,
           prompt: b.prompt ?? undefined,
+          qa: b.qa ?? null,
           style: styleByRun.get(g.runId) ?? '',
         }
       })
@@ -296,7 +304,7 @@ export function OutputPane({
     setLibItems(items)
     setLibDownloadAll(items.length > 1 ? versionZipUrl(g.runId, g.concept, g.number, g.title) : undefined)
     setLibApprove(
-      g.approvalStatus === 'awaiting' && isOwner(g.createdBy)
+      g.approvalStatus === 'awaiting' && canModify(g.createdBy)
         ? {
             approve: () => {
               onApprove?.(g.runId, g.concept)
@@ -309,6 +317,12 @@ export function OutputPane({
           }
         : null,
     )
+    // Regenerate + delete are owner-only too: only expose them when the viewer
+    // owns this version, matching the backend guard.
+    const owned = canModify(g.createdBy)
+    // Wrap in an updater so React stores the function instead of calling it.
+    setLibRegen(() => (owned && onRegenerate ? onRegenerate : null))
+    setLibCanDelete(owned)
     setLibIndex(i)
     setLibOpen(true)
   }
@@ -379,17 +393,27 @@ export function OutputPane({
         )}
       </div>
       <div className="space-y-7 p-5">
-        {firstError && (
+        {runErrors.length > 0 && (
           <div
             role="alert"
             className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
           >
-            <div className="font-medium">A generation ran into a problem.</div>
+            <div className="font-medium">
+              {runErrors.length === 1
+                ? 'A generation ran into a problem.'
+                : `${runErrors.length} generations ran into problems.`}
+            </div>
             <details className="mt-1">
               <summary className="cursor-pointer select-none text-xs opacity-80 hover:opacity-100">
                 Show details
               </summary>
-              <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs opacity-90">{firstError}</p>
+              <ul className="mt-1 space-y-1">
+                {runErrors.map((e, i) => (
+                  <li key={i} className="whitespace-pre-wrap break-words font-mono text-xs opacity-90">
+                    {e}
+                  </li>
+                ))}
+              </ul>
             </details>
           </div>
         )}
@@ -402,12 +426,12 @@ export function OutputPane({
               onToggleCollapse={() => toggleCollapsed(gen.runId)}
               gridClass={gridClass}
               onView={openLibrary}
-              onDelete={onDeleteBanner}
+              onDelete={canModify(gen.createdBy) ? onDeleteBanner : undefined}
               onCancelRun={onCancelRun}
               selected={selected}
               onToggleSelect={toggleSelect}
-              owner={isOwner(gen.createdBy)}
-              canCancel={canCancel(gen.createdBy)}
+              owner={canModify(gen.createdBy)}
+              canCancel={canModify(gen.createdBy)}
               onApprove={onApprove}
               onReject={onReject}
             />
@@ -421,7 +445,7 @@ export function OutputPane({
                   b={b}
                   version={g.number}
                   onView={(label) => openLibrary(g.runId, label)}
-                  onDelete={onDeleteBanner ? (label) => onDeleteBanner(g.runId, label) : undefined}
+                  onDelete={onDeleteBanner && canModify(g.createdBy) ? (label) => onDeleteBanner(g.runId, label) : undefined}
                   selected={selected.has(`${g.runId}|${b.label}`)}
                   onToggleSelect={() => toggleSelect(g.runId, b.label)}
                 />
@@ -438,7 +462,7 @@ export function OutputPane({
                   b={b}
                   version={g.number}
                   onView={() => openLibrary(g.runId, b.label)}
-                  onDelete={onDeleteBanner ? () => onDeleteBanner(g.runId, b.label) : undefined}
+                  onDelete={onDeleteBanner && canModify(g.createdBy) ? () => onDeleteBanner(g.runId, b.label) : undefined}
                   selected={selected.has(`${g.runId}|${b.label}`)}
                   onToggleSelect={() => toggleSelect(g.runId, b.label)}
                 />
@@ -453,10 +477,11 @@ export function OutputPane({
         index={libIndex}
         onIndexChange={setLibIndex}
         onClose={() => setLibOpen(false)}
-        onDelete={(runId, label) => onDeleteBanner?.(runId, label)}
+        onDelete={libCanDelete ? (runId, label) => onDeleteBanner?.(runId, label) : undefined}
         downloadAllHref={libDownloadAll}
         onApprove={libApprove?.approve}
         onReject={libApprove?.reject}
+        onRegenerate={libRegen ?? undefined}
       />
     </div>
   )
@@ -529,7 +554,11 @@ function OverviewBar({
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card px-5 py-3">
-      <span className="flex shrink-0 items-center gap-2 font-display text-sm font-semibold">
+      <span
+        role="status"
+        aria-live="polite"
+        className="flex shrink-0 items-center gap-2 font-display text-sm font-semibold"
+      >
         {running ? (
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
         ) : (
@@ -1018,20 +1047,31 @@ function AssetCard({
         </div>
         <div className="flex items-center justify-between border-t border-border px-2.5 py-2 text-xs">
           <span className="font-display font-semibold">{b.size}</span>
-          <Badge
-            variant="outline"
-            title={
-              b.phase === 'master'
-                ? 'The square master is generated first and seeds every other size'
-                : undefined
-            }
-            className={cn(
-              'text-[10px] font-normal',
-              b.phase === 'master' ? 'border-primary/35 text-primary' : 'text-muted-foreground',
+          <div className="flex items-center gap-1.5">
+            {b.qa && (
+              <span
+                title={`Heads up: ${b.qa}`}
+                aria-label={`Quality check: ${b.qa}`}
+                className="inline-flex items-center text-amber-500"
+              >
+                <AlertTriangle className="h-3.5 w-3.5" />
+              </span>
             )}
-          >
-            {tag}
-          </Badge>
+            <Badge
+              variant="outline"
+              title={
+                b.phase === 'master'
+                  ? 'The square master is generated first and seeds every other size'
+                  : undefined
+              }
+              className={cn(
+                'text-[10px] font-normal',
+                b.phase === 'master' ? 'border-primary/35 text-primary' : 'text-muted-foreground',
+              )}
+            >
+              {tag}
+            </Badge>
+          </div>
         </div>
       </div>
     )

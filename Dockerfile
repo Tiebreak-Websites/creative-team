@@ -17,6 +17,11 @@ FROM python:3.12-slim AS app
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 WORKDIR /app/backend
+# Native lib for cairosvg (rasterizes SVG brand logos). Kept minimal; the Python
+# import is guarded so the app still boots even if this layer ever changes.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libcairo2 \
+    && rm -rf /var/lib/apt/lists/*
 COPY platform/backend/requirements.txt ./
 RUN pip install -r requirements.txt
 COPY platform/backend/ ./

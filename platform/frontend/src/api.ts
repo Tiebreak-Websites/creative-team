@@ -4,8 +4,7 @@ import type {
   SecretFlag,
   ToolsResponse,
 } from './types'
-
-const BASE = import.meta.env.VITE_API_BASE ?? '/api'
+import { API_BASE as BASE, asJson } from './http'
 
 export class ApiError extends Error {
   status: number
@@ -21,10 +20,6 @@ export class ApiError extends Error {
     this.errors = opts?.errors
     this.missingSecrets = opts?.missingSecrets
   }
-}
-
-async function asJson(r: Response): Promise<any> {
-  return r.json().catch(() => ({}))
 }
 
 /** Map a backend-provided "/api/..." asset path to the configured base. */
@@ -83,6 +78,21 @@ export async function deleteBanner(runId: string, label: string): Promise<void> 
     `${BASE}/tools/banner-builder/runs/${runId}/banners/${encodeURIComponent(label)}.png`,
     { method: 'DELETE' },
   ).catch(() => {})
+}
+
+/** Re-roll ONE banner (a single size) in place. Returns the updated run, or throws
+ * (409 if it can't be regenerated, e.g. the master image is gone). Owner-only. */
+export async function regenerateBanner(runId: string, label: string): Promise<RunData> {
+  const r = await fetch(
+    `${BASE}/tools/banner-builder/runs/${runId}/banners/${encodeURIComponent(label)}/regenerate`,
+    { method: 'POST' },
+  )
+  if (!r.ok) {
+    const body = await asJson(r)
+    const detail = typeof body.detail === 'string' ? body.detail : `Regenerate failed (HTTP ${r.status}).`
+    throw new ApiError(r.status, detail)
+  }
+  return r.json()
 }
 
 export interface BulkDeleteResult {

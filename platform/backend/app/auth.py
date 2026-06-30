@@ -17,11 +17,13 @@ from __future__ import annotations
 import logging
 import re
 import secrets as _secrets
+import threading
 import time
+from collections import deque
 from datetime import datetime, timezone
 
 import jwt
-from fastapi import APIRouter, Body, Cookie, Depends, HTTPException, Response
+from fastapi import APIRouter, Body, Cookie, Depends, HTTPException, Request, Response
 from passlib.context import CryptContext
 
 from .secrets import get_secret
@@ -32,6 +34,16 @@ TOKEN_TTL_SECONDS = 8 * 60 * 60  # ~8h sessions
 COOKIE_NAME = "session"
 JWT_ALG = "HS256"
 _LOGIN_FAIL_DELAY = 0.4  # blunt brute force; constant-ish small delay on 401
+
+# --- Login brute-force throttle (in-memory sliding window) -----------------
+# A small fixed delay alone doesn't stop credential stuffing against a known
+# admin email. Track FAILED logins per (client-ip, email) in a sliding window
+# and return 429 once a key is over budget; a successful login clears the key.
+# In-memory / single-process — mirrors the rest of the app's guards (runner.py).
+_LOGIN_LOCK = threading.Lock()
+_LOGIN_FAILS: dict[str, deque] = {}
+_LOGIN_MAX_FAILS = 8      # failed attempts ...
+_LOGIN_WINDOW = 900.0     # ... per 15 minutes, per (ip, email) before lockout
 
 _SECRET_KEY_FILE = BACKEND_DIR / ".secret_key"
 
@@ -185,6 +197,51 @@ def verify_password(plaintext: str, password_hash: str) -> bool:
         return False
 
 
+# --- Login throttle helpers ------------------------------------------------
+def _client_ip(request: Request | None) -> str:
+    """Best-effort client IP. Behind Render's proxy the real client is the first
+    hop in X-Forwarded-For; fall back to the socket peer."""
+    if request is None:
+        return "?"
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return getattr(getattr(request, "client", None), "host", "") or "?"
+
+
+def _login_key(request: Request | None, email: str) -> str:
+    return f"{_client_ip(request)}|{(email or '').strip().lower()}"
+
+
+def _login_throttled(key: str) -> bool:
+    """True if this (ip, email) is over its failed-login budget. Prunes the window."""
+    now = time.time()
+    with _LOGIN_LOCK:
+        dq = _LOGIN_FAILS.get(key)
+        if not dq:
+            return False
+        while dq and now - dq[0] > _LOGIN_WINDOW:
+            dq.popleft()
+        if not dq:
+            _LOGIN_FAILS.pop(key, None)
+            return False
+        return len(dq) >= _LOGIN_MAX_FAILS
+
+
+def _record_login_fail(key: str) -> None:
+    now = time.time()
+    with _LOGIN_LOCK:
+        dq = _LOGIN_FAILS.setdefault(key, deque())
+        while dq and now - dq[0] > _LOGIN_WINDOW:
+            dq.popleft()
+        dq.append(now)
+
+
+def _clear_login_fails(key: str) -> None:
+    with _LOGIN_LOCK:
+        _LOGIN_FAILS.pop(key, None)
+
+
 # --- Tokens ----------------------------------------------------------------
 def _issue_token(user: dict) -> str:
     now = int(time.time())
@@ -234,16 +291,27 @@ def build_auth_router() -> APIRouter:
     router = APIRouter(prefix="/api/auth", tags=["auth"])
 
     @router.post("/login")
-    def login(response: Response, payload: dict = Body(default={})):
+    def login(request: Request, response: Response, payload: dict = Body(default={})):
         email = (payload.get("email") or "").strip()
         password = payload.get("password") or ""
+        key = _login_key(request, email)
+        # Lockout: too many recent failures from this IP+email → refuse without
+        # even checking the password, so credential stuffing can't grind on.
+        if _login_throttled(key):
+            time.sleep(_LOGIN_FAIL_DELAY)
+            raise HTTPException(
+                status_code=429,
+                detail="Too many failed sign-in attempts. Please wait a few minutes and try again.",
+            )
         user = get_user(email)
         if not user or not verify_password(password, user["password_hash"]):
+            _record_login_fail(key)
             # Blunt brute force with a small fixed delay; never reveal which
             # half (email vs password) was wrong.
             time.sleep(_LOGIN_FAIL_DELAY)
             raise HTTPException(status_code=401, detail="Invalid email or password")
 
+        _clear_login_fails(key)  # a good login resets the counter for this key
         token = _issue_token(user)
         response.set_cookie(
             key=COOKIE_NAME,

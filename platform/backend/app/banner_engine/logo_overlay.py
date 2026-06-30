@@ -1,16 +1,14 @@
 """Composite a brand logo onto a finished banner PNG (Pillow).
 
-The base image is python:3.12-slim with NO SVG rasterizer (cairosvg / svglib are
-unavailable and pull heavy native deps). So this module reliably composites
-RASTER logos only:
-
+Raster logos always work:
   - a base64 data: URI ("data:image/png;base64,...", jpg/webp too), or
   - raw PNG/JPEG/WebP bytes.
 
-For an SVG logo we DO NOT attempt to rasterize (it would need a native lib we
-can't assume): `decode_logo` returns ("svg", None) and the caller skips the pixel
-overlay — generation still succeeds — and the brand colors are still folded into
-the art direction upstream. See the TODO below if an SVG rasterizer is ever added.
+SVG logos are rasterized via cairosvg WHEN it's installed (the Docker image ships
+libcairo2 + cairosvg). The import is GUARDED: if the rasterizer is unavailable for
+any reason, `decode_logo` falls back to ("svg", None) and the caller simply skips
+the pixel overlay (generation still succeeds; the brand colors are still folded
+into the art direction upstream) — so a missing native lib can never break a run.
 
 `composite_logo_corner` returns NEW PNG bytes with the logo placed in one of the
 four corners ('tl','tr','bl','br') with padding + scaling proportional to the
@@ -22,6 +20,7 @@ import base64
 import io
 import re
 from typing import Optional, Tuple
+from urllib.parse import unquote
 
 from PIL import Image
 
@@ -44,14 +43,37 @@ def _looks_like_svg(s: str) -> bool:
     return head.startswith("<svg") or head.startswith("<?xml") or "<svg" in head
 
 
+# Rasterize SVG at ~2x the max logo box so the downscaled overlay stays crisp.
+_SVG_RASTER_WIDTH = _LOGO_MAX_PX * 2
+
+
+def _rasterize_svg(svg_bytes: bytes) -> Optional[bytes]:
+    """SVG bytes -> PNG bytes via cairosvg, or None if it can't be rendered.
+
+    The cairosvg import is intentionally lazy + guarded: the dependency (and its
+    native libcairo2) ships in the Docker image, but if it's ever absent the
+    caller degrades to skipping the overlay rather than crashing.
+    """
+    if not svg_bytes:
+        return None
+    try:
+        import cairosvg  # noqa: PLC0415 — optional heavy dep, imported on demand
+    except Exception:  # noqa: BLE001 — ImportError or a broken native lib
+        return None
+    try:
+        return cairosvg.svg2png(bytestring=svg_bytes, output_width=_SVG_RASTER_WIDTH)
+    except Exception:  # noqa: BLE001 — malformed SVG, etc.
+        return None
+
+
 def decode_logo(logo_svg: Optional[str]) -> Tuple[str, Optional[bytes]]:
     """Classify a brand logo string and return (kind, raster_bytes).
 
     kind is one of:
-      "raster" -> raster_bytes is decoded PNG/JPEG/WebP bytes ready to open.
-      "svg"    -> raster_bytes is None; caller must skip the pixel overlay
-                  (no rasterizer installed). TODO: if cairosvg/resvg is ever
-                  added to the image, rasterize here and return ("raster", png).
+      "raster" -> raster_bytes is decoded/rasterized PNG/JPEG/WebP bytes ready to open
+                  (SVGs are rasterized via cairosvg when available).
+      "svg"    -> raster_bytes is None; the input was an SVG but no rasterizer was
+                  available, so the caller skips the pixel overlay.
       "none"   -> nothing usable.
     """
     if not logo_svg or not isinstance(logo_svg, str):
@@ -66,17 +88,27 @@ def decode_logo(logo_svg: Optional[str]) -> Tuple[str, Optional[bytes]]:
         is_b64 = bool(m.group("b64"))
         data = m.group("data") or ""
         if "svg" in mime:
-            return "svg", None
+            try:
+                svg_bytes = base64.b64decode(data, validate=False) if is_b64 \
+                    else unquote(data).encode("utf-8")
+            except Exception:  # noqa: BLE001
+                svg_bytes = b""
+            png = _rasterize_svg(svg_bytes)
+            return ("raster", png) if png else ("svg", None)
         if is_b64:
             try:
                 return "raster", base64.b64decode(data, validate=False)
             except (ValueError, base64.binascii.Error):
                 return "none", None
         # Non-base64 data: URI (rare) — likely URL-encoded SVG markup.
-        return ("svg", None) if "<svg" in data.lower() else ("none", None)
+        if "<svg" in data.lower():
+            png = _rasterize_svg(unquote(data).encode("utf-8"))
+            return ("raster", png) if png else ("svg", None)
+        return "none", None
 
     if _looks_like_svg(s):
-        return "svg", None
+        png = _rasterize_svg(s.encode("utf-8"))
+        return ("raster", png) if png else ("svg", None)
 
     # A bare base64 blob (no data: prefix) — accept if it decodes to a known
     # raster magic header; otherwise treat as unusable.
