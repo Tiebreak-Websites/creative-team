@@ -1448,19 +1448,19 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
         {/* Selection console — replaces the Generate console while banners are picked. */}
         {selected.size > 0 && (
           <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-3 lg:absolute lg:bottom-5 lg:pb-0">
-            <div className="relative flex w-full max-w-xl animate-fade-up flex-wrap items-center gap-3 rounded-2xl border border-primary/40 bg-card/95 p-3 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md">
-              <div className="flex items-center gap-2 pl-1">
+            <div className="relative flex w-full max-w-xl animate-fade-up items-center gap-3 rounded-2xl border border-primary/40 bg-card/95 p-3 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md">
+              <div className="flex shrink-0 items-center gap-2 pl-1">
                 <span
                   key={selected.size}
                   className="inline-flex h-8 min-w-[2rem] animate-pop-in items-center justify-center rounded-full bg-primary px-2 font-display text-sm font-bold tabular-nums text-primary-foreground"
                 >
                   {selected.size}
                 </span>
-                <span className="text-sm font-medium text-foreground">
+                <span className="hidden text-sm font-medium text-foreground sm:inline">
                   banner{selected.size === 1 ? '' : 's'} selected
                 </span>
               </div>
-              <div className="ml-auto flex items-center gap-2">
+              <div className="ml-auto flex shrink-0 items-center gap-2">
                 <Button asChild size="lg" className="bg-emerald-600 text-white hover:bg-emerald-700">
                   <a href={selectionZipUrl(selectedItems)} download>
                     <Download className="h-4 w-4" /> Download ZIP
@@ -1474,8 +1474,15 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
                 >
                   <Trash2 className="h-4 w-4" /> Delete
                 </Button>
-                <Button size="lg" variant="ghost" onClick={clearSelection} title="Clear selection">
-                  <X className="h-4 w-4" /> Cancel
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={clearSelection}
+                  title="Clear selection"
+                  aria-label="Clear selection"
+                  className="h-11 w-11 shrink-0"
+                >
+                  <X className="h-4 w-4" />
                 </Button>
               </div>
             </div>
