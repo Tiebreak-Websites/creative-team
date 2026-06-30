@@ -1077,11 +1077,14 @@ function AssetCard({
     )
   }
 
+  const generating = !broken && (b.status === 'pending' || b.status === 'running')
   return (
     <div
       style={delay}
-      className="animate-fade-up overflow-hidden rounded-xl border border-dashed border-border bg-muted/40"
+      className="relative animate-fade-up overflow-hidden rounded-xl border border-dashed border-border bg-muted/40"
     >
+      {/* Breathing gradient bar across the top while this banner is generating. */}
+      {generating && <span aria-hidden className="tb-breathe absolute inset-x-0 top-0 z-10 h-1" />}
       <div className="relative flex aspect-square flex-col items-center justify-center gap-1.5 p-3 text-center">
         <span
           title={broken ? 'Image unavailable' : phLabel(b)}

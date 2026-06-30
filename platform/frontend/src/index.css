@@ -115,6 +115,35 @@
     background: hsl(var(--primary));
     flex: none;
   }
+  /* "Breathing" gradient bar on top of a banner card while it's generating —
+     a bright band slides across and the whole bar gently pulses. */
+  .tb-breathe {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--primary) / 0.12) 18%,
+      hsl(var(--primary) / 0.95) 50%,
+      hsl(var(--primary) / 0.12) 82%,
+      transparent 100%
+    );
+    background-size: 220% 100%;
+    animation: tb-breathe-slide 1.7s ease-in-out infinite;
+  }
+}
+
+@keyframes tb-breathe-slide {
+  0% {
+    background-position: 120% 0;
+    opacity: 0.6;
+  }
+  50% {
+    background-position: -20% 0;
+    opacity: 1;
+  }
+  100% {
+    background-position: 120% 0;
+    opacity: 0.6;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

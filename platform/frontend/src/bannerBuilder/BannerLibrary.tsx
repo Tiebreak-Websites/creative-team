@@ -316,9 +316,25 @@ export function BannerLibrary({
             </InfoBox>
             <InfoBox title="Art direction">
               {current.style ? (
-                <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/90">
-                  {current.style}
-                </p>
+                (() => {
+                  const rows = artDirectionRows(current.style)
+                  return rows.length > 1 || rows[0]?.label !== 'Art direction' ? (
+                    <dl className="space-y-1.5">
+                      {rows.map((r, i) => (
+                        <div key={i} className="flex flex-col gap-0.5">
+                          <dt className="text-[10px] font-semibold uppercase tracking-wide text-primary">
+                            {r.label}
+                          </dt>
+                          <dd className="break-words text-xs leading-relaxed text-foreground/90">{r.text}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : (
+                    <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/90">
+                      {current.style}
+                    </p>
+                  )
+                })()
               ) : (
                 <p className="text-xs text-muted-foreground">The AI chose the direction automatically.</p>
               )}
@@ -381,6 +397,44 @@ export function BannerLibrary({
     </div>,
     document.body,
   )
+}
+
+/**
+ * Break the composed art-direction string into labelled rows so the viewer can
+ * scan exactly what the Art Director was briefed with (Look / Casting / Colour /
+ * Layout / Finish / Localisation / Brand), instead of one long paragraph. Falls
+ * back to a single "Art direction" row when the string carries no known labels.
+ */
+export function artDirectionRows(style: string): { label: string; text: string }[] {
+  const s = (style || '').trim()
+  if (!s) return []
+  const SECTIONS: { key: string; label: string }[] = [
+    { key: 'Look:', label: 'Look' },
+    { key: 'Casting:', label: 'Casting' },
+    { key: 'Colour direction:', label: 'Colour' },
+    { key: 'Composition:', label: 'Layout' },
+    { key: 'Finish:', label: 'Finish' },
+    { key: 'Localise', label: 'Localisation' },
+    { key: 'Brand palette:', label: 'Brand' },
+  ]
+  const marks = SECTIONS.map((sec) => ({ ...sec, i: s.indexOf(sec.key) }))
+    .filter((m) => m.i >= 0)
+    .sort((a, b) => a.i - b.i)
+  if (!marks.length) return [{ label: 'Art direction', text: s }]
+  const rows: { label: string; text: string }[] = []
+  const lead = s.slice(0, marks[0].i).replace(/[—\-\s]+$/, '').trim()
+  if (lead) rows.push({ label: 'Style note', text: lead })
+  marks.forEach((m, idx) => {
+    const start = m.i + (m.key.endsWith(':') ? m.key.length : 0)
+    const end = idx + 1 < marks.length ? marks[idx + 1].i : s.length
+    const text = s
+      .slice(start, end)
+      .trim()
+      .replace(/^[:\s]+/, '')
+      .replace(/\s+/g, ' ')
+    if (text) rows.push({ label: m.label, text })
+  })
+  return rows
 }
 
 function InfoBox({ title, children }: { title: string; children: ReactNode }) {

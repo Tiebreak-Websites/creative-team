@@ -664,11 +664,13 @@ def _gen_one_frame(run: Run, frame: dict):
             return
 
     # Export EVERY banner at its EXACT requested pixel size. The image API only
-    # emits 1024/1536-class sizes, so scale + center-crop to the precise box —
-    # otherwise a "1200x1200" banner would download as the generated 1024x1024.
+    # emits 1024/1536-class sizes, so reshape to the precise box. fit_export picks
+    # cover-crop for most sizes, but for the 4:5 portrait family (960x1200,
+    # 1080x1350, …) it fits the FULL image and blur-pads the sides instead — so the
+    # headline and the bottom CTA are never sliced by a top/bottom crop.
     try:
         _w, _h = (int(x) for x in frame["size"].split("x"))
-        png = reshape.fit_cover(png, _w, _h)
+        png = reshape.fit_export(png, _w, _h)
     except Exception:  # noqa: BLE001 — never drop a frame over reshaping
         pass
 
