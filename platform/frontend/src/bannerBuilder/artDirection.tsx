@@ -494,7 +494,7 @@ export function ArtDirectionModal({
           {tab === 'people' && (
             <div className="space-y-4">
               <SectionCard icon={Users} title="Who's in the ad" hint="Casting">
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-2">
                   {GENDERS.map((g) => (
                     <Chip key={g.key} active={art.gender === g.key} onClick={() => pickOne('gender', g.key)}>
                       {g.label}
@@ -523,7 +523,7 @@ export function ArtDirectionModal({
               {!noPeople && (
                 <div className="grid gap-4 sm:grid-cols-2">
                   <SectionCard icon={Shirt} title="Wardrobe" hint="What they wear">
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-2">
                       {WARDROBES.map((w) => (
                         <Chip key={w} active={art.wardrobe === w} onClick={() => pickOne('wardrobe', w)}>
                           {cap(w)}
@@ -621,21 +621,35 @@ function SectionCard({
   icon: Icon,
   title,
   hint,
+  selected,
   children,
 }: {
   icon: ComponentType<{ className?: string }>
   title: string
   hint?: string
+  selected?: string | null
   children: ReactNode
 }) {
   return (
-    <section className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+    <section
+      className={cn(
+        'space-y-3 rounded-xl border bg-card/50 p-4 transition-colors',
+        selected ? 'border-primary/40' : 'border-border',
+      )}
+    >
       <div className="flex items-center gap-2">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Icon className="h-4 w-4" />
         </span>
-        <div className="min-w-0">
-          <h3 className="font-display text-sm font-semibold leading-tight text-foreground">{title}</h3>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <h3 className="font-display text-sm font-semibold leading-tight text-foreground">{title}</h3>
+            {selected && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                <Check className="h-3 w-3" /> {selected}
+              </span>
+            )}
+          </div>
           {hint && <p className="truncate text-xs text-muted-foreground">{hint}</p>}
         </div>
       </div>
@@ -660,9 +674,10 @@ function ChipCard({
   value: string | null
   onPick: (key: string) => void
 }) {
+  const selected = opts.find((o) => o.key === value)?.label ?? null
   return (
-    <SectionCard icon={icon} title={title} hint={hint}>
-      <div className="flex flex-wrap gap-1.5">
+    <SectionCard icon={icon} title={title} hint={hint} selected={selected}>
+      <div className="flex flex-wrap gap-2">
         {opts.map((o) => (
           <Chip key={o.key} active={value === o.key} onClick={() => onPick(o.key)}>
             {o.label}
@@ -677,7 +692,7 @@ function SubRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="space-y-1">
       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div className="flex flex-wrap gap-1.5">{children}</div>
+      <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   )
 }
@@ -696,15 +711,17 @@ function Chip({
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={cn(
-        'rounded-full border font-medium transition-colors',
-        small ? 'px-2.5 py-0.5 text-[11px]' : 'px-3 py-1 text-xs',
+        'inline-flex items-center gap-1.5 rounded-full border font-semibold transition-all',
+        small ? 'px-3 py-1.5 text-xs' : 'px-4 py-2 text-sm',
         active
-          ? 'border-primary/50 bg-primary/10 text-primary'
-          : 'border-border bg-secondary text-muted-foreground hover:border-foreground/25 hover:text-foreground',
+          ? 'border-primary bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/30'
+          : 'border-border bg-secondary text-foreground/80 hover:border-primary/50 hover:bg-primary/5 hover:text-foreground',
       )}
     >
+      {active && <Check className={cn(small ? 'h-3 w-3' : 'h-3.5 w-3.5', 'shrink-0')} />}
       {children}
     </button>
   )

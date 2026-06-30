@@ -344,8 +344,6 @@ export function OutputPane({
           onMyBannersToggle={onMyBannersToggle}
           currentUserEmail={currentUserEmail}
           isAdmin={isAdmin}
-        />
-        <ViewControls
           viewMode={viewMode}
           onViewMode={setViewMode}
           tileSize={tileSize}
@@ -473,6 +471,10 @@ function OverviewBar({
   onMyBannersToggle,
   currentUserEmail,
   isAdmin,
+  viewMode,
+  onViewMode,
+  tileSize,
+  onTileSize,
 }: {
   runs: RunData[]
   onCancel?: () => void
@@ -480,7 +482,22 @@ function OverviewBar({
   onMyBannersToggle?: () => void
   currentUserEmail?: string
   isAdmin?: boolean
+  viewMode: 'grouped' | 'flat' | 'list'
+  onViewMode: (v: 'grouped' | 'flat' | 'list') => void
+  tileSize: 'small' | 'large'
+  onTileSize: (s: 'small' | 'large') => void
 }) {
+  const viewModes = [
+    { v: 'grouped' as const, label: 'Batches', icon: <Layers className="h-4 w-4" /> },
+    { v: 'flat' as const, label: 'All', icon: <LayoutGrid className="h-4 w-4" /> },
+    { v: 'list' as const, label: 'List', icon: <ListIcon className="h-4 w-4" /> },
+  ]
+  const seg = 'inline-flex shrink-0 items-center rounded-lg border border-border bg-secondary p-0.5'
+  const segBtn = (on: boolean) =>
+    cn(
+      'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-medium capitalize transition-colors',
+      on ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+    )
   // Progress reflects ONLY the currently-generating runs (the current task) —
   // not the historical total of every run in the gallery.
   const activeRuns = runs.filter((r) => RUNNING.includes(r.status))
@@ -514,7 +531,7 @@ function OverviewBar({
         : 'All banners ready'
 
   return (
-    <div className="flex items-center gap-4 border-b border-border bg-card/70 px-5 py-3 backdrop-blur-md">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card/70 px-5 py-3 backdrop-blur-md">
       <span className="flex shrink-0 items-center gap-2 font-display text-sm font-semibold">
         {running ? (
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -543,6 +560,25 @@ function OverviewBar({
       )}
 
       <div className="ml-auto" />
+
+      {/* View controls — moved up into this row (Batches / All / List + tile size). */}
+      <div className={seg}>
+        {viewModes.map((m) => (
+          <button key={m.v} type="button" onClick={() => onViewMode(m.v)} className={segBtn(viewMode === m.v)}>
+            {m.icon}
+            <span className="hidden sm:inline">{m.label}</span>
+          </button>
+        ))}
+      </div>
+      {viewMode !== 'list' && (
+        <div className={seg}>
+          {(['small', 'large'] as const).map((s) => (
+            <button key={s} type="button" onClick={() => onTileSize(s)} className={segBtn(tileSize === s)}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
       {onMyBannersToggle && (
         <Button
@@ -585,51 +621,6 @@ function OverviewBar({
             <Download className="h-4 w-4" /> Download all
           </a>
         </Button>
-      )}
-    </div>
-  )
-}
-
-function ViewControls({
-  viewMode,
-  onViewMode,
-  tileSize,
-  onTileSize,
-}: {
-  viewMode: 'grouped' | 'flat' | 'list'
-  onViewMode: (v: 'grouped' | 'flat' | 'list') => void
-  tileSize: 'small' | 'large'
-  onTileSize: (s: 'small' | 'large') => void
-}) {
-  const modes = [
-    { v: 'grouped' as const, label: 'Batches', icon: <Layers className="h-4 w-4" /> },
-    { v: 'flat' as const, label: 'All', icon: <LayoutGrid className="h-4 w-4" /> },
-    { v: 'list' as const, label: 'List', icon: <ListIcon className="h-4 w-4" /> },
-  ]
-  const seg = 'inline-flex items-center rounded-lg border border-border bg-secondary p-0.5'
-  const btn = (on: boolean) =>
-    cn(
-      'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-medium capitalize transition-colors',
-      on ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-    )
-  return (
-    <div className="flex items-center gap-2 border-b border-border bg-card/50 px-5 py-2 backdrop-blur-md">
-      <div className={seg}>
-        {modes.map((m) => (
-          <button key={m.v} type="button" onClick={() => onViewMode(m.v)} className={btn(viewMode === m.v)}>
-            {m.icon}
-            <span className="hidden sm:inline">{m.label}</span>
-          </button>
-        ))}
-      </div>
-      {viewMode !== 'list' && (
-        <div className={cn(seg, 'ml-auto')}>
-          {(['small', 'large'] as const).map((s) => (
-            <button key={s} type="button" onClick={() => onTileSize(s)} className={btn(tileSize === s)}>
-              {s}
-            </button>
-          ))}
-        </div>
       )}
     </div>
   )
