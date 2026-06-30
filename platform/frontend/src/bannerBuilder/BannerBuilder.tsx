@@ -1457,17 +1457,22 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
                   const deck = Math.min(selected.size, 3)
                   const mid = (deck - 1) / 2
                   const shades = ['hsl(217 90% 46%)', 'hsl(217 90% 57%)', 'hsl(217 92% 68%)']
+                  const SPREAD = 22 // horizontal gap so each card stays visible
                   return (
                     <div
-                      className="relative h-10 shrink-0 transition-all duration-300"
-                      style={{ width: `${40 + (deck - 1) * 14}px` }}
+                      className="relative h-12 shrink-0 transition-all duration-300"
+                      style={{ width: `${34 + (deck - 1) * SPREAD + 10}px` }}
                     >
                       {Array.from({ length: deck }).map((_, i) => (
                         <span
                           key={i}
-                          className="absolute left-0 top-0 h-10 w-9 animate-pop-in rounded-md border-2 border-card shadow-md transition-transform duration-300"
+                          // fade-in (opacity only) — NOT pop-in, whose keyframe sets
+                          // `transform` with fill-mode:both and would clobber the
+                          // fan transform below, stacking the cards.
+                          className="absolute bottom-0 left-1 h-10 w-8 animate-fade-in rounded-md border-2 border-card shadow-md transition-transform duration-300"
                           style={{
-                            transform: `translateX(${i * 14}px) rotate(${(i - mid) * 8}deg)`,
+                            transformOrigin: 'bottom center',
+                            transform: `translateX(${i * SPREAD}px) translateY(${-Math.abs(i - mid) * 3}px) rotate(${(i - mid) * 16}deg)`,
                             zIndex: i,
                             backgroundColor: shades[i] ?? shades[shades.length - 1],
                           }}
