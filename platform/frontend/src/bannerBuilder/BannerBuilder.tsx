@@ -1457,7 +1457,7 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
                   const deck = Math.min(selected.size, 3)
                   const mid = (deck - 1) / 2
                   const shades = ['hsl(217 90% 46%)', 'hsl(217 90% 57%)', 'hsl(217 92% 68%)']
-                  const SPREAD = 22 // horizontal gap so each card stays visible
+                  const SPREAD = 10 // small horizontal gap — cards overlap as a tight stack
                   return (
                     <div
                       className="relative h-12 shrink-0 transition-all duration-300"
@@ -1472,7 +1472,7 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
                           className="absolute bottom-0 left-1 h-10 w-8 animate-fade-in rounded-md border-2 border-card shadow-md transition-transform duration-300"
                           style={{
                             transformOrigin: 'bottom center',
-                            transform: `translateX(${i * SPREAD}px) translateY(${-Math.abs(i - mid) * 3}px) rotate(${(i - mid) * 16}deg)`,
+                            transform: `translateX(${i * SPREAD}px) translateY(${-Math.abs(i - mid) * 2}px) rotate(${(i - mid) * 10}deg)`,
                             zIndex: i,
                             backgroundColor: shades[i] ?? shades[shades.length - 1],
                           }}
