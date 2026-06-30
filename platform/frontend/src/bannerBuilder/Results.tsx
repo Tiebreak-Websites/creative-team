@@ -4,6 +4,8 @@ import {
   Check,
   ChevronRight,
   Download,
+  Grid2x2,
+  Grid3x3,
   HelpCircle,
   ImageIcon,
   Layers,
@@ -12,6 +14,7 @@ import {
   Loader2,
   Maximize2,
   Trash2,
+  User,
   Users,
   X,
 } from 'lucide-react'
@@ -538,12 +541,18 @@ function OverviewBar({
     { v: 'flat' as const, label: 'All', icon: <LayoutGrid className="h-4 w-4" /> },
     { v: 'list' as const, label: 'List', icon: <ListIcon className="h-4 w-4" /> },
   ]
+  const tileSizes = [
+    { v: 'small' as const, label: 'Small', icon: <Grid3x3 className="h-4 w-4" /> },
+    { v: 'large' as const, label: 'Large', icon: <Grid2x2 className="h-4 w-4" /> },
+  ]
   const seg = 'inline-flex shrink-0 items-center rounded-lg border border-border bg-secondary p-0.5'
+  // The active option in each group lights up in the primary (blue) colour.
   const segBtn = (on: boolean) =>
     cn(
-      'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-medium capitalize transition-colors',
-      on ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+      'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors',
+      on ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
     )
+  const Divider = () => <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
   // Progress reflects ONLY the currently-generating runs (the current task) —
   // not the historical total of every run in the gallery.
   const activeRuns = runs.filter((r) => RUNNING.includes(r.status))
@@ -564,7 +573,6 @@ function OverviewBar({
   const preRender = running && ready === 0
   const failed = runs.some((r) => r.status === 'failed')
   const awaiting = runs.some((r) => r.status === 'awaiting_approval')
-  const okRunIds = runs.filter((r) => r.banners.some((b) => b.status === 'ok')).map((r) => r.run_id)
   const label = running
     ? activeCount > 1
       ? `Generating ${activeCount} batches…`
@@ -610,78 +618,82 @@ function OverviewBar({
 
       <div className="ml-auto" />
 
-      {/* View controls — moved up into this row (Batches / All / List + tile size). */}
+      {/* Organizing tools — view | tile size | sort. Active option lit blue, groups
+          separated by dividers. */}
       <div className={seg}>
         {viewModes.map((m) => (
-          <button key={m.v} type="button" onClick={() => onViewMode(m.v)} className={segBtn(viewMode === m.v)}>
+          <button
+            key={m.v}
+            type="button"
+            onClick={() => onViewMode(m.v)}
+            title={`${m.label} view`}
+            className={segBtn(viewMode === m.v)}
+          >
             {m.icon}
             <span className="hidden sm:inline">{m.label}</span>
           </button>
         ))}
       </div>
+
       {viewMode !== 'list' && (
-        <div className={seg}>
-          {(['small', 'large'] as const).map((s) => (
-            <button key={s} type="button" onClick={() => onTileSize(s)} className={segBtn(tileSize === s)}>
-              {s}
-            </button>
-          ))}
-        </div>
+        <>
+          <Divider />
+          <div className={seg}>
+            {tileSizes.map((s) => (
+              <button
+                key={s.v}
+                type="button"
+                onClick={() => onTileSize(s.v)}
+                title={`${s.label} tiles`}
+                className={segBtn(tileSize === s.v)}
+              >
+                {s.icon}
+                <span className="hidden sm:inline">{s.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       {onMyBannersToggle && (
-        <button
-          type="button"
-          role="switch"
-          aria-checked={myBannersOnly}
-          onClick={onMyBannersToggle}
-          title={
-            myBannersOnly
-              ? 'Showing only your banners — toggle to show everyone’s'
-              : 'Showing everyone’s banners — toggle to show only yours'
-          }
-          className="flex shrink-0 items-center gap-2 text-sm font-medium"
-        >
-          <span className={cn('transition-colors', myBannersOnly ? 'text-muted-foreground' : 'text-foreground')}>
-            Everyone
-          </span>
-          <span
-            className={cn(
-              'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-              myBannersOnly ? 'bg-primary' : 'border border-border bg-secondary',
-            )}
-          >
-            <span
-              className={cn(
-                'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-                myBannersOnly ? 'translate-x-[18px]' : 'translate-x-0.5',
-              )}
-            />
-          </span>
-          <span className={cn('transition-colors', myBannersOnly ? 'text-foreground' : 'text-muted-foreground')}>
-            My banners
-          </span>
-        </button>
+        <>
+          <Divider />
+          <div className={seg}>
+            <button
+              type="button"
+              onClick={() => myBannersOnly && onMyBannersToggle()}
+              title="Show everyone’s banners"
+              className={segBtn(!myBannersOnly)}
+            >
+              <Users className="h-4 w-4" />
+              <span className="hidden sm:inline">Everyone</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => !myBannersOnly && onMyBannersToggle()}
+              title="Show only your banners"
+              className={segBtn(!!myBannersOnly)}
+            >
+              <User className="h-4 w-4" />
+              <span className="hidden sm:inline">Mine</span>
+            </button>
+          </div>
+        </>
       )}
 
       {myActiveCount > 1 && onCancel && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="shrink-0 gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
-          onClick={onCancel}
-          title="Stop all of your running generations"
-        >
-          <X className="h-4 w-4" /> Stop all
-        </Button>
-      )}
-
-      {okRunIds.length > 0 && (
-        <Button asChild size="sm" variant="outline" className="shrink-0">
-          <a href={zipAllUrl(okRunIds)}>
-            <Download className="h-4 w-4" /> Download all
-          </a>
-        </Button>
+        <>
+          <Divider />
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
+            onClick={onCancel}
+            title="Stop all of your running generations"
+          >
+            <X className="h-4 w-4" /> Stop all
+          </Button>
+        </>
       )}
     </div>
   )
@@ -899,16 +911,9 @@ function ConceptGroupBlock({
         )}
         <h3 className="font-display text-[15px] font-bold tracking-tight">Version {g.number}</h3>
         {g.title && <span className="text-sm text-muted-foreground">{g.title}</span>}
-        {g.createdAt && (
-          <span
-            className="text-xs text-muted-foreground/80"
-            title={`Requested ${new Date(g.createdAt).toLocaleString()}`}
-          >
-            · requested {fmtRequested(g.createdAt)}
-          </span>
-        )}
-        {/* Author intentionally omitted here — it's already shown on the
-            Generation header, so repeating it per version is redundant. */}
+        {/* Requested time + author intentionally omitted here — both are already
+            shown once on the Generation header, so repeating them per version is
+            redundant. */}
         {g.approvalStatus && (
           <span
             className={cn(
@@ -962,16 +967,6 @@ function ConceptGroupBlock({
               className="h-7 gap-1 border-destructive/40 px-2.5 text-destructive hover:bg-destructive/10"
             >
               <X className="h-3.5 w-3.5" /> Stop
-            </Button>
-          )}
-          {g.ok > 0 && (
-            <Button asChild size="sm" variant="outline" className="h-7 px-2.5">
-              <a
-                href={versionZipUrl(g.runId, g.concept, g.number, g.title)}
-                title={`Download all sizes of v${g.number} as a zip`}
-              >
-                <Download className="h-3.5 w-3.5" /> v{g.number}
-              </a>
             </Button>
           )}
         </span>

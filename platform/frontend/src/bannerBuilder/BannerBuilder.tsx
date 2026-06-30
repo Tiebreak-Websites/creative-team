@@ -612,6 +612,9 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
 
   const canRun = sizes.size > 0 && cards.length > 0 && cards.every((c) => c.title.trim().length > 0)
   const selectedSizes = Array.from(sizes)
+  // The MVP master is always on, so don't clutter the console with it — only show
+  // the extra sizes the user added (which are the removable ones).
+  const extraSizes = selectedSizes.filter((s) => s !== meta.master_size)
   const selectedBrand = brands.find((b) => b.id === brandId)
 
   // Stop every still-running batch. We ask the backend to cancel AND optimistically
@@ -924,33 +927,27 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
             </div>
           )}
 
-          {/* Selected sizes — surfaced in the central console */}
-          {selectedSizes.length > 0 && (
+          {/* Selected sizes — surfaced in the central console (MVP master is
+              always on, so it's omitted here; only the added sizes show). */}
+          {extraSizes.length > 0 && (
             <div className="flex max-w-2xl flex-wrap items-center justify-center gap-2">
-              {selectedSizes.map((s) => {
-                const isMaster = s === meta.master_size
-                return (
-                  <span
-                    key={s}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary py-1 pl-3.5 pr-2 font-display text-[13px] font-semibold text-primary-foreground shadow-sm"
+              {extraSizes.map((s) => (
+                <span
+                  key={s}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary py-1 pl-3.5 pr-2 font-display text-[13px] font-semibold text-primary-foreground shadow-sm"
+                >
+                  {s}
+                  <button
+                    type="button"
+                    onClick={() => toggleSize(s)}
+                    title="Remove size"
+                    aria-label={`Remove size ${s}`}
+                    className="text-primary-foreground/80 hover:text-primary-foreground"
                   >
-                    {s}
-                    {isMaster ? (
-                      <span className="rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[9px] uppercase text-primary-foreground">MVP</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => toggleSize(s)}
-                        title="Remove size"
-                        aria-label={`Remove size ${s}`}
-                        className="text-primary-foreground/80 hover:text-primary-foreground"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </span>
-                )
-              })}
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ))}
             </div>
           )}
 
