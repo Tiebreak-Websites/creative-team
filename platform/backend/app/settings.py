@@ -63,6 +63,18 @@ class Settings:
     # (gpt-image-2 rate-limit headroom — mirrors run.py's default concurrency).
     OPENAI_CONCURRENCY = int(_env("PLATFORM_OPENAI_CONCURRENCY", "6"))
 
+    # Per-image read timeout (seconds) + retry count. High-quality gpt-image-2
+    # renders (especially recompose/edit) routinely run past the old 180s default,
+    # surfacing as "gen_http_error: read operation timed out". 300s + a couple of
+    # retries covers them; both are env-overridable.
+    OPENAI_IMAGE_TIMEOUT = int(_env("PLATFORM_OPENAI_TIMEOUT", "300"))
+    OPENAI_IMAGE_MAX_RETRIES = int(_env("PLATFORM_OPENAI_MAX_RETRIES", "3"))
+
+    # GPT-5.5 creative-director (the "thinking" pass) read timeout (seconds). An
+    # "xhigh"/Extended reasoning pass can run minutes; the old 150s default made it
+    # silently fall back to the template brief. 300s lets High finish; raise for xhigh.
+    DIRECTOR_TIMEOUT = int(_env("PLATFORM_DIRECTOR_TIMEOUT", "300"))
+
     # --- AI-assist (optional) ---------------------------------------------
     # Anthropic model for the creative-brief assist. Confirm the current id via
     # the /claude-api skill before trusting; overridable by env.

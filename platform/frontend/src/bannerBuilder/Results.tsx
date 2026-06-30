@@ -349,6 +349,16 @@ export function OutputPane({
       return next
     })
   }
+  // Select (or clear) every banner in one version at once — the "select the whole row".
+  function toggleVersion(runId: string, labels: string[]) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      const keys = labels.map((l) => `${runId}|${l}`)
+      const allSel = keys.length > 0 && keys.every((k) => next.has(k))
+      keys.forEach((k) => (allSel ? next.delete(k) : next.add(k)))
+      return next
+    })
+  }
   const selectedItems = [...selected].map((k) => {
     const i = k.indexOf('|')
     return { runId: k.slice(0, i), label: k.slice(i + 1) }
@@ -442,6 +452,7 @@ export function OutputPane({
               onCancelRun={onCancelRun}
               selected={selected}
               onToggleSelect={toggleSelect}
+              onToggleVersion={toggleVersion}
               owner={canModify(gen.createdBy)}
               canCancel={canModify(gen.createdBy)}
               onApprove={onApprove}
@@ -686,6 +697,7 @@ function GenerationSection({
   onCancelRun,
   selected,
   onToggleSelect,
+  onToggleVersion,
   owner,
   canCancel,
   onApprove,
@@ -700,6 +712,7 @@ function GenerationSection({
   onCancelRun?: (runId: string) => void
   selected: Set<string>
   onToggleSelect: (runId: string, label: string) => void
+  onToggleVersion?: (runId: string, labels: string[]) => void
   owner?: boolean
   canCancel?: boolean
   onApprove?: (runId: string, concept: string) => void
@@ -754,6 +767,7 @@ function GenerationSection({
               onCancelRun={onCancelRun}
               selected={selected}
               onToggleSelect={onToggleSelect}
+              onToggleVersion={onToggleVersion}
               owner={owner}
               canCancel={canCancel}
               onApprove={onApprove}
@@ -834,6 +848,7 @@ function ConceptGroupBlock({
   onCancelRun,
   selected,
   onToggleSelect,
+  onToggleVersion,
   owner,
   canCancel,
   onApprove,
@@ -846,6 +861,7 @@ function ConceptGroupBlock({
   onCancelRun?: (runId: string) => void
   selected: Set<string>
   onToggleSelect: (runId: string, label: string) => void
+  onToggleVersion?: (runId: string, labels: string[]) => void
   owner?: boolean
   canCancel?: boolean
   onApprove?: (runId: string, concept: string) => void
@@ -855,9 +871,32 @@ function ConceptGroupBlock({
   // Bind this group's run id so view + delete are scoped to the right run.
   const onDeleteLabel = onDelete ? (label: string) => onDelete(g.runId, label) : undefined
   const onViewLabel = (label: string) => onView(g.runId, label)
+  // Whole-version selection: every banner in this version selected together.
+  const labels = g.banners.map((b) => b.label)
+  const allSelected = labels.length > 0 && labels.every((l) => selected.has(`${g.runId}|${l}`))
+  const someSelected = !allSelected && labels.some((l) => selected.has(`${g.runId}|${l}`))
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        {onToggleVersion && (
+          <button
+            type="button"
+            onClick={() => onToggleVersion(g.runId, labels)}
+            title={allSelected ? 'Deselect this whole version' : 'Select this whole version'}
+            aria-label={`Select all of version ${g.number}`}
+            aria-pressed={allSelected}
+            className={cn(
+              'inline-flex h-5 w-5 shrink-0 translate-y-0.5 items-center justify-center rounded-md border transition-colors',
+              allSelected
+                ? 'border-primary bg-primary text-primary-foreground'
+                : someSelected
+                  ? 'border-primary bg-primary/20 text-primary'
+                  : 'border-border bg-secondary text-transparent hover:border-primary/50',
+            )}
+          >
+            <Check className="h-3.5 w-3.5" />
+          </button>
+        )}
         <h3 className="font-display text-[15px] font-bold tracking-tight">Version {g.number}</h3>
         {g.title && <span className="text-sm text-muted-foreground">{g.title}</span>}
         {g.createdAt && (
@@ -868,11 +907,8 @@ function ConceptGroupBlock({
             · requested {fmtRequested(g.createdAt)}
           </span>
         )}
-        {g.createdBy && (
-          <span className="text-xs text-muted-foreground/80" title={g.createdBy}>
-            · by {formatUserName(g.createdBy)}
-          </span>
-        )}
+        {/* Author intentionally omitted here — it's already shown on the
+            Generation header, so repeating it per version is redundant. */}
         {g.approvalStatus && (
           <span
             className={cn(

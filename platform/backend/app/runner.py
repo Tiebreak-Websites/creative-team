@@ -660,6 +660,8 @@ def _gen_one_frame(run: Run, frame: dict):
                 api_key=run.api_key, prompt=prompt, mode=mode,
                 openai_size=frame["openai_size"], model=run.model, quality=run.quality,
                 master_png_path=master_png, on_attempt=_on_attempt,
+                timeout=settings.OPENAI_IMAGE_TIMEOUT,
+                max_retries=settings.OPENAI_IMAGE_MAX_RETRIES,
             )
         except engine.GenError as e:
             fr.status, fr.error = e.status, e.message
@@ -916,7 +918,7 @@ def _direct_run(run: Run):
                 style=run.style, locale=base.get("locale", "en"),
                 sizes=run.sizes, model=cfg["model"], effort=effort,
                 references=run.references, intent=run.intent,
-                concept_angle=angle,
+                concept_angle=angle, timeout=settings.DIRECTOR_TIMEOUT,
             )
         except creative_director.DirectorError as e:
             return ck, None, str(e)

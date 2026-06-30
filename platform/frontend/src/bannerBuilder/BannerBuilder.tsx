@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Bookmark,
   ChevronDown,
   ChevronUp,
   ImagePlus,
+  Layers,
   Loader2,
   Paintbrush,
   Plus,
@@ -12,7 +12,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Tag,
-  Trash2,
   X,
 } from 'lucide-react'
 import type { Meta, RunData } from '../types'
@@ -22,8 +21,6 @@ import { createRun, listRuns } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
 import { CopyDetectModal } from './CopyDetectModal'
-import { listPresets, createPreset, deletePreset, type Preset, type PresetData } from './presetsApi'
-import { Modal } from '@/components/ui/modal'
 import {
   ArtDirectionModal,
   artActiveCount,
@@ -223,6 +220,14 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
     { value: 'high', label: 'High' },
     { value: 'xhigh', label: 'Extended' },
   ]
+  // Rough, non-binding time samples for the GPT-5.5 thinking pass per effort — just
+  // to set expectations (the actual time varies with the offer + load).
+  const EFFORT_ETA: Record<string, string> = {
+    low: '~20s',
+    medium: '~45s',
+    high: '~1–2 min',
+    xhigh: '~3–5 min',
+  }
   const [brand] = useState(loadBrand)
   const [sizes, setSizes] = useState<Set<string>>(new Set([meta.master_size]))
   const [model, setModel] = useState(
@@ -303,13 +308,6 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
 
   // ---- Concept cards ----
   const [cards, setCards] = useState<ConceptCard[]>([blankCard()])
-
-  // ---- Saved campaign presets (shared team library) ----
-  const [presetsOpen, setPresetsOpen] = useState(false)
-  const [presets, setPresets] = useState<Preset[]>([])
-  const [presetName, setPresetName] = useState('')
-  const [presetBusy, setPresetBusy] = useState(false)
-  const [presetError, setPresetError] = useState<string | null>(null)
 
   const [formError, setFormError] = useState<string | null>(null)
   const [formErrors, setFormErrors] = useState<string[]>([])
@@ -521,6 +519,18 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
     })
   }
 
+  // One-click size bundles. Standard = the square MVP + the two most-used social
+  // formats; applying a bundle replaces the current size selection.
+  const STANDARD_BUNDLE = ['1200x1200', '1200x628', '960x1200']
+  const standardBundleSizes = STANDARD_BUNDLE.filter((s) => meta.sizes.includes(s))
+  const standardBundleActive =
+    standardBundleSizes.length > 0 &&
+    sizes.size === standardBundleSizes.length &&
+    standardBundleSizes.every((s) => sizes.has(s))
+  function applyStandardBundle() {
+    setSizes(new Set(standardBundleSizes.length ? standardBundleSizes : [meta.master_size]))
+  }
+
   function toggleGroup(label: string) {
     setOpenGroups((prev) => {
       const next = new Set(prev)
@@ -701,73 +711,6 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
     setRefs((prev) => prev.filter((r) => r.id !== id))
   }
 
-  // ---- Presets: capture the whole campaign setup and replay it later ----
-  useEffect(() => {
-    void listPresets().then(setPresets).catch(() => {})
-  }, [])
-
-  function buildPresetData(): PresetData {
-    return {
-      sizes: Array.from(sizes),
-      style,
-      art,
-      brandId: brandId || null,
-      logoCorner,
-      model,
-      quality,
-      effort,
-      locale,
-      concepts: cards.map((c) => ({ key: c.key, title: c.title, subtitle: c.subtitle, button: c.button })),
-    }
-  }
-
-  function applyPreset(data: PresetData) {
-    if (data.sizes) setSizes(new Set(data.sizes))
-    if (typeof data.style === 'string') setStyle(data.style)
-    if (data.art) setArt({ ...DEFAULT_ART, ...data.art })
-    if ('brandId' in data) setBrandId(data.brandId ?? '')
-    if ('logoCorner' in data) setLogoCorner(data.logoCorner ?? null)
-    if (data.model) setModel(data.model)
-    if (data.quality) setQuality(data.quality)
-    if (data.effort) setEffort(data.effort)
-    if (data.locale) {
-      setLocale(data.locale)
-      setLocaleAuto(false)
-    }
-    if (data.concepts && data.concepts.length) {
-      setCards(
-        data.concepts.map((c) => ({
-          ...blankCard(),
-          title: c.title || '',
-          subtitle: c.subtitle || '',
-          button: c.button || '',
-        })),
-      )
-    }
-    setPresetsOpen(false)
-  }
-
-  async function savePreset() {
-    const name = presetName.trim()
-    if (!name) return
-    setPresetBusy(true)
-    setPresetError(null)
-    try {
-      const p = await createPreset(name, buildPresetData())
-      setPresets((prev) => [...prev, p])
-      setPresetName('')
-    } catch (e) {
-      setPresetError(e instanceof Error ? e.message : 'Could not save the preset.')
-    } finally {
-      setPresetBusy(false)
-    }
-  }
-
-  function removePreset(id: string) {
-    setPresets((prev) => prev.filter((p) => p.id !== id))
-    void deletePreset(id).catch(() => {})
-  }
-
   async function startRun() {
     if (submitting) return // guard against a double-click starting two runs
     setFormError(null)
@@ -818,6 +761,32 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
       <aside className="order-1 flex w-full shrink-0 flex-col border-b border-border bg-card animate-fade-in lg:order-none lg:w-[280px] lg:border-b-0 xl:w-[320px]">
         <div className="space-y-3 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Sizes</h2>
+
+          {/* Bundles — one-click size sets, kept in their own divided section. */}
+          {standardBundleSizes.length > 0 && (
+            <div className="space-y-1.5 rounded-lg border border-border bg-secondary/40 p-2.5">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Bundles
+              </div>
+              <button
+                type="button"
+                onClick={applyStandardBundle}
+                title="Select the standard 3 sizes: 1200×1200 (MVP), 1200×628 and 960×1200"
+                aria-pressed={standardBundleActive}
+                className={cn(
+                  'flex w-full flex-col items-start gap-0.5 rounded-md border px-3 py-2 text-left transition-colors',
+                  standardBundleActive
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-border bg-card hover:border-primary/50',
+                )}
+              >
+                <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+                  <Layers className="h-3.5 w-3.5" /> Standard bundle
+                </span>
+                <span className="text-[10px] text-muted-foreground">1200×1200 · 1200×628 · 960×1200</span>
+              </button>
+            </div>
+          )}
 
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -1152,12 +1121,22 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
                       </Select>
                     </Field>
                   </div>
-                  <Field label="Thinking" hint="GPT-5.5">
+                  <Field
+                    label="Thinking"
+                    hint={`GPT-5.5${EFFORT_ETA[effort] ? ` · ${EFFORT_ETA[effort]}` : ''}`}
+                  >
                     <Select value={effort} onValueChange={setEffort}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {efforts.map((ef) => (
-                          <SelectItem key={ef.value} value={ef.value}>{ef.label}</SelectItem>
+                          <SelectItem key={ef.value} value={ef.value}>
+                            <span className="flex w-full items-center justify-between gap-4">
+                              {ef.label}
+                              {EFFORT_ETA[ef.value] && (
+                                <span className="text-xs text-muted-foreground">{EFFORT_ETA[ef.value]}</span>
+                              )}
+                            </span>
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -1428,26 +1407,15 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
         <div className="space-y-4 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <div className="flex items-center justify-between gap-2">
             <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Versions</h2>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setPresetsOpen(true)}
-                title="Save this whole setup as a preset, or load a saved one"
-                aria-label="Campaign presets"
-                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-border bg-secondary px-2 text-[11px] font-semibold text-foreground transition-colors hover:border-foreground/25"
-              >
-                <Bookmark className="h-3.5 w-3.5" /> Presets
-              </button>
-              <button
-                type="button"
-                onClick={() => setCopyDetectOpen(true)}
-                title="Detect copy — paste a block of text and split it into versions"
-                aria-label="Detect copy from pasted text"
-                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
-              >
-                <ScanText className="h-3.5 w-3.5" /> Text Detect
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setCopyDetectOpen(true)}
+              title="Detect copy — paste a block of text and split it into versions"
+              aria-label="Detect copy from pasted text"
+              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
+            >
+              <ScanText className="h-3.5 w-3.5" /> Text Detect
+            </button>
           </div>
 
           {cards.map((c, i) => (
@@ -1527,79 +1495,6 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
         onClose={() => setCopyDetectOpen(false)}
         onDetected={applyDetected}
       />
-
-      <Modal
-        open={presetsOpen}
-        onClose={() => setPresetsOpen(false)}
-        title="Campaign presets"
-        description="Save this whole setup — sizes, art direction, brand, model & language — and reuse it in one click. Presets are shared with the team."
-        className="max-w-lg"
-      >
-        <div className="space-y-4">
-          {/* Save current */}
-          <div className="rounded-xl border border-border bg-secondary/40 p-3">
-            <label className="text-xs font-medium text-muted-foreground">Save the current setup as a preset</label>
-            <div className="mt-1.5 flex items-center gap-2">
-              <Input
-                value={presetName}
-                onChange={(e) => setPresetName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    void savePreset()
-                  }
-                }}
-                placeholder="e.g. Q3 Launch — India"
-                className="h-9"
-              />
-              <Button size="sm" onClick={() => void savePreset()} disabled={!presetName.trim() || presetBusy}>
-                {presetBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bookmark className="h-4 w-4" />} Save
-              </Button>
-            </div>
-            {presetError && <p className="mt-1.5 text-xs text-destructive">{presetError}</p>}
-          </div>
-
-          {/* Load existing */}
-          <div>
-            <div className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Saved presets
-            </div>
-            {presets.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border bg-secondary/40 px-4 py-6 text-center text-sm text-muted-foreground">
-                No presets yet — save your first above.
-              </p>
-            ) : (
-              <ul className="max-h-72 space-y-1.5 overflow-y-auto">
-                {presets.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-foreground">{p.name}</div>
-                      {p.created_by && (
-                        <div className="truncate text-[11px] text-muted-foreground">by {p.created_by}</div>
-                      )}
-                    </div>
-                    <Button size="sm" variant="outline" onClick={() => applyPreset(p.data)}>
-                      Load
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={() => removePreset(p.id)}
-                      title="Delete preset"
-                      aria-label={`Delete preset ${p.name}`}
-                      className="text-muted-foreground transition-colors hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      </Modal>
 
       {/* Bulk-paste sizes feedback — auto-fades after 5s, closeable */}
       {sizeNotice && (

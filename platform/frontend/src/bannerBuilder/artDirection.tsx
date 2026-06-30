@@ -6,17 +6,20 @@
 // The CTA colour is intentionally NOT a control: the director always picks a
 // high-contrast button colour itself. Everything here is optional — leave a
 // control blank and the AI decides.
-import { useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useState, type ComponentType, type ReactNode } from 'react'
 import {
   Aperture,
+  Bookmark,
   Check,
   Globe,
   LayoutGrid,
+  Loader2,
   Palette,
   Shirt,
   Shuffle,
   Sparkles,
   Sun,
+  Trash2,
   Type,
   Users,
   Wand2,
@@ -24,7 +27,9 @@ import {
 } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { ColorPicker } from '@/components/ColorPicker'
+import { createPreset, deletePreset, listPresets, type Preset } from './presetsApi'
 import { cn } from '@/lib/utils'
 
 export type Gender = 'either' | 'woman' | 'man' | 'none'
@@ -425,7 +430,7 @@ function randomArt(): Partial<ArtDirection> {
 // --------------------------------------------------------------------------
 // Tabbed modal UI
 // --------------------------------------------------------------------------
-type TabKey = 'look' | 'people' | 'colour' | 'layout' | 'finish'
+type TabKey = 'look' | 'people' | 'colour' | 'layout' | 'finish' | 'presets'
 
 const TABS: { key: TabKey; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { key: 'look', label: 'Look', icon: Wand2 },
@@ -433,6 +438,7 @@ const TABS: { key: TabKey; label: string; icon: ComponentType<{ className?: stri
   { key: 'colour', label: 'Colour', icon: Palette },
   { key: 'layout', label: 'Layout', icon: LayoutGrid },
   { key: 'finish', label: 'Finish', icon: Aperture },
+  { key: 'presets', label: 'Presets', icon: Bookmark },
 ]
 
 function tabCount(a: ArtDirection, t: TabKey): number {
@@ -448,6 +454,8 @@ function tabCount(a: ArtDirection, t: TabKey): number {
       return set(a.alignment, a.density, a.focal, a.framing)
     case 'finish':
       return set(a.dof, a.texture, a.finish, a.glow, a.market, a.occasion)
+    case 'presets':
+      return 0
   }
 }
 
@@ -471,6 +479,37 @@ export function ArtDirectionModal({
   const noPeople = art.gender === 'none'
   const pickOne = (field: keyof ArtDirection, key: string) =>
     onChange({ [field]: (art[field] as string | null) === key ? null : key } as Partial<ArtDirection>)
+
+  // ---- Presets: save / load ONLY the Art-Director settings (shared library) ----
+  const [presets, setPresets] = useState<Preset[]>([])
+  const [presetName, setPresetName] = useState('')
+  const [presetBusy, setPresetBusy] = useState(false)
+  const [presetError, setPresetError] = useState<string | null>(null)
+  useEffect(() => {
+    if (open) listPresets().then(setPresets).catch(() => {})
+  }, [open])
+  async function savePreset() {
+    const name = presetName.trim()
+    if (!name) return
+    setPresetBusy(true)
+    setPresetError(null)
+    try {
+      const p = await createPreset(name, { art })
+      setPresets((prev) => [...prev, p])
+      setPresetName('')
+    } catch (e) {
+      setPresetError(e instanceof Error ? e.message : 'Could not save the preset.')
+    } finally {
+      setPresetBusy(false)
+    }
+  }
+  function loadPreset(p: Preset) {
+    if (p.data?.art) onChange({ ...DEFAULT_ART, ...p.data.art })
+  }
+  function removePreset(id: string) {
+    setPresets((prev) => prev.filter((p) => p.id !== id))
+    void deletePreset(id).catch(() => {})
+  }
 
   return (
     <Modal
@@ -630,15 +669,96 @@ export function ArtDirectionModal({
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <ChipCard icon={Sparkles} title="Occasion" opts={OCCASIONS} value={art.occasion} onPick={(k) => pickOne('occasion', k)} />
-                <ChipCard
+                <SectionCard
                   icon={Globe}
                   title="Localise visuals"
-                  hint="Adapt people & setting to a market — copy stays as written"
-                  opts={MARKETS}
-                  value={art.market}
-                  onPick={(k) => pickOne('market', k)}
-                />
+                  hint="Adapt people, styling & setting to a market"
+                  selected={
+                    art.market && art.market !== 'global'
+                      ? MARKETS.find((m) => m.key === art.market)?.label
+                      : null
+                  }
+                >
+                  <div className="mb-2.5 flex items-start gap-1.5 rounded-lg border border-border bg-secondary/50 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+                    <Globe className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      On-image copy stays in{' '}
+                      <span className="font-medium text-foreground">{languageLabel}</span> — auto-detected from
+                      your text. Pick a market to localise the people &amp; scene only.
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {MARKETS.map((m) => (
+                      <Chip key={m.key} active={art.market === m.key} onClick={() => pickOne('market', m.key)}>
+                        {m.label}
+                      </Chip>
+                    ))}
+                  </div>
+                </SectionCard>
               </div>
+            </div>
+          )}
+
+          {tab === 'presets' && (
+            <div className="space-y-4">
+              <SectionCard
+                icon={Bookmark}
+                title="Save this art direction"
+                hint="Saves ONLY the Art-Director settings — reuse them on any campaign"
+              >
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={presetName}
+                    onChange={(e) => setPresetName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        void savePreset()
+                      }
+                    }}
+                    placeholder="e.g. Premium fintech — India"
+                    className="h-9"
+                  />
+                  <Button size="sm" onClick={() => void savePreset()} disabled={!presetName.trim() || presetBusy}>
+                    {presetBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bookmark className="h-4 w-4" />} Save
+                  </Button>
+                </div>
+                {presetError && <p className="mt-1.5 text-xs text-destructive">{presetError}</p>}
+              </SectionCard>
+
+              <SectionCard icon={Bookmark} title="Saved presets" hint="Shared with the team">
+                {presets.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No presets yet — save your first above.</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {presets.map((p) => (
+                      <li
+                        key={p.id}
+                        className="flex items-center gap-2 rounded-lg border border-border bg-background/50 px-3 py-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-foreground">{p.name}</div>
+                          {p.created_by && (
+                            <div className="truncate text-[11px] text-muted-foreground">by {p.created_by}</div>
+                          )}
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => loadPreset(p)}>
+                          Load
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => removePreset(p.id)}
+                          title="Delete preset"
+                          aria-label={`Delete preset ${p.name}`}
+                          className="text-muted-foreground transition-colors hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </SectionCard>
             </div>
           )}
         </div>
