@@ -1456,12 +1456,14 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
                 {(() => {
                   const deck = Math.min(selected.size, 3)
                   const mid = (deck - 1) / 2
-                  const shades = ['hsl(217 90% 46%)', 'hsl(217 90% 57%)', 'hsl(217 92% 68%)']
-                  const SPREAD = 10 // small horizontal gap — cards overlap as a tight stack
+                  // Stroke = the blue shade; fill = a darker blue of the same hue.
+                  const strokes = ['hsl(217 90% 52%)', 'hsl(217 90% 62%)', 'hsl(217 92% 70%)']
+                  const fills = ['hsl(217 60% 15%)', 'hsl(217 58% 19%)', 'hsl(217 56% 23%)']
+                  const SPREAD = 8 // small horizontal gap — cards overlap as a tight stack
                   return (
                     <div
-                      className="relative h-12 shrink-0 transition-all duration-300"
-                      style={{ width: `${34 + (deck - 1) * SPREAD + 10}px` }}
+                      className="relative h-9 shrink-0 transition-all duration-300"
+                      style={{ width: `${26 + (deck - 1) * SPREAD + 8}px` }}
                     >
                       {Array.from({ length: deck }).map((_, i) => (
                         <span
@@ -1469,12 +1471,13 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
                           // fade-in (opacity only) — NOT pop-in, whose keyframe sets
                           // `transform` with fill-mode:both and would clobber the
                           // fan transform below, stacking the cards.
-                          className="absolute bottom-0 left-1 h-10 w-8 animate-fade-in rounded-md border-2 border-card shadow-md transition-transform duration-300"
+                          className="absolute bottom-0 left-1 h-8 w-6 animate-fade-in rounded-md border shadow-md transition-transform duration-300"
                           style={{
                             transformOrigin: 'bottom center',
                             transform: `translateX(${i * SPREAD}px) translateY(${-Math.abs(i - mid) * 2}px) rotate(${(i - mid) * 10}deg)`,
                             zIndex: i,
-                            backgroundColor: shades[i] ?? shades[shades.length - 1],
+                            borderColor: strokes[i] ?? strokes[strokes.length - 1],
+                            backgroundColor: fills[i] ?? fills[fills.length - 1],
                           }}
                         />
                       ))}
