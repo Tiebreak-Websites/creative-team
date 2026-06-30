@@ -19,7 +19,7 @@ import {
   X,
 } from 'lucide-react'
 import type { Banner, RunData } from '../types'
-import { assetUrl, selectionZipUrl, versionZipUrl, zipAllUrl } from '../api'
+import { assetUrl, versionZipUrl, zipAllUrl } from '../api'
 import { BannerLibrary, type LibraryItem } from './BannerLibrary'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -170,6 +170,9 @@ export function OutputPane({
   onApprove,
   onReject,
   onRegenerate,
+  selected,
+  onToggleSelect,
+  onToggleVersion,
 }: {
   runs: RunData[]
   onHelp?: () => void
@@ -183,6 +186,11 @@ export function OutputPane({
   onApprove?: (runId: string, concept: string) => void
   onReject?: (runId: string, concept: string) => void
   onRegenerate?: (runId: string, label: string) => void
+  // Selection is owned by the parent (BannerBuilder) so the central console can
+  // swap to a selection console; the gallery just renders the checkboxes.
+  selected: Set<string>
+  onToggleSelect: (runId: string, label: string) => void
+  onToggleVersion: (runId: string, labels: string[]) => void
 }) {
   const [libOpen, setLibOpen] = useState(false)
   const [libIndex, setLibIndex] = useState(0)
@@ -191,7 +199,6 @@ export function OutputPane({
   const [libApprove, setLibApprove] = useState<{ approve: () => void; reject: () => void } | null>(null)
   const [libRegen, setLibRegen] = useState<((runId: string, label: string) => void) | null>(null)
   const [libCanDelete, setLibCanDelete] = useState(true)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
   // View prefs (persisted): batches (grouped) | all (flat grid) | list; tile size; collapse.
   const [viewMode, setViewMode] = useState<'grouped' | 'flat' | 'list'>(() => {
     try {
@@ -342,34 +349,8 @@ export function OutputPane({
     setLibOpen(true)
   }
 
-  // Multi-select: keys are `${runId}|${label}` (runId/label never contain "|").
-  function toggleSelect(runId: string, label: string) {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      const k = `${runId}|${label}`
-      if (next.has(k)) next.delete(k)
-      else next.add(k)
-      return next
-    })
-  }
-  // Select (or clear) every banner in one version at once — the "select the whole row".
-  function toggleVersion(runId: string, labels: string[]) {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      const keys = labels.map((l) => `${runId}|${l}`)
-      const allSel = keys.length > 0 && keys.every((k) => next.has(k))
-      keys.forEach((k) => (allSel ? next.delete(k) : next.add(k)))
-      return next
-    })
-  }
-  const selectedItems = [...selected].map((k) => {
-    const i = k.indexOf('|')
-    return { runId: k.slice(0, i), label: k.slice(i + 1) }
-  })
-  function deleteSelected() {
-    selectedItems.forEach((it) => onDeleteBanner?.(it.runId, it.label))
-    setSelected(new Set())
-  }
+  // Selection (toggleSelect / toggleVersion) is owned by the parent; the selection
+  // actions live in the central selection console, not a top bar here.
 
   return (
     <div className="flex min-h-full flex-col animate-fade-in">
@@ -386,36 +367,6 @@ export function OutputPane({
           tileSize={tileSize}
           onTileSize={setTileSize}
         />
-        {selected.size > 0 && (
-          <div className="flex animate-pop-in items-center gap-3 border-b border-primary/30 bg-primary/10 px-5 py-2.5">
-            <span className="font-display text-sm font-semibold text-primary">
-              {selected.size} selected
-            </span>
-            <Button asChild size="sm" className="gap-1.5">
-              <a href={selectionZipUrl(selectedItems)} download>
-                <Download className="h-4 w-4" /> Download {selected.size}
-              </a>
-            </Button>
-            {onDeleteBanner && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
-                onClick={deleteSelected}
-              >
-                <Trash2 className="h-4 w-4" /> Delete
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="ml-auto gap-1.5"
-              onClick={() => setSelected(new Set())}
-            >
-              <X className="h-4 w-4" /> Clear
-            </Button>
-          </div>
-        )}
       </div>
       <div className="space-y-7 p-5">
         {runErrors.length > 0 && (
@@ -454,8 +405,8 @@ export function OutputPane({
               onDelete={canModify(gen.createdBy) ? onDeleteBanner : undefined}
               onCancelRun={onCancelRun}
               selected={selected}
-              onToggleSelect={toggleSelect}
-              onToggleVersion={toggleVersion}
+              onToggleSelect={onToggleSelect}
+              onToggleVersion={onToggleVersion}
               owner={canModify(gen.createdBy)}
               canCancel={canModify(gen.createdBy)}
               onApprove={onApprove}
@@ -473,7 +424,7 @@ export function OutputPane({
                   onView={(label) => openLibrary(g.runId, label)}
                   onDelete={onDeleteBanner && canModify(g.createdBy) ? (label) => onDeleteBanner(g.runId, label) : undefined}
                   selected={selected.has(`${g.runId}|${b.label}`)}
-                  onToggleSelect={() => toggleSelect(g.runId, b.label)}
+                  onToggleSelect={() => onToggleSelect(g.runId, b.label)}
                 />
               )),
             )}
@@ -490,7 +441,7 @@ export function OutputPane({
                   onView={() => openLibrary(g.runId, b.label)}
                   onDelete={onDeleteBanner && canModify(g.createdBy) ? () => onDeleteBanner(g.runId, b.label) : undefined}
                   selected={selected.has(`${g.runId}|${b.label}`)}
-                  onToggleSelect={() => toggleSelect(g.runId, b.label)}
+                  onToggleSelect={() => onToggleSelect(g.runId, b.label)}
                 />
               )),
             )}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ChevronDown,
   ChevronUp,
+  Download,
   ImagePlus,
   Layers,
   Loader2,
@@ -12,11 +13,12 @@ import {
   SlidersHorizontal,
   Sparkles,
   Tag,
+  Trash2,
   X,
 } from 'lucide-react'
 import type { Meta, RunData } from '../types'
 import { TERMINAL_STATUSES } from '../types'
-import { ApiError, approveConcepts, cancelRun, deleteBanner as deleteBannerApi, getRun, regenerateBanner, rejectConcepts, uploadReferences, type DetectedConcept } from '../api'
+import { ApiError, approveConcepts, cancelRun, deleteBanner as deleteBannerApi, getRun, regenerateBanner, rejectConcepts, selectionZipUrl, uploadReferences, type DetectedConcept } from '../api'
 import { createRun, listRuns } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
@@ -336,6 +338,48 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
         .map((r) => (r.run_id === runId ? { ...r, banners: r.banners.filter((b) => b.label !== label) } : r))
         .filter((r) => r.banners.length > 0 || !TERMINAL_STATUSES.includes(r.status)),
     )
+  }
+
+  // ---- Banner multi-select (keys are `${runId}|${label}`) ----
+  // Lifted here so the central console can swap to a selection console when ≥1
+  // banner is picked. The gallery (OutputPane) renders the per-card checkboxes.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  function toggleSelect(runId: string, label: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      const k = `${runId}|${label}`
+      if (next.has(k)) next.delete(k)
+      else next.add(k)
+      return next
+    })
+  }
+  function toggleVersion(runId: string, labels: string[]) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      const keys = labels.map((l) => `${runId}|${l}`)
+      const allSel = keys.length > 0 && keys.every((k) => next.has(k))
+      keys.forEach((k) => (allSel ? next.delete(k) : next.add(k)))
+      return next
+    })
+  }
+  const clearSelection = () => setSelected(new Set())
+  const selectedItems = [...selected].map((k) => {
+    const i = k.indexOf('|')
+    return { runId: k.slice(0, i), label: k.slice(i + 1) }
+  })
+  // Delete only the selected banners the user owns (creator, or admin for legacy
+  // runs) — matches the gallery's per-card gate + the backend, so an optimistic
+  // remove never fights a 403.
+  function deleteSelectedBanners() {
+    const canModify = (runId: string) => {
+      const r = runsRef.current.find((x) => x.run_id === runId)
+      const cb = (r?.created_by || '').toLowerCase()
+      return cb ? cb === myEmail : user?.role === 'admin'
+    }
+    selectedItems.forEach((it) => {
+      if (canModify(it.runId)) deleteBanner(it.runId, it.label)
+    })
+    clearSelection()
   }
   // "My banners" filter — default ON, persisted. Shows only the current user's
   // own generations so people work on their own output and don't touch others'.
@@ -890,6 +934,9 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
             onApprove={approveVersion}
             onReject={rejectVersion}
             onRegenerate={regenerateBannerFrame}
+            selected={selected}
+            onToggleSelect={toggleSelect}
+            onToggleVersion={toggleVersion}
           />
         </div>
 
@@ -904,6 +951,7 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
           />
         )}
 
+        {selected.size === 0 && (
         <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-3 lg:absolute lg:bottom-5 lg:pb-0">
           {(missing || formError || formErrors.length > 0) && (
             <div className="w-full max-w-md space-y-2">
@@ -1388,6 +1436,44 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
             </div>
           </div>
         </div>
+        )}
+
+        {/* Selection console — replaces the Generate console while banners are picked. */}
+        {selected.size > 0 && (
+          <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-3 lg:absolute lg:bottom-5 lg:pb-0">
+            <div className="relative flex w-full max-w-xl animate-fade-up flex-wrap items-center gap-3 rounded-2xl border border-primary/40 bg-card/95 p-3 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md">
+              <div className="flex items-center gap-2 pl-1">
+                <span
+                  key={selected.size}
+                  className="inline-flex h-8 min-w-[2rem] animate-pop-in items-center justify-center rounded-full bg-primary px-2 font-display text-sm font-bold tabular-nums text-primary-foreground"
+                >
+                  {selected.size}
+                </span>
+                <span className="text-sm font-medium text-foreground">
+                  banner{selected.size === 1 ? '' : 's'} selected
+                </span>
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <Button asChild size="lg" className="bg-emerald-600 text-white hover:bg-emerald-700">
+                  <a href={selectionZipUrl(selectedItems)} download>
+                    <Download className="h-4 w-4" /> Download ZIP
+                  </a>
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                  onClick={deleteSelectedBanners}
+                >
+                  <Trash2 className="h-4 w-4" /> Delete
+                </Button>
+                <Button size="lg" variant="ghost" onClick={clearSelection} title="Clear selection">
+                  <X className="h-4 w-4" /> Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <ArtDirectionModal
           open={artOpen}
