@@ -278,7 +278,13 @@ export function OutputPane({
   const metaByRun = new Map(
     runs.map((r) => [
       r.run_id,
-      { model: r.model, quality: r.quality, createdAt: r.created_at, artTags: r.art_tags ?? [] },
+      {
+        model: r.model,
+        quality: r.quality,
+        effort: r.director?.effort,
+        createdAt: r.created_at,
+        artTags: r.art_tags ?? [],
+      },
     ]),
   )
   // The viewable (ok) banners of ONE version → lightbox items. The lightbox is
@@ -310,6 +316,7 @@ export function OutputPane({
           genMs: b.gen_ms ?? null,
           model: metaByRun.get(g.runId)?.model,
           quality: metaByRun.get(g.runId)?.quality,
+          effort: metaByRun.get(g.runId)?.effort,
           createdAt: metaByRun.get(g.runId)?.createdAt,
           artTags: metaByRun.get(g.runId)?.artTags ?? [],
         }

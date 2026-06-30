@@ -975,10 +975,17 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
             </div>
           )}
 
-          {/* Selected sizes — surfaced in the central console (MVP master is
-              always on, so it's omitted here; only the added sizes show). */}
+          {/* Selected sizes — surfaced in the central console. The MVP master is
+              always on; we show it here ONLY once the user adds another size (so it
+              isn't permanently taking space when the master is the only size). */}
           {extraSizes.length > 0 && (
             <div className="flex max-w-2xl flex-wrap items-center justify-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary py-1 pl-3.5 pr-2 font-display text-[13px] font-semibold text-primary-foreground shadow-sm">
+                {meta.master_size}
+                <span className="rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[9px] uppercase text-primary-foreground">
+                  MVP
+                </span>
+              </span>
               {extraSizes.map((s) => (
                 <span
                   key={s}

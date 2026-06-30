@@ -9,6 +9,7 @@ import {
 import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
+  Brain,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -17,6 +18,7 @@ import {
   Copy,
   Cpu,
   Download,
+  Gauge,
   DownloadCloud,
   ExternalLink,
   RefreshCw,
@@ -47,6 +49,7 @@ export interface LibraryItem {
   genMs?: number | null // render time for this size
   model?: string // image model used
   quality?: string // low | medium | high
+  effort?: string // GPT-5.5 thinking effort used
   createdAt?: string // run creation timestamp (ISO)
   artTags?: { label: string; value: string }[] // Art-Director selections
 }
@@ -101,6 +104,7 @@ export function BannerLibrary({
 
   const stripRef = useRef<HTMLDivElement>(null)
   const [promptExpanded, setPromptExpanded] = useState(false)
+  const [adExpanded, setAdExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
 
   function copyPrompt() {
@@ -155,8 +159,6 @@ export function BannerLibrary({
 
   const atStart = safeIndex <= 0
   const atEnd = safeIndex >= count - 1
-  const adRows = current.style ? artDirectionRows(current.style) : []
-  const adParsed = adRows.length > 1 || (adRows[0] && adRows[0].label !== 'Art direction')
   const hasTags = !!(current.artTags && current.artTags.length)
 
   return createPortal(
@@ -198,6 +200,8 @@ export function BannerLibrary({
 
         <div className="flex flex-col gap-2 rounded-xl border border-border bg-background/50 p-3">
           <MetaRow icon={Cpu} label="Model" value={current.model} />
+          <MetaRow icon={Gauge} label="Quality" value={current.quality ? cap(current.quality) : undefined} />
+          {current.effort && <MetaRow icon={Brain} label="Thinking" value={cap(current.effort)} />}
           <MetaRow icon={Clock} label="Render time" value={fmtMs(current.genMs)} />
         </div>
 
@@ -210,6 +214,7 @@ export function BannerLibrary({
 
         <div>
           <SectionLabel>Art Director</SectionLabel>
+          {/* Quick-read tags of what the user picked. */}
           {hasTags ? (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {current.artTags!.map((t, i) => (
@@ -223,22 +228,33 @@ export function BannerLibrary({
                 </span>
               ))}
             </div>
-          ) : adParsed ? (
-            <dl className="mt-2 space-y-1.5">
-              {adRows.map((r, i) => (
-                <div key={i} className="flex flex-col gap-0.5">
-                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-primary">{r.label}</dt>
-                  <dd className="break-words text-xs leading-relaxed text-foreground/90">{r.text}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : (
+          ) : !current.style ? (
             <p className="mt-2 text-xs text-muted-foreground">Auto — the AI chose the direction.</p>
-          )}
-          {current.brief && (
-            <p className="mt-2 break-words border-t border-border/60 pt-2 text-xs leading-relaxed text-muted-foreground">
-              {current.brief}
-            </p>
+          ) : null}
+
+          {/* The full composed art-direction prompt — collapsed by default, expandable. */}
+          {current.style && (
+            <div className="mt-2.5 border-t border-border/60 pt-2.5">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Full art direction
+              </div>
+              <p
+                className={cn(
+                  'whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/80',
+                  !adExpanded && 'line-clamp-4',
+                )}
+              >
+                {current.style}
+              </p>
+              <button
+                type="button"
+                onClick={() => setAdExpanded((v) => !v)}
+                className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                {adExpanded ? 'See less' : 'See all'}
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', adExpanded && 'rotate-180')} />
+              </button>
+            </div>
           )}
         </div>
       </aside>
@@ -407,7 +423,6 @@ export function BannerLibrary({
           <div className="border-b border-border/60 py-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
             Information
           </div>
-          <InfoLine label="Quality" value={current.quality ? cap(current.quality) : '—'} />
           <InfoLine label="Size" value={current.size} />
           <InfoLine label="Version" value={`v${current.version}`} />
           <InfoLine label="Created" value={fmtDate(current.createdAt) || '—'} />
