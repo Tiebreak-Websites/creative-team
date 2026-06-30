@@ -350,6 +350,52 @@ export function composeArtDirection(a: ArtDirection, languageLabel: string): str
   return parts.join(' ')
 }
 
+/** The user's selections as short {label, value} tags for the banner detail view.
+ * Display-only — generation is still driven by composeArtDirection's `style`. */
+export function artDirectionTags(a: ArtDirection): { label: string; value: string }[] {
+  const tags: { label: string; value: string }[] = []
+  const lbl = (arr: { key: string; label: string }[], key: string | null) =>
+    arr.find((o) => o.key === key)?.label ?? null
+  const push = (label: string, value: string | null | undefined) => {
+    if (value) tags.push({ label, value })
+  }
+  // Look
+  push('Hero', lbl(SUBJECTS, a.subject))
+  push('Medium', lbl(MEDIUMS, a.medium))
+  push('Headline', lbl(TYPE_STYLES, a.typeStyle))
+  push('Mood', lbl(MOODS, a.mood))
+  push('Lighting', lbl(LIGHTINGS, a.lighting))
+  // People
+  if (a.gender === 'none') {
+    push('People', 'No people')
+  } else {
+    push('Casting', lbl(GENDERS, a.gender))
+    push('Count', lbl(COUNTS, a.count))
+    push('Age', lbl(AGES, a.age))
+    push('Wardrobe', a.wardrobe ? cap(a.wardrobe) : null)
+    push('Expression', lbl(EXPRESSIONS, a.expression))
+  }
+  // Colour
+  push('Scene', a.scene)
+  push('Text', a.text)
+  push('Temperature', COLOR_MOODS.find((m) => m.key === a.colorMood)?.label)
+  push('Background', lbl(BACKGROUNDS, a.background))
+  // Layout
+  push('Alignment', lbl(ALIGNMENTS, a.alignment))
+  push('Density', lbl(DENSITIES, a.density))
+  push('Focal', lbl(FOCALS, a.focal))
+  push('Framing', lbl(FRAMINGS, a.framing))
+  // Finish
+  push('Depth', lbl(DOFS, a.dof))
+  push('Texture', lbl(TEXTURES, a.texture))
+  push('Finish', lbl(FINISHES, a.finish))
+  if (a.glow) push('Glow', 'On')
+  // Context
+  push('Occasion', lbl(OCCASIONS, a.occasion))
+  if (a.market && a.market !== 'global') push('Market', lbl(MARKETS, a.market))
+  return tags
+}
+
 /** A tasteful random brief for quick inspiration ("Surprise me"). */
 function randomArt(): Partial<ArtDirection> {
   const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]

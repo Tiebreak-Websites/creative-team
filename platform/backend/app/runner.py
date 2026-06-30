@@ -103,6 +103,7 @@ class Run:
     error: Optional[str] = None
     created_by: str = ""               # email of the user who started the run (shown in the gallery)
     style: str = ""                    # campaign look/vibe (fed to the director)
+    art_tags: List[dict] = field(default_factory=list)  # Art-Director selections [{label,value}] — display-only
     effort: Optional[str] = None       # per-run GPT-5.5 thinking effort (None -> admin default)
     intent: str = "general_ad"         # heuristic campaign intent (steers director + negatives)
     intent_meta: dict = field(default_factory=dict)  # {source, intent, confidence, ambiguous}
@@ -538,13 +539,19 @@ def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
                 concepts[ck]["creative_brief"] = _synthesize_brief(c.subtitle or "", style)
     # Resolve style-only reference images to existing local paths (drop unknowns).
     ref_paths = references_store.resolve_paths(req.references)
+    # Art-Director selections → short display tags (capped + trimmed; never trusted
+    # for generation, only shown in the detail view).
+    art_tags = [
+        {"label": str(t.label)[:40], "value": str(t.value)[:160]}
+        for t in (req.art_tags or [])
+    ][:40]
     run = Run(
         id=run_id, status="queued", model=req.model, quality=req.quality,
         sizes=sizes, concepts=concepts, frames_plan=plan,
         frame_results=frame_results, dir=run_dir,
         created_at=now, updated_at=now, api_key=api_key,
         created_by=created_by,
-        style=style, effort=req.effort, cards=cards,
+        style=style, effort=req.effort, cards=cards, art_tags=art_tags,
         references=ref_paths, logo_raster=logo_raster, logo_corner=logo_corner,
         logo=logo_status,
     )
@@ -1308,6 +1315,7 @@ def run_to_dict(run: Run) -> dict:
             "director": run.director,
             "logo": run.logo or None,
             "style": run.style or "",
+            "art_tags": run.art_tags or [],
             "approval_state": dict(run.approval_state),
             "awaiting_at": run.awaiting_at,
             "banners": banners,
@@ -1436,6 +1444,7 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
         sizes=sizes, concepts=concepts, frames_plan=frames_plan,
         frame_results=frame_results, dir=run_dir, cards=cards,
         size_briefs=size_briefs, style=d.get("style", ""),
+        art_tags=d.get("art_tags") or [],
         created_at=d.get("created_at", now), updated_at=d.get("updated_at", now),
         created_by=d.get("created_by", ""),
         intent=d.get("intent", "general_ad"), intent_meta=d.get("intent_meta") or {},

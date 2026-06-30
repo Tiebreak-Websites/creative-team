@@ -1,20 +1,31 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clock,
+  Copy,
+  Cpu,
   Download,
   DownloadCloud,
   ExternalLink,
-  Info,
   RefreshCw,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, formatUserName } from '@/lib/utils'
 
 export interface LibraryItem {
   label: string // banner label (concept__size) — NOT unique across runs
@@ -33,6 +44,11 @@ export interface LibraryItem {
   approvalStatus?: string // awaiting | approved | rejected
   createdBy?: string
   qa?: string | null // post-generation QA warning, else null
+  genMs?: number | null // render time for this size
+  model?: string // image model used
+  quality?: string // low | medium | high
+  createdAt?: string // run creation timestamp (ISO)
+  artTags?: { label: string; value: string }[] // Art-Director selections
 }
 
 /** Subtle checkerboard so transparent PNGs read against any theme. */
@@ -43,12 +59,15 @@ const CHECKER: CSSProperties = {
 }
 
 /**
- * Full-screen banner lightbox: a large object-contained preview on a
- * checkerboard, prev/next navigation (buttons + arrow keys), a toolbar with
- * per-item and bulk download plus delete, and a clickable thumbnail filmstrip.
+ * Full-screen banner detail view. Three columns:
+ *   LEFT   — details + the Art-Director selections as tags (who, model, render time).
+ *   CENTER — the image (prev/next + arrow keys), with this generation's other sizes
+ *            as a filmstrip beneath it.
+ *   RIGHT  — a Higgsfield-styled panel: the PROMPT card, an INFORMATION card, and
+ *            the action buttons.
  *
- * Closes on the X button, Escape, and clicks on the scrim — but not on the
- * image or toolbar. Returns null when closed or when there is nothing to show.
+ * Closes on the X button, Escape, and clicks on the scrim/empty area. Returns null
+ * when closed or when there is nothing to show. Side panels collapse on small screens.
  */
 export function BannerLibrary({
   open,
@@ -81,8 +100,19 @@ export function BannerLibrary({
   const current = count ? items[safeIndex] : undefined
 
   const stripRef = useRef<HTMLDivElement>(null)
-  // Side panel with the input / art direction / exact prompt. On by default (desktop).
-  const [showInfo, setShowInfo] = useState(true)
+  const [promptExpanded, setPromptExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  function copyPrompt() {
+    if (!current?.prompt) return
+    navigator.clipboard?.writeText(current.prompt).then(
+      () => {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1500)
+      },
+      () => {},
+    )
+  }
 
   // Reconcile an out-of-range index (e.g. after a delete) back to the parent.
   useEffect(() => {
@@ -125,275 +155,332 @@ export function BannerLibrary({
 
   const atStart = safeIndex <= 0
   const atEnd = safeIndex >= count - 1
+  const adRows = current.style ? artDirectionRows(current.style) : []
+  const adParsed = adRows.length > 1 || (adRows[0] && adRows[0].label !== 'Art direction')
+  const hasTags = !!(current.artTags && current.artTags.length)
 
   return createPortal(
     <div
       role="dialog"
       aria-modal="true"
       aria-label="Banner preview"
-      className="fixed inset-0 z-[100] flex flex-col animate-fade-in"
+      className="fixed inset-0 z-[100] flex animate-fade-in"
     >
-      {/* Scrim — clicking the empty space closes the lightbox. */}
+      {/* Scrim — clicking the empty space closes the view. */}
       <button
         type="button"
         aria-hidden
         tabIndex={-1}
         onClick={onClose}
-        className="absolute inset-0 cursor-default bg-black/80 backdrop-blur-md"
+        className="absolute inset-0 cursor-default bg-black/85 backdrop-blur-md"
       />
 
-      {/* Toolbar */}
-      <div className="relative z-10 flex shrink-0 items-center gap-3 border-b border-border/60 bg-card/70 px-4 py-3 backdrop-blur-xl">
-        <div className="flex min-w-0 items-baseline gap-2.5">
-          <span className="font-display text-sm font-bold tracking-tight text-foreground">
-            {current.size}
-          </span>
-          <span className="shrink-0 rounded-md border border-primary/35 px-1.5 py-0.5 text-[11px] font-medium text-primary">
-            v{current.version}
-          </span>
-          {current.title && (
-            <span className="truncate text-sm text-muted-foreground">{current.title}</span>
-          )}
-          {current.qa && (
-            <span
-              title={`Heads up: ${current.qa}`}
-              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400"
-            >
-              <AlertTriangle className="h-3 w-3" /> Check
+      {/* ---------------- LEFT: details & tags ---------------- */}
+      <aside
+        onClick={(e) => e.stopPropagation()}
+        className="relative z-10 hidden w-72 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border/60 bg-card/85 p-4 backdrop-blur-xl lg:flex"
+      >
+        <SectionLabel>Details</SectionLabel>
+
+        {current.createdBy && (
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 font-display text-xs font-bold text-primary">
+              {initials(formatUserName(current.createdBy))}
             </span>
-          )}
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-foreground">
+                {formatUserName(current.createdBy)}
+              </div>
+              <div className="text-[11px] text-muted-foreground">Creator</div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-background/50 p-3">
+          <MetaRow icon={Cpu} label="Model" value={current.model} />
+          <MetaRow icon={Clock} label="Render time" value={fmtMs(current.genMs)} />
         </div>
 
-        <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
-          {safeIndex + 1} / {count}
-        </span>
+        {current.qa && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{current.qa}</span>
+          </div>
+        )}
 
-        <div className="flex shrink-0 items-center gap-2">
-          <Button asChild size="sm" variant="outline">
-            <a href={current.src} target="_blank" rel="noreferrer" title="Open full size in a new tab">
-              <ExternalLink className="h-4 w-4" /> Open
-            </a>
-          </Button>
+        <div>
+          <SectionLabel>Art Director</SectionLabel>
+          {hasTags ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {current.artTags!.map((t, i) => (
+                <span
+                  key={i}
+                  title={t.label}
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-1 text-[11px]"
+                >
+                  <span className="text-muted-foreground">{t.label}</span>
+                  <span className="font-medium text-foreground">{t.value}</span>
+                </span>
+              ))}
+            </div>
+          ) : adParsed ? (
+            <dl className="mt-2 space-y-1.5">
+              {adRows.map((r, i) => (
+                <div key={i} className="flex flex-col gap-0.5">
+                  <dt className="text-[10px] font-semibold uppercase tracking-wide text-primary">{r.label}</dt>
+                  <dd className="break-words text-xs leading-relaxed text-foreground/90">{r.text}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="mt-2 text-xs text-muted-foreground">Auto — the AI chose the direction.</p>
+          )}
+          {current.brief && (
+            <p className="mt-2 break-words border-t border-border/60 pt-2 text-xs leading-relaxed text-muted-foreground">
+              {current.brief}
+            </p>
+          )}
+        </div>
+      </aside>
 
-          <Button asChild size="sm" variant="outline">
+      {/* ---------------- CENTER: image + filmstrip ---------------- */}
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+        {/* Slim top bar */}
+        <div className="flex shrink-0 items-center gap-3 px-4 py-3">
+          <div className="flex min-w-0 items-baseline gap-2.5">
+            <span className="font-display text-sm font-bold tracking-tight text-foreground">{current.size}</span>
+            <span className="shrink-0 rounded-md border border-primary/35 px-1.5 py-0.5 text-[11px] font-medium text-primary">
+              v{current.version}
+            </span>
+            {current.title && <span className="truncate text-sm text-muted-foreground">{current.title}</span>}
+            {current.qa && (
+              <span
+                title={`Heads up: ${current.qa}`}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400"
+              >
+                <AlertTriangle className="h-3 w-3" /> Check
+              </span>
+            )}
+          </div>
+          <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
+            {safeIndex + 1} / {count}
+          </span>
+          {/* Small screens have no side panels — keep Download reachable. */}
+          <Button asChild size="sm" variant="outline" className="shrink-0 md:hidden">
             <a href={current.downloadHref} download title={`Download ${current.size} PNG`}>
-              <Download className="h-4 w-4" /> Download
+              <Download className="h-4 w-4" />
             </a>
           </Button>
-
-          {downloadAllHref && (
-            <Button asChild size="sm" variant="outline">
-              <a href={downloadAllHref} download title="Download all as a zip">
-                <DownloadCloud className="h-4 w-4" /> Download all
-              </a>
-            </Button>
-          )}
-
-          {(onApprove || onReject) && (
-            <>
-              <Button
-                size="sm"
-                onClick={onReject}
-                title="Reject — keep the MVP only, skip the other sizes"
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                <X className="h-4 w-4" /> Reject
-              </Button>
-              <Button
-                size="sm"
-                onClick={onApprove}
-                title="Approve — recompose this version into all selected sizes"
-                className="bg-emerald-600 text-white hover:bg-emerald-700"
-              >
-                <Check className="h-4 w-4" /> Approve
-              </Button>
-            </>
-          )}
-
-          {onRegenerate && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onRegenerate(current.runId, current.label)}
-              title="Regenerate just this size (re-roll without re-running the whole batch)"
-            >
-              <RefreshCw className="h-4 w-4" /> Regenerate
-            </Button>
-          )}
-
-          {onDelete && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onDelete(current.runId, current.label)}
-              title="Delete this banner"
-              className="text-destructive hover:border-destructive hover:text-destructive"
-            >
-              <Trash2 className="h-4 w-4" /> Delete
-            </Button>
-          )}
-
-          <Button
-            size="sm"
-            variant={showInfo ? 'secondary' : 'outline'}
-            onClick={() => setShowInfo((s) => !s)}
-            title="Show the input, art direction and the exact generation prompt"
-            className="hidden md:inline-flex"
-          >
-            <Info className="h-4 w-4" /> Details
-          </Button>
-
           <Button
             size="icon"
             variant="ghost"
             onClick={onClose}
             title="Close"
             aria-label="Close"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
-      </div>
 
-      {/* Middle: stage + optional info panel */}
-      <div className="relative z-10 flex min-h-0 flex-1">
-      {/* Stage */}
-      <div
-        className="relative flex min-h-0 flex-1 items-center justify-center px-4 py-5 sm:px-10"
-        onClick={(e) => {
-          // Click the empty area around the banner (not the image or the arrows) closes.
-          if (e.target === e.currentTarget) onClose()
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => onIndexChange(Math.max(safeIndex - 1, 0))}
-          disabled={atStart}
-          title="Previous"
-          aria-label="Previous banner"
-          className="absolute left-3 top-1/2 z-10 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card/90 text-foreground shadow-lg backdrop-blur transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
-        >
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-
+        {/* Stage */}
         <div
-          className="relative flex max-h-full max-w-full items-center justify-center overflow-hidden rounded-xl border border-border shadow-2xl"
-          style={CHECKER}
-          // Stop scrim close-through when interacting with the image itself.
-          onClick={(e) => e.stopPropagation()}
+          className="relative flex min-h-0 flex-1 items-center justify-center px-4 pb-3 sm:px-8"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onClose()
+          }}
         >
-          <img
-            key={current.label}
-            src={current.src}
-            alt={`${current.title || 'Banner'} — ${current.size}`}
-            className="max-h-[calc(100vh-15rem)] max-w-full object-contain animate-fade-in"
-          />
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onIndexChange(Math.min(safeIndex + 1, count - 1))}
-          disabled={atEnd}
-          title="Next"
-          aria-label="Next banner"
-          className="absolute right-3 top-1/2 z-10 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card/90 text-foreground shadow-lg backdrop-blur transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
-        >
-          <ChevronRight className="h-5 w-5" />
-        </button>
-        </div>
-
-        {/* Info panel — the user's input, the art direction, and the exact prompt. */}
-        {showInfo && (
-          <aside
-            onClick={(e) => e.stopPropagation()}
-            className="z-10 hidden w-[340px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-border/60 bg-card/80 p-4 backdrop-blur-xl md:flex"
+          <button
+            type="button"
+            onClick={() => onIndexChange(Math.max(safeIndex - 1, 0))}
+            disabled={atStart}
+            title="Previous"
+            aria-label="Previous banner"
+            className="absolute left-3 top-1/2 z-10 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card/90 text-foreground shadow-lg backdrop-blur transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
           >
-            <InfoBox title="Your input">
-              <InfoRow label="Title" value={current.title} />
-              <InfoRow label="Subtitle" value={current.subtitle} />
-              <InfoRow label="Button" value={current.button} />
-            </InfoBox>
-            <InfoBox title="Art direction">
-              {current.style ? (
-                (() => {
-                  const rows = artDirectionRows(current.style)
-                  return rows.length > 1 || rows[0]?.label !== 'Art direction' ? (
-                    <dl className="space-y-1.5">
-                      {rows.map((r, i) => (
-                        <div key={i} className="flex flex-col gap-0.5">
-                          <dt className="text-[10px] font-semibold uppercase tracking-wide text-primary">
-                            {r.label}
-                          </dt>
-                          <dd className="break-words text-xs leading-relaxed text-foreground/90">{r.text}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  ) : (
-                    <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/90">
-                      {current.style}
-                    </p>
-                  )
-                })()
-              ) : (
-                <p className="text-xs text-muted-foreground">The AI chose the direction automatically.</p>
-              )}
-              {current.brief && (
-                <p className="mt-2 whitespace-pre-wrap break-words border-t border-border/60 pt-2 text-xs leading-relaxed text-muted-foreground">
-                  {current.brief}
-                </p>
-              )}
-            </InfoBox>
-            <InfoBox title="Generation prompt">
-              {current.prompt ? (
-                <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground/80">
-                  {current.prompt}
-                </pre>
-              ) : (
-                <p className="text-xs text-muted-foreground">Not recorded for this banner.</p>
-              )}
-            </InfoBox>
-          </aside>
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+
+          <div
+            className="relative flex max-h-full max-w-full items-center justify-center overflow-hidden rounded-xl border border-border shadow-2xl"
+            style={CHECKER}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              key={current.label}
+              src={current.src}
+              alt={`${current.title || 'Banner'} — ${current.size}`}
+              className="max-h-[calc(100vh-13rem)] max-w-full object-contain animate-fade-in"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onIndexChange(Math.min(safeIndex + 1, count - 1))}
+            disabled={atEnd}
+            title="Next"
+            aria-label="Next banner"
+            className="absolute right-3 top-1/2 z-10 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card/90 text-foreground shadow-lg backdrop-blur transition-colors hover:border-primary hover:text-primary disabled:pointer-events-none disabled:opacity-40"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Filmstrip — the other sizes from this generation. */}
+        {count > 1 && (
+          <div
+            ref={stripRef}
+            onClick={(e) => e.stopPropagation()}
+            className="flex shrink-0 items-center gap-2 overflow-x-auto px-4 pb-3"
+          >
+            {items.map((it, i) => {
+              const active = i === safeIndex
+              return (
+                <button
+                  key={it.label}
+                  type="button"
+                  data-active={active}
+                  onClick={() => onIndexChange(i)}
+                  title={`${it.size}${it.title ? ` · ${it.title}` : ''}`}
+                  aria-label={`Show ${it.size}`}
+                  aria-current={active}
+                  className={cn(
+                    'group relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-card transition-all',
+                    active
+                      ? 'border-primary ring-2 ring-primary/40'
+                      : 'border-border opacity-70 hover:border-foreground/30 hover:opacity-100',
+                  )}
+                >
+                  <span className="absolute inset-0" style={CHECKER} />
+                  <img src={it.src} alt="" loading="lazy" className="relative h-full w-full object-contain" />
+                </button>
+              )
+            })}
+          </div>
         )}
       </div>
 
-      {/* Filmstrip */}
-      {count > 1 && (
-        <div
-          ref={stripRef}
-          onClick={(e) => e.stopPropagation()}
-          className="relative z-10 flex shrink-0 items-center gap-2 overflow-x-auto border-t border-border/60 bg-card/70 px-4 py-3 backdrop-blur-xl"
-        >
-          {items.map((it, i) => {
-            const active = i === safeIndex
-            return (
-              <button
-                key={it.label}
-                type="button"
-                data-active={active}
-                onClick={() => onIndexChange(i)}
-                title={`${it.size}${it.title ? ` · ${it.title}` : ''}`}
-                aria-label={`Show ${it.size}`}
-                aria-current={active}
+      {/* ---------------- RIGHT: Higgsfield-style panel ---------------- */}
+      <aside
+        onClick={(e) => e.stopPropagation()}
+        className="relative z-10 hidden w-80 shrink-0 flex-col gap-3 overflow-y-auto border-l border-border/60 bg-card/85 p-4 backdrop-blur-xl md:flex"
+      >
+        {/* PROMPT card */}
+        <div className="rounded-xl border border-border bg-background/50 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              <Sparkles className="h-3.5 w-3.5" /> Prompt
+            </span>
+            {current.prompt && (
+              <Button size="sm" variant="outline" onClick={copyPrompt} className="h-7 gap-1 px-2 text-xs">
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+            )}
+          </div>
+          {current.prompt ? (
+            <>
+              <p
                 className={cn(
-                  'group relative h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-card transition-all',
-                  active
-                    ? 'border-primary ring-2 ring-primary/40'
-                    : 'border-border opacity-70 hover:border-foreground/30 hover:opacity-100',
+                  'whitespace-pre-wrap break-words text-xs leading-relaxed text-foreground/85',
+                  !promptExpanded && 'line-clamp-5',
                 )}
               >
-                <span className="absolute inset-0" style={CHECKER} />
-                <img
-                  src={it.src}
-                  alt=""
-                  loading="lazy"
-                  className="relative h-full w-full object-contain"
-                />
+                {current.prompt}
+              </p>
+              <button
+                type="button"
+                onClick={() => setPromptExpanded((v) => !v)}
+                className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                {promptExpanded ? 'See less' : 'See all'}
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', promptExpanded && 'rotate-180')} />
               </button>
-            )
-          })}
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">Not recorded for this banner.</p>
+          )}
         </div>
-      )}
+
+        {/* INFORMATION card */}
+        <div className="rounded-xl border border-border bg-background/50 px-3 py-1">
+          <div className="border-b border-border/60 py-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            Information
+          </div>
+          <InfoLine label="Quality" value={current.quality ? cap(current.quality) : '—'} />
+          <InfoLine label="Size" value={current.size} />
+          <InfoLine label="Version" value={`v${current.version}`} />
+          <InfoLine label="Created" value={fmtDate(current.createdAt) || '—'} />
+          {current.approvalStatus && (
+            <InfoLine label="Status" value={cap(current.approvalStatus)} />
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="mt-auto flex flex-col gap-2 pt-1">
+          {(onApprove || onReject) && (
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={onReject}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                <X className="h-4 w-4" /> Reject
+              </Button>
+              <Button onClick={onApprove} className="bg-emerald-600 text-white hover:bg-emerald-700">
+                <Check className="h-4 w-4" /> Approve
+              </Button>
+            </div>
+          )}
+          <Button asChild className="w-full">
+            <a href={current.downloadHref} download title={`Download ${current.size} PNG`}>
+              <Download className="h-4 w-4" /> Download
+            </a>
+          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button asChild variant="outline">
+              <a href={current.src} target="_blank" rel="noreferrer" title="Open full size in a new tab">
+                <ExternalLink className="h-4 w-4" /> Open
+              </a>
+            </Button>
+            {downloadAllHref ? (
+              <Button asChild variant="outline">
+                <a href={downloadAllHref} download title="Download all sizes as a zip">
+                  <DownloadCloud className="h-4 w-4" /> All sizes
+                </a>
+              </Button>
+            ) : (
+              <span />
+            )}
+          </div>
+          {(onRegenerate || onDelete) && (
+            <div className="grid grid-cols-2 gap-2">
+              {onRegenerate ? (
+                <Button
+                  variant="outline"
+                  onClick={() => onRegenerate(current.runId, current.label)}
+                  title="Regenerate just this size"
+                >
+                  <RefreshCw className="h-4 w-4" /> Regenerate
+                </Button>
+              ) : (
+                <span />
+              )}
+              {onDelete ? (
+                <Button
+                  variant="outline"
+                  onClick={() => onDelete(current.runId, current.label)}
+                  className="text-destructive hover:border-destructive hover:text-destructive"
+                  title="Delete this banner"
+                >
+                  <Trash2 className="h-4 w-4" /> Delete
+                </Button>
+              ) : (
+                <span />
+              )}
+            </div>
+          )}
+        </div>
+      </aside>
     </div>,
     document.body,
   )
@@ -437,24 +524,57 @@ export function artDirectionRows(style: string): { label: string; text: string }
   return rows
 }
 
-function InfoBox({ title, children }: { title: string; children: ReactNode }) {
+// --- small presentational helpers -----------------------------------------
+const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
+
+function initials(name: string): string {
+  const parts = (name || '').trim().split(/\s+/)
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?'
+}
+
+function fmtMs(ms?: number | null): string {
+  if (!ms || ms <= 0) return '—'
+  if (ms < 1000) return `${ms} ms`
+  const s = ms / 1000
+  return s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
+}
+
+function fmtDate(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-border bg-background/40 p-3">
-      <div className="mb-1.5 font-display text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-        {title}
-      </div>
-      {children}
+    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">{children}</div>
+  )
+}
+
+function MetaRow({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: ComponentType<{ className?: string }>
+  label: string
+  value?: string | null
+}) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span className="text-muted-foreground">{label}</span>
+      <span className="ml-auto truncate font-medium text-foreground">{value || '—'}</span>
     </div>
   )
 }
 
-function InfoRow({ label, value }: { label: string; value?: string }) {
+function InfoLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex gap-2 py-0.5 text-xs">
-      <span className="w-14 shrink-0 text-muted-foreground">{label}</span>
-      <span className="min-w-0 break-words text-foreground/90">
-        {value || <span className="text-muted-foreground/60">—</span>}
-      </span>
+    <div className="flex items-center justify-between gap-3 border-b border-border/60 py-2 text-sm last:border-b-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="truncate font-semibold text-foreground">{value}</span>
     </div>
   )
 }

@@ -27,6 +27,7 @@ import { Modal } from '@/components/ui/modal'
 import {
   ArtDirectionModal,
   artActiveCount,
+  artDirectionTags,
   composeArtDirection,
   DEFAULT_ART,
   isArtActive,
@@ -791,6 +792,7 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
       references: refs.length ? refs.map((r) => r.id) : undefined,
       brand_id: brandId || undefined,
       logo_corner: brandId && selectedBrand?.logo_svg && logoCorner ? logoCorner : undefined,
+      art_tags: artDirectionTags(art),
     }
     try {
       const initial = await createRun(payload)

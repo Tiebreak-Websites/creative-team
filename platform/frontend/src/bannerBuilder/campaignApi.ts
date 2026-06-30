@@ -29,6 +29,7 @@ export interface CampaignRunRequest {
   references?: string[] // style-reference image ids from uploadReferences()
   brand_id?: string // selected brand (folds colors into art direction)
   logo_corner?: string // 'tl' | 'tr' | 'bl' | 'br' — overlay the brand logo
+  art_tags?: { label: string; value: string }[] // Art-Director selections (display-only)
 }
 
 /**

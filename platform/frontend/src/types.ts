@@ -93,6 +93,8 @@ export interface RunData {
   run_id: string
   status: string
   error: string | null
+  model?: string // image model used (e.g. gpt-image-2)
+  quality?: string // low | medium | high
   total: number
   completed: number
   counts: { ok: number; failed: number; pending: number; running: number; cancelled: number }
@@ -101,6 +103,7 @@ export interface RunData {
   created_by?: string // email of the user who started the run
   director?: RunDirector
   style?: string // the composed art-direction string fed to the generator
+  art_tags?: { label: string; value: string }[] // Art-Director selections (display-only)
   banners: Banner[]
   cancelled?: boolean
   intent?: string

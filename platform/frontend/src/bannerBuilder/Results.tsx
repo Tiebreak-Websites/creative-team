@@ -264,6 +264,13 @@ export function OutputPane({
   const runErrors = Array.from(new Set(runs.map((r) => r.error).filter((e): e is string => !!e)))
 
   const styleByRun = new Map(runs.map((r) => [r.run_id, r.style ?? '']))
+  // Run-level metadata for the detail view (same for every size in a run).
+  const metaByRun = new Map(
+    runs.map((r) => [
+      r.run_id,
+      { model: r.model, quality: r.quality, createdAt: r.created_at, artTags: r.art_tags ?? [] },
+    ]),
+  )
   // The viewable (ok) banners of ONE version → lightbox items. The lightbox is
   // scoped to a single version, so its filmstrip shows only that version's sizes.
   function versionItems(g: ConceptGroup): LibraryItem[] {
@@ -290,6 +297,11 @@ export function OutputPane({
           prompt: b.prompt ?? undefined,
           qa: b.qa ?? null,
           style: styleByRun.get(g.runId) ?? '',
+          genMs: b.gen_ms ?? null,
+          model: metaByRun.get(g.runId)?.model,
+          quality: metaByRun.get(g.runId)?.quality,
+          createdAt: metaByRun.get(g.runId)?.createdAt,
+          artTags: metaByRun.get(g.runId)?.artTags ?? [],
         }
       })
   }

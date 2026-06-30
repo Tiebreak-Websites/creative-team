@@ -20,6 +20,14 @@ class ConceptIn(BaseModel):
     button: Optional[str] = Field(default=None, max_length=80)
 
 
+class ArtTag(BaseModel):
+    """One Art-Director selection, surfaced as a tag in the banner detail view
+    (e.g. {label: 'Hero', value: 'Trading app'}). Display-only — the prompt is
+    still driven by the composed `style` string."""
+    label: str = Field(max_length=40)
+    value: str = Field(max_length=160)
+
+
 class RunRequest(BaseModel):
     """A campaign run: settings menu + concept cards."""
     model: str = "gpt-image-2"
@@ -35,4 +43,7 @@ class RunRequest(BaseModel):
     # raster logo + logo_corner are set) composites the logo onto each finished PNG.
     brand_id: Optional[str] = None
     logo_corner: Optional[str] = None    # 'tl' | 'tr' | 'bl' | 'br'
+    # The user's Art-Director selections as short tags (display-only — shown in the
+    # banner detail view so anyone can see what was chosen).
+    art_tags: List[ArtTag] = Field(default_factory=list)
     concepts: List[ConceptIn]
