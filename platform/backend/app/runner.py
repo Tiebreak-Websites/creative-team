@@ -66,6 +66,18 @@ def _label(concept: str, size: str) -> str:
     return f"{concept}__{size}"
 
 
+def _frame_png_path(run_dir: Path, concept: str, size: str) -> Path:
+    """Build a frame's on-disk PNG path, refusing to resolve outside run_dir.
+    ConceptIn.key is charset-restricted at the model layer (see models.py), but
+    this is defense in depth for the write path specifically, since a generated
+    frame's path (unlike the read/delete endpoints) isn't checked against a
+    pre-existing allowlist of known labels."""
+    path = (run_dir / f"{_label(concept, size)}.png").resolve()
+    if run_dir.resolve() not in path.parents:
+        raise ValueError(f"unsafe frame path escapes run directory: concept={concept!r} size={size!r}")
+    return path
+
+
 # ---------------------------------------------------------------------------
 # State
 # ---------------------------------------------------------------------------
@@ -647,7 +659,12 @@ def _gen_one_frame(run: Run, frame: dict):
 
     master_png = None
     if mode == "edit":
-        master_png = str(run.dir / f"{frame['concept']}__{engine.MASTER_SIZE}.png")
+        try:
+            master_png = str(_frame_png_path(run.dir, frame["concept"], engine.MASTER_SIZE))
+        except ValueError as e:
+            fr.status, fr.error = "gen_failed", f"{type(e).__name__}: {e}"
+            run.touch()
+            return
 
     def _on_attempt(attempt):
         fr.attempts = attempt
@@ -692,8 +709,8 @@ def _gen_one_frame(run: Run, frame: dict):
         except Exception as e:  # noqa: BLE001
             run.logo.setdefault("reason", f"overlay failed: {type(e).__name__}: {e}")
 
-    out_png = run.dir / f"{_label(frame['concept'], frame['size'])}.png"
     try:
+        out_png = _frame_png_path(run.dir, frame["concept"], frame["size"])
         out_png.write_bytes(png)
     except Exception as e:  # noqa: BLE001 — a disk failure must FAIL the frame, never strand it as "running"
         fr.status, fr.error = "gen_failed", f"disk write failed: {type(e).__name__}: {e}"

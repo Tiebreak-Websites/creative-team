@@ -53,15 +53,26 @@ def _rasterize_svg(svg_bytes: bytes) -> Optional[bytes]:
     The cairosvg import is intentionally lazy + guarded: the dependency (and its
     native libcairo2) ships in the Docker image, but if it's ever absent the
     caller degrades to skipping the overlay rather than crashing.
+
+    cairosvg already defaults to its own `safe_fetch` (data: URIs only, no
+    http(s)/file access) whenever `unsafe` isn't set to True — which is the
+    case here — so an admin-supplied logo SVG can't make the server issue
+    outbound requests or read local files. `url_fetcher` is still passed
+    explicitly so that safety doesn't silently depend on cairosvg's default
+    ever staying that way.
     """
     if not svg_bytes:
         return None
     try:
         import cairosvg  # noqa: PLC0415 — optional heavy dep, imported on demand
+        from cairosvg.url import safe_fetch  # noqa: PLC0415
     except Exception:  # noqa: BLE001 — ImportError or a broken native lib
         return None
     try:
-        return cairosvg.svg2png(bytestring=svg_bytes, output_width=_SVG_RASTER_WIDTH)
+        return cairosvg.svg2png(
+            bytestring=svg_bytes, output_width=_SVG_RASTER_WIDTH,
+            url_fetcher=safe_fetch,
+        )
     except Exception:  # noqa: BLE001 — malformed SVG, etc.
         return None
 

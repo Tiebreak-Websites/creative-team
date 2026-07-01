@@ -14,7 +14,10 @@ from pydantic import BaseModel, Field
 
 class ConceptIn(BaseModel):
     """One concept card as typed by the user. Engine fields are derived."""
-    key: str = Field(max_length=64)
+    # Restricted to a safe filename charset: it flows unmodified into a
+    # generated banner's on-disk filename (see runner._label), so traversal
+    # sequences or path separators must never reach it.
+    key: str = Field(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     title: str = Field(max_length=200)
     subtitle: Optional[str] = Field(default=None, max_length=300)
     button: Optional[str] = Field(default=None, max_length=80)

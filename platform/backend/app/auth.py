@@ -199,13 +199,17 @@ def verify_password(plaintext: str, password_hash: str) -> bool:
 
 # --- Login throttle helpers ------------------------------------------------
 def _client_ip(request: Request | None) -> str:
-    """Best-effort client IP. Behind Render's proxy the real client is the first
-    hop in X-Forwarded-For; fall back to the socket peer."""
+    """Best-effort client IP for the login throttle. Render sits directly in
+    front of the app as the only reverse proxy, so it APPENDS the real peer
+    address as the LAST hop of X-Forwarded-For; anything earlier in the list
+    is attacker-supplied and untrustworthy (the first hop is exactly what a
+    client would spoof to reset their own brute-force budget). Fall back to
+    the socket peer if the header is absent."""
     if request is None:
         return "?"
     xff = request.headers.get("x-forwarded-for", "")
     if xff:
-        return xff.split(",")[0].strip()
+        return xff.split(",")[-1].strip()
     return getattr(getattr(request, "client", None), "host", "") or "?"
 
 
