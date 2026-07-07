@@ -81,15 +81,44 @@ export async function deleteBanner(runId: string, label: string): Promise<void> 
 }
 
 /** Re-roll ONE banner (a single size) in place. Returns the updated run, or throws
- * (409 if it can't be regenerated, e.g. the master image is gone). Owner-only. */
-export async function regenerateBanner(runId: string, label: string): Promise<RunData> {
+ * (409 if it can't be regenerated, e.g. the master image is gone). Owner-only.
+ *
+ * promptOverride: pass an edited prompt to re-roll from it verbatim (it sticks for
+ * future re-rolls); pass '' to reset back to the generated prompt; omit (undefined)
+ * for a plain re-roll that keeps whatever prompt the frame already uses. */
+export async function regenerateBanner(
+  runId: string,
+  label: string,
+  promptOverride?: string,
+): Promise<RunData> {
   const r = await fetch(
     `${BASE}/tools/banner-builder/runs/${runId}/banners/${encodeURIComponent(label)}/regenerate`,
-    { method: 'POST' },
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(promptOverride === undefined ? {} : { prompt_override: promptOverride }),
+    },
   )
   if (!r.ok) {
     const body = await asJson(r)
     const detail = typeof body.detail === 'string' ? body.detail : `Regenerate failed (HTTP ${r.status}).`
+    throw new ApiError(r.status, detail)
+  }
+  return r.json()
+}
+
+/** Add more sizes to an already-approved version → recompose them off its master.
+ * Returns the updated run; the caller should resume polling. Owner-only (409 if the
+ * version was rejected or its master image is gone). */
+export async function addSizes(runId: string, concept: string, sizes: string[]): Promise<RunData> {
+  const r = await fetch(`${BASE}/tools/banner-builder/runs/${runId}/sizes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ concept, sizes }),
+  })
+  if (!r.ok) {
+    const body = await asJson(r)
+    const detail = typeof body.detail === 'string' ? body.detail : `Add sizes failed (HTTP ${r.status}).`
     throw new ApiError(r.status, detail)
   }
   return r.json()

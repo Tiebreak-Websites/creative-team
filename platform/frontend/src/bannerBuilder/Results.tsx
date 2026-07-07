@@ -170,6 +170,8 @@ export function OutputPane({
   onApprove,
   onReject,
   onRegenerate,
+  onAddSizes,
+  availableSizes,
   selected,
   onToggleSelect,
   onToggleVersion,
@@ -185,7 +187,11 @@ export function OutputPane({
   isAdmin?: boolean
   onApprove?: (runId: string, concept: string) => void
   onReject?: (runId: string, concept: string) => void
-  onRegenerate?: (runId: string, label: string) => void
+  onRegenerate?: (runId: string, label: string, promptOverride?: string) => void
+  /** Add more sizes to an approved version → recompose off its master. Owner-only. */
+  onAddSizes?: (runId: string, concept: string, sizes: string[]) => void
+  /** Every size the app can generate (from meta) — the add-sizes picker offers these. */
+  availableSizes?: string[]
   // Selection is owned by the parent (BannerBuilder) so the central console can
   // swap to a selection console; the gallery just renders the checkboxes.
   selected: Set<string>
@@ -197,7 +203,12 @@ export function OutputPane({
   const [libItems, setLibItems] = useState<LibraryItem[]>([])
   const [libDownloadAll, setLibDownloadAll] = useState<string | undefined>(undefined)
   const [libApprove, setLibApprove] = useState<{ approve: () => void; reject: () => void } | null>(null)
-  const [libRegen, setLibRegen] = useState<((runId: string, label: string) => void) | null>(null)
+  const [libRegen, setLibRegen] = useState<
+    ((runId: string, label: string, promptOverride?: string) => void) | null
+  >(null)
+  // Add-sizes for the open version: the callback (owner-only) + the sizes it already has.
+  const [libAddSizes, setLibAddSizes] = useState<((sizes: string[]) => void) | null>(null)
+  const [libExistingSizes, setLibExistingSizes] = useState<string[]>([])
   const [libCanDelete, setLibCanDelete] = useState(true)
   // View prefs (persisted): batches (grouped) | all (flat grid) | list; tile size; collapse.
   const [viewMode, setViewMode] = useState<'grouped' | 'flat' | 'list'>(() => {
@@ -311,6 +322,7 @@ export function OutputPane({
           button: b.button,
           brief: b.brief,
           prompt: b.prompt ?? undefined,
+          promptOverride: b.prompt_override ?? undefined,
           qa: b.qa ?? null,
           style: styleByRun.get(g.runId) ?? '',
           genMs: b.gen_ms ?? null,
@@ -351,6 +363,13 @@ export function OutputPane({
     const owned = canModify(g.createdBy)
     // Wrap in an updater so React stores the function instead of calling it.
     setLibRegen(() => (owned && onRegenerate ? onRegenerate : null))
+    // Add-sizes: owner-only, and never for a rejected version (it stays MVP-only).
+    const canAddSizes = owned && !!onAddSizes && g.approvalStatus !== 'rejected'
+    setLibAddSizes(() =>
+      canAddSizes ? (sizes: string[]) => onAddSizes?.(g.runId, g.concept, sizes) : null,
+    )
+    // Every size this version already has (any status), so the picker hides them.
+    setLibExistingSizes(Array.from(new Set(g.banners.map((b) => b.size))))
     setLibCanDelete(owned)
     setLibIndex(i)
     setLibOpen(true)
@@ -466,6 +485,9 @@ export function OutputPane({
         onApprove={libApprove?.approve}
         onReject={libApprove?.reject}
         onRegenerate={libRegen ?? undefined}
+        onAddSizes={libAddSizes ?? undefined}
+        availableSizes={availableSizes}
+        existingSizes={libExistingSizes}
       />
     </div>
   )

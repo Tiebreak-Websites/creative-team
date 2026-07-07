@@ -233,10 +233,16 @@ def build_router() -> APIRouter:
         return Response(status_code=204)
 
     @router.post("/runs/{run_id}/banners/{label}/regenerate")
-    def regenerate_banner(run_id: str, label: str, user: dict = Depends(require_user)):
+    def regenerate_banner(run_id: str, label: str, payload: dict = Body(default={}),
+                          user: dict = Depends(require_user)):
         """Re-roll ONE banner (a single size) in place — fixes a tile that came out
         wrong without re-running (and re-paying for) the whole batch. Owner-only.
-        Returns the updated run; the frontend polls it back to 'ok'."""
+        Returns the updated run; the frontend polls it back to 'ok'.
+
+        Optional body {"prompt_override": "..."} re-rolls from a user-edited prompt
+        (used verbatim, and it sticks for future re-rolls); pass "" to reset back to
+        the generated prompt; omit it for a plain re-roll.
+        """
         run = runner.STORE.get(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
@@ -247,9 +253,36 @@ def build_router() -> APIRouter:
         api_key = get_secret("OPENAI_API_KEY")
         if not api_key:
             return JSONResponse(status_code=424, content={"missing_secrets": [_OPENAI_SECRET]})
-        result = runner.regenerate_frame(run, label, api_key=api_key)
+        raw_override = payload.get("prompt_override")
+        override = str(raw_override) if raw_override is not None else None
+        result = runner.regenerate_frame(run, label, api_key=api_key, prompt_override=override)
         if not result.get("ok"):
             raise HTTPException(status_code=409, detail=result.get("reason") or "cannot regenerate this banner")
+        return runner.run_to_dict(run)
+
+    @router.post("/runs/{run_id}/sizes")
+    def add_sizes(run_id: str, payload: dict = Body(default={}), user: dict = Depends(require_user)):
+        """Add more sizes to an already-approved version and recompose them off its
+        existing master PNG — no need to start a whole new run. Owner-only.
+        Body {"concept": "c1", "sizes": ["300x250", ...]}. Returns the updated run;
+        the frontend resumes polling to watch the new sizes fill in.
+        """
+        run = runner.STORE.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        _enforce_owner(run, user)
+        concept = str(payload.get("concept") or "")
+        sizes = payload.get("sizes") or []
+        if not concept:
+            raise HTTPException(status_code=422, detail="concept is required")
+        if not isinstance(sizes, list):
+            raise HTTPException(status_code=422, detail="sizes must be a list")
+        api_key = get_secret("OPENAI_API_KEY")
+        if not api_key:
+            return JSONResponse(status_code=424, content={"missing_secrets": [_OPENAI_SECRET]})
+        result = runner.add_sizes(run, concept, [str(s) for s in sizes], api_key=api_key)
+        if not result.get("ok"):
+            raise HTTPException(status_code=409, detail=result.get("reason") or "cannot add sizes")
         return runner.run_to_dict(run)
 
     @router.post("/runs/bulk-delete")

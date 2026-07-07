@@ -18,7 +18,7 @@ import {
 } from 'lucide-react'
 import type { Meta, RunData } from '../types'
 import { TERMINAL_STATUSES } from '../types'
-import { ApiError, approveConcepts, cancelRun, deleteBanner as deleteBannerApi, getRun, regenerateBanner, rejectConcepts, selectionZipUrl, uploadReferences, type DetectedConcept } from '../api'
+import { addSizes, ApiError, approveConcepts, cancelRun, deleteBanner as deleteBannerApi, getRun, regenerateBanner, rejectConcepts, selectionZipUrl, uploadReferences, type DetectedConcept } from '../api'
 import { createRun, listRuns } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
@@ -730,8 +730,19 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
 
   // Re-roll ONE banner (a single size) in place. Optimistically swap in the
   // server's updated run and resume polling so the tile shows working → ok.
-  function regenerateBannerFrame(runId: string, label: string) {
-    void regenerateBanner(runId, label)
+  // promptOverride: an edited prompt to re-roll from ('' resets it); omitted = plain re-roll.
+  function regenerateBannerFrame(runId: string, label: string, promptOverride?: string) {
+    void regenerateBanner(runId, label, promptOverride)
+      .then((updated) => setRuns((prev) => prev.map((r) => (r.run_id === runId ? updated : r))))
+      .catch(() => {})
+    setPolling(true)
+  }
+
+  // Add more sizes to an approved version → recompose off its master. Swap in the
+  // updated run and resume polling so the new sizes fill in as they finish.
+  function addSizesToVersion(runId: string, concept: string, sizes: string[]) {
+    if (!sizes.length) return
+    void addSizes(runId, concept, sizes)
       .then((updated) => setRuns((prev) => prev.map((r) => (r.run_id === runId ? updated : r))))
       .catch(() => {})
     setPolling(true)
@@ -934,6 +945,8 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
             onApprove={approveVersion}
             onReject={rejectVersion}
             onRegenerate={regenerateBannerFrame}
+            onAddSizes={addSizesToVersion}
+            availableSizes={meta.sizes}
             selected={selected}
             onToggleSelect={toggleSelect}
             onToggleVersion={toggleVersion}

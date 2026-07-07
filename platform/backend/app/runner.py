@@ -95,6 +95,7 @@ class FrameResult:
     png_path: Optional[str] = None
     error: Optional[str] = None
     prompt: Optional[str] = None       # the exact prompt sent to the image model
+    prompt_override: Optional[str] = None  # user-edited prompt; when set, used VERBATIM instead of building one
     qa: Optional[str] = None           # post-generation QA warning (size/blank/palette), else None
 
 
@@ -638,17 +639,25 @@ def _gen_one_frame(run: Run, frame: dict):
     if mode == "edit" and frame["size"] == engine.MASTER_SIZE:
         mode = "gen"
 
-    try:
-        if mode == "edit":
-            prompt = engine.build_recomp_prompt(
-                concept, engine.MASTER_SIZE, frame["size"], art_direction=brief,
-                intent=run.intent)
-        else:
-            prompt = engine.build_prompt(concept, frame["size"], intent=run.intent)
-    except Exception as e:  # noqa: BLE001
-        fr.status, fr.error = "prompt_failed", f"{type(e).__name__}: {e}"
-        run.touch()
-        return
+    # A user-edited prompt (from "Save & Regenerate") is used VERBATIM — it fully
+    # replaces the composed prompt, so the editor has complete control (and can
+    # always fall back via the frontend's "Reset to generated"). When absent we
+    # build the prompt deterministically as usual.
+    override = (fr.prompt_override or "").strip()
+    if override:
+        prompt = override
+    else:
+        try:
+            if mode == "edit":
+                prompt = engine.build_recomp_prompt(
+                    concept, engine.MASTER_SIZE, frame["size"], art_direction=brief,
+                    intent=run.intent)
+            else:
+                prompt = engine.build_prompt(concept, frame["size"], intent=run.intent)
+        except Exception as e:  # noqa: BLE001
+            fr.status, fr.error = "prompt_failed", f"{type(e).__name__}: {e}"
+            run.touch()
+            return
     fr.prompt = prompt  # surface the exact generation prompt in the viewer
 
     ok, reason = engine.check_moderation(concept)
@@ -1221,7 +1230,8 @@ def _regen_one(run_id: str, label: str) -> None:
         _persist(run)
 
 
-def regenerate_frame(run: Run, label: str, api_key: str = "") -> dict:
+def regenerate_frame(run: Run, label: str, api_key: str = "",
+                     prompt_override: Optional[str] = None) -> dict:
     """Re-generate ONE banner (a single size) in place — re-roll a tile that came
     out wrong without re-running (and re-paying for) the whole batch.
 
@@ -1229,6 +1239,12 @@ def regenerate_frame(run: Run, label: str, api_key: str = "") -> dict:
     and spawns a daemon to call the image model for only that frame. A recompose
     needs its master PNG still on disk to edit from. Returns {"ok": bool, ...};
     never raises. OpenAI concurrency stays capped by the global semaphore.
+
+    prompt_override: a user-edited prompt to use VERBATIM instead of the composed
+    one, and it STICKS (persists as the frame's default for future regenerates).
+      - None  -> leave any existing override untouched (plain re-roll).
+      - ""    -> clear the override (reset to the generated prompt).
+      - text  -> set/replace the override with the edited prompt.
     """
     plan = next((f for f in run.frames_plan if _label(f["concept"], f["size"]) == label), None)
     if plan is None:
@@ -1247,6 +1263,8 @@ def regenerate_frame(run: Run, label: str, api_key: str = "") -> dict:
         fr = run.frame_results.get(label)
         if fr is None:
             return {"ok": False, "reason": "unknown banner"}
+        if prompt_override is not None:
+            fr.prompt_override = prompt_override.strip() or None
         fr.status, fr.error, fr.qa = "pending", None, None
         # Re-open a settled run so the poller resumes and the tile shows as working.
         if run.status in TERMINAL:
@@ -1255,6 +1273,83 @@ def regenerate_frame(run: Run, label: str, api_key: str = "") -> dict:
     threading.Thread(target=_regen_one, args=(run.id, label), daemon=True,
                      name=f"bb-regen-{run.id}-{label}").start()
     return {"ok": True, "label": label}
+
+
+# ---------------------------------------------------------------------------
+# Add more sizes to an already-approved version — recompose off the master
+# ---------------------------------------------------------------------------
+# Ceiling on total sizes one version can accumulate, so repeated "add sizes"
+# calls can't fan a single version out into an unbounded image bill.
+_MAX_SIZES_PER_CONCEPT = 30
+
+
+def add_sizes(run: Run, concept: str, new_sizes: List[str], api_key: str = "") -> dict:
+    """Add MORE sizes to an already-approved (or gate-off, finished) version and
+    recompose them from its existing master PNG — no need to start a whole new run.
+    Owner-gated at the route.
+
+    Returns {"ok": bool, "added": [...], "skipped": [...], "reason"?: str}; never
+    raises. New sizes recompose (mode="edit") off the master exactly like the
+    original recomp phase; generation stays capped by the global semaphore.
+    """
+    if concept not in run.concepts:
+        return {"ok": False, "reason": "unknown version"}
+    # Only a NON-rejected version can grow (you approved this creative, or the gate
+    # was off and it simply finished). A rejected version stays MVP-only.
+    if run.approval_state.get(concept) == "rejected":
+        return {"ok": False, "reason": "this version was rejected — it stays MVP-only"}
+    # Normalize + validate requested sizes against the engine's known set.
+    want = list(dict.fromkeys(
+        s.strip() for s in (new_sizes or []) if isinstance(s, str) and s.strip()))
+    if not want:
+        return {"ok": False, "reason": "no sizes requested"}
+    unknown = [s for s in want if s not in engine.OPENAI_SIZE_MAP]
+    if unknown:
+        return {"ok": False, "reason": f"unknown size(s): {', '.join(unknown[:5])}"}
+    if len(want) > 12:
+        return {"ok": False, "reason": "add at most 12 sizes at a time"}
+    with run._lock:
+        if run.cancelled:
+            return {"ok": False, "reason": "run was cancelled"}
+        if api_key:
+            run.api_key = api_key  # re-fetched by the route; never persisted
+        if not run.api_key:
+            return {"ok": False, "reason": "no OpenAI key available for this run"}
+        master = run.dir / f"{concept}__{engine.MASTER_SIZE}.png"
+        if not master.is_file():
+            return {"ok": False, "reason": "the master image is gone — can't add sizes to this version"}
+        existing = {f["size"] for f in run.frames_plan if f["concept"] == concept}
+        to_add = [s for s in want if s not in existing]
+        skipped = [s for s in want if s in existing]
+        if not to_add:
+            return {"ok": True, "added": [], "skipped": skipped}
+        if len(existing) + len(to_add) > _MAX_SIZES_PER_CONCEPT:
+            return {"ok": False,
+                    "reason": f"a version can have at most {_MAX_SIZES_PER_CONCEPT} sizes"}
+        for s in to_add:
+            run.frames_plan.append({
+                "concept": concept, "size": s,
+                "openai_size": engine.OPENAI_SIZE_MAP[s],
+                "mode": "edit", "phase": "recomp",
+            })
+            run.frame_results[_label(concept, s)] = FrameResult(
+                concept=concept, size=s, openai_size=engine.OPENAI_SIZE_MAP[s],
+                mode="edit", phase="recomp", status="pending",
+            )
+            if s not in run.sizes:
+                run.sizes.append(s)
+        # Mark this version approved so _maybe_finalize keeps the run in
+        # running_recomp while the new frames generate — a finished/gate-off run
+        # has no "approved" state, and _finalize would otherwise settle it as
+        # "partial" the moment a poll lands with the new frames still pending.
+        run.approval_state[concept] = "approved"
+        if run.status in TERMINAL:
+            run.status = "running_recomp"
+        run.touch()
+    _persist(run)
+    threading.Thread(target=execute_recompose_concept, args=(run.id, concept),
+                     daemon=True, name=f"bb-addsize-{run.id}-{concept}").start()
+    return {"ok": True, "added": to_add, "skipped": skipped}
 
 
 def _normalize_rehydrated(run: Run) -> None:
@@ -1312,6 +1407,7 @@ def run_to_dict(run: Run) -> dict:
                 "subtitle": card.get("subtitle", ""), "button": card.get("button", ""),
                 "brief": run.size_briefs.get(f["concept"], {}).get(f["size"], ""),
                 "prompt": fr.prompt,
+                "prompt_override": fr.prompt_override,
                 "mode": f["mode"], "phase": f["phase"], "status": fr.status,
                 "approval_status": run.approval_state.get(f["concept"]),
                 "openai_size": f.get("openai_size", ""),
@@ -1446,7 +1542,8 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
             concept=ck, size=size, openai_size=openai_size, mode=mode, phase=phase,
             status=status, attempts=b.get("attempts", 0),
             gen_ms=b.get("gen_ms"), bytes=b.get("bytes", 0),
-            png_path=str(png), error=error, prompt=b.get("prompt"), qa=b.get("qa"),
+            png_path=str(png), error=error, prompt=b.get("prompt"),
+            prompt_override=b.get("prompt_override"), qa=b.get("qa"),
         )
         concepts.setdefault(ck, {"title": b.get("title", "")})
         cards.setdefault(ck, {"title": b.get("title", ""),

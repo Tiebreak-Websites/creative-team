@@ -65,6 +65,7 @@ export interface Banner {
   button?: string
   brief?: string // the creative-director's per-size brief
   prompt?: string | null // the exact prompt sent to the image model
+  prompt_override?: string | null // user-edited prompt (used verbatim); truthy = "edited"
   size: string
   mode: string
   phase: string
