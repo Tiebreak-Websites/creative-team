@@ -1,5 +1,18 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, HardDrive, HelpCircle, RefreshCw, Ruler, Settings, Tag } from 'lucide-react'
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import {
+  Check,
+  ChevronDown,
+  HardDrive,
+  HelpCircle,
+  Images,
+  LayoutTemplate,
+  PenLine,
+  RefreshCw,
+  Ruler,
+  Settings,
+  Sparkles,
+  Tag,
+} from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
@@ -158,7 +171,7 @@ function Tab({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-display text-sm font-medium transition-[transform,background-color,color] active:scale-95 ${
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 font-display text-sm font-medium transition-[transform,background-color,color] active:scale-95 ${
         active
           ? 'bg-secondary text-foreground'
           : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
@@ -173,14 +186,20 @@ function Tab({
 // in the header nav. The last product+tool persists and lives in the URL
 // (?app=&tool=) so a refresh or deep-link restores the exact workspace.
 type ProductId = 'banner' | 'lp'
-const PRODUCTS: { id: ProductId; label: string; short: string; tools: { id: string; label: string }[] }[] = [
+type ToolIcon = ComponentType<{ className?: string }>
+const PRODUCTS: {
+  id: ProductId
+  label: string
+  short: string
+  tools: { id: string; label: string; icon: ToolIcon }[]
+}[] = [
   {
     id: 'banner',
     label: 'Banner Builder',
     short: 'Banners',
     tools: [
-      { id: 'generate', label: 'Generate' },
-      { id: 'edit', label: 'Edit' },
+      { id: 'generate', label: 'Generate', icon: Sparkles },
+      { id: 'edit', label: 'Edit', icon: PenLine },
     ],
   },
   {
@@ -188,8 +207,8 @@ const PRODUCTS: { id: ProductId; label: string; short: string; tools: { id: stri
     label: 'Landing Page Builder',
     short: 'LP',
     tools: [
-      { id: 'builder', label: 'LP Builder' },
-      { id: 'materials', label: 'LP Materials' },
+      { id: 'builder', label: 'LP Builder', icon: LayoutTemplate },
+      { id: 'materials', label: 'LP Materials', icon: Images },
     ],
   },
 ]
@@ -239,6 +258,25 @@ function Workspace() {
   const [view, setView] = useState<'tool' | 'settings'>('tool')
   const [settingsTab, setSettingsTab] = useState<'brands' | 'sizes'>('brands')
   const [productMenu, setProductMenu] = useState(false)
+  const switcherRef = useRef<HTMLDivElement>(null)
+  // Close the product menu on outside click / Escape. A fixed click-away layer
+  // can't work here: the header's backdrop-blur makes it the containing block
+  // for fixed descendants, so such a layer would only cover the header strip.
+  useEffect(() => {
+    if (!productMenu) return
+    const onDown = (e: PointerEvent) => {
+      if (!switcherRef.current?.contains(e.target as Node)) setProductMenu(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setProductMenu(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [productMenu])
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -279,9 +317,12 @@ function Workspace() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      <header className="flex h-16 shrink-0 items-center gap-2 bg-card/70 px-3 backdrop-blur-md sm:gap-5 sm:px-5">
+      {/* relative z-50: the header owns a stacking context ABOVE the workspace
+          panes, so the product-switcher dropdown (which hangs below the 64px
+          header into <main>'s territory) paints on top of everything. */}
+      <header className="relative z-50 flex h-16 shrink-0 items-center gap-2 bg-card/70 px-3 backdrop-blur-md sm:gap-5 sm:px-5">
         {/* Logo = product switcher: Banner Builder / Landing Page Builder */}
-        <div className="relative">
+        <div ref={switcherRef} className="relative shrink-0">
           <button
             type="button"
             onClick={() => setProductMenu((v) => !v)}
@@ -292,26 +333,18 @@ function Workspace() {
             className="group flex items-center gap-2 rounded-lg px-1.5 py-1 transition-colors hover:bg-secondary/60"
           >
             <Logo className="h-8 w-auto transition-transform duration-200 group-hover:scale-[1.03]" />
-            <span className="hidden items-baseline gap-1.5 md:flex">
-              <span className="font-display text-sm font-bold tracking-tight">{product.label}</span>
+            <span className="hidden whitespace-nowrap font-display text-sm font-bold tracking-tight lg:inline">
+              {product.label}
             </span>
             <ChevronDown
               className={`h-4 w-4 text-muted-foreground transition-transform ${productMenu ? 'rotate-180' : ''}`}
             />
           </button>
           {productMenu && (
-            <>
-              <button
-                type="button"
-                aria-hidden
-                tabIndex={-1}
-                onClick={() => setProductMenu(false)}
-                className="fixed inset-0 z-40 cursor-default"
-              />
-              <div
-                role="menu"
-                className="absolute left-0 top-full z-50 mt-2 w-64 space-y-0.5 rounded-xl border border-border bg-popover p-1.5 shadow-xl animate-fade-up"
-              >
+            <div
+              role="menu"
+              className="absolute left-0 top-full z-50 mt-2 w-64 space-y-0.5 rounded-xl border border-border bg-popover p-1.5 shadow-xl animate-fade-up"
+            >
                 {PRODUCTS.map((p) => (
                   <button
                     key={p.id}
@@ -333,8 +366,7 @@ function Workspace() {
                     {p.id === product.id && <Check className="h-4 w-4 shrink-0 text-primary" />}
                   </button>
                 ))}
-              </div>
-            </>
+            </div>
           )}
         </div>
 
@@ -346,7 +378,8 @@ function Workspace() {
               active={inTool && ws.tool === t.id}
               onClick={() => goTool(product.id, t.id)}
             >
-              {t.label}
+              <t.icon className="h-4 w-4" />
+              <span className="hidden sm:inline">{t.label}</span>
             </Tab>
           ))}
         </nav>
