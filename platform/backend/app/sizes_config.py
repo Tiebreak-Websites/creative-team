@@ -83,10 +83,22 @@ DEFAULT_BUNDLES: List[Dict[str, Any]] = [
 ]
 
 _PATH = settings.ARTIFACT_ROOT / "config" / "sizes.json"
-_LOCK = threading.Lock()
+# RLock: the route handlers hold it across read-modify-write, and _load/_save
+# re-acquire it internally.
+_LOCK = threading.RLock()
 
 
 # --- Storage ----------------------------------------------------------------
+# The config is served from an in-memory CACHE (loaded from disk once, lazily)
+# and every write updates the cache FIRST, then flushes to disk best-effort.
+# This guarantees an admin's save takes effect immediately and consistently
+# even if the disk flush fails — and the flush result is surfaced to the
+# client (`persisted`) instead of silently re-reading a stale/missing file,
+# which used to make a failed save look like an instant revert.
+_CACHE: Dict[str, Any] = {}
+_PERSIST_OK = True
+
+
 def _defaults() -> Dict[str, Any]:
     return {
         "groups": [dict(g, sizes=list(g["sizes"])) for g in DEFAULT_GROUPS],
@@ -94,7 +106,7 @@ def _defaults() -> Dict[str, Any]:
     }
 
 
-def _load() -> Dict[str, Any]:
+def _load_disk() -> Dict[str, Any]:
     try:
         data = json.loads(_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -105,12 +117,30 @@ def _load() -> Dict[str, Any]:
     return data
 
 
-def _save(cfg: Dict[str, Any]) -> None:
+def _load() -> Dict[str, Any]:
+    """The current config (cached; disk read only on first touch)."""
+    with _LOCK:
+        if not _CACHE:
+            _CACHE.update(_load_disk())
+        return {"groups": list(_CACHE["groups"]), "bundles": list(_CACHE.get("bundles") or [])}
+
+
+def _save(cfg: Dict[str, Any]) -> bool:
+    """Update the cache (always succeeds), then flush to disk. Returns whether
+    the DISK write worked — callers surface that so a broken disk is a visible
+    warning, never a silent revert."""
+    global _PERSIST_OK
+    with _LOCK:
+        _CACHE.clear()
+        _CACHE.update({"groups": list(cfg["groups"]), "bundles": list(cfg.get("bundles") or [])})
     try:
         _PATH.parent.mkdir(parents=True, exist_ok=True)
         _PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-    except OSError as e:  # the config still works in-memory for this process
-        log.warning("sizes-config: could not persist %s: %s", _PATH, e)
+        _PERSIST_OK = True
+    except OSError as e:  # config still works in-memory for this process
+        log.error("sizes-config: could not persist %s: %s", _PATH, e)
+        _PERSIST_OK = False
+    return _PERSIST_OK
 
 
 # --- Validation / coercion ----------------------------------------------------
@@ -178,6 +208,9 @@ def public_config() -> Dict[str, Any]:
         "sizes": all_sizes(),
         "master_size": engine.MASTER_SIZE,
         "custom_group_id": CUSTOM_GROUP_ID,
+        # Whether the LAST write reached the disk — false means changes hold for
+        # this process but may be lost on restart (check the server logs).
+        "persisted": _PERSIST_OK,
     }
 
 

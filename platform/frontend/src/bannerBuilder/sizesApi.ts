@@ -29,6 +29,9 @@ export interface SizeConfig {
   master_size: string
   /** Id of the special group new custom sizes land in. */
   custom_group_id: string
+  /** False when the last write did not reach the server disk — the change holds
+   * for now but may be lost on a restart (admin UI shows a warning). */
+  persisted?: boolean
 }
 
 async function fail(r: Response, fallback: string): Promise<never> {

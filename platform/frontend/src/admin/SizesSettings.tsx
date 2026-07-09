@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   Check,
@@ -66,29 +66,54 @@ export function SizesSettings() {
   }, [])
 
   const customGroupId = config?.custom_group_id ?? 'custom'
+  const snap = (gs: { id: string; label: string; sizes: string[] }[]) =>
+    JSON.stringify(gs.map((g) => ({ id: g.id, label: g.label, sizes: g.sizes })))
   const dirty = useMemo(() => {
     if (!config) return false
-    const snap = (gs: { id: string; label: string; sizes: string[] }[]) =>
-      JSON.stringify(gs.map((g) => ({ id: g.id, label: g.label, sizes: g.sizes })))
     return snap(groups) !== snap(config.groups) || snap(bundles) !== snap(config.bundles)
   }, [groups, bundles, config])
 
-  async function save() {
+  const savingRef = useRef(false)
+  async function save(current?: { groups: SizeGroup[]; bundles: SizeBundle[] }) {
+    if (savingRef.current) return
+    const payload = current ?? { groups, bundles }
+    savingRef.current = true
     setSaving(true)
     setError(null)
     try {
-      const cfg = await saveSizeConfig({ groups, bundles })
+      const cfg = await saveSizeConfig(payload)
       setConfig(cfg)
-      setGroups(cfg.groups.map((g) => ({ ...g, sizes: [...g.sizes] })))
-      setBundles(cfg.bundles.map((b) => ({ ...b, sizes: [...b.sizes] })))
+      // Apply the server's normalized shape ONLY if the admin hasn't kept
+      // editing during the round-trip — otherwise a response landing mid-typing
+      // would eat keystrokes; the next auto-save picks the newer edits up.
+      setGroups((cur) => {
+        if (snap(cur) !== snap(payload.groups)) return cur
+        return cfg.groups.map((g) => ({ ...g, sizes: [...g.sizes] }))
+      })
+      setBundles((cur) => {
+        if (snap(cur) !== snap(payload.bundles)) return cur
+        return cfg.bundles.map((b) => ({ ...b, sizes: [...b.sizes] }))
+      })
       setSavedFlash(true)
       window.setTimeout(() => setSavedFlash(false), 2000)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
+
+  // AUTO-SAVE: every change persists on its own (debounced) — a reorder click
+  // or a removed size should never be lost because "Save" wasn't pressed.
+  useEffect(() => {
+    if (!config || loading || !dirty) return
+    const t = window.setTimeout(() => {
+      void save({ groups, bundles })
+    }, 900)
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups, bundles, config, loading, dirty])
 
   // ---- group ops (position = list order) ----
   function patchGroup(id: string, patch: Partial<SizeGroup>) {
@@ -142,12 +167,36 @@ export function SizesSettings() {
             The size groups everyone sees in the Banner Builder (both the left rail and the
             “Add sizes” picker), in this exact order. Any WxH works — new sizes are validated and
             registered automatically. “Custom sizes” collects user-added sizes and can’t be deleted.
+            Changes save automatically.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <span
+            role="status"
+            aria-live="polite"
+            className={cn(
+              'inline-flex items-center gap-1.5 text-xs font-medium',
+              saving || dirty ? 'text-muted-foreground' : 'text-emerald-600 dark:text-emerald-400',
+            )}
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…
+              </>
+            ) : dirty ? (
+              'Unsaved changes…'
+            ) : savedFlash ? (
+              <>
+                <Check className="h-3.5 w-3.5" /> Saved
+              </>
+            ) : config ? (
+              <>
+                <Check className="h-3.5 w-3.5" /> All changes saved
+              </>
+            ) : null}
+          </span>
           <Button size="sm" onClick={() => void save()} disabled={!dirty || saving || loading}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : savedFlash ? <Check className="h-4 w-4" /> : null}
-            {savedFlash && !dirty ? 'Saved' : 'Save changes'}
+            Save now
           </Button>
           <Button
             size="sm"
@@ -166,6 +215,16 @@ export function SizesSettings() {
         <div className="mt-4 flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {config?.persisted === false && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>
+            Changes are live, but the server could NOT write them to disk — they may be lost on a
+            restart. Check the server logs (sizes-config).
+          </span>
         </div>
       )}
 
