@@ -704,9 +704,10 @@ function PromptEditModal({
 /**
  * Add-sizes picker: the SAME group organization as the dashboard's size rail
  * (collapsible groups + search + custom sizes). Sizes the version already has
- * show as checked-and-disabled so groups read complete.
+ * show as checked-and-disabled so groups read complete. Exported — the banner
+ * Edit workspace reuses it to recompose an accepted correction into sizes.
  */
-function AddSizesModal({
+export function AddSizesModal({
   groups,
   availableSizes,
   existingSizes,

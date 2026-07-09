@@ -1,6 +1,11 @@
 # Internal Tool Platform
 
-A local-first web dashboard that turns this repo's tools into self-serve online modules. v1 ships the platform shell + the **Banner Builder**; future tools plug in through a small contract.
+A local-first web dashboard that turns this repo's tools into self-serve online modules. The logo is a **product switcher** between two products, each with its own sub-tools in the header:
+
+- **Banner Builder** — **Generate** (the classic dashboard) and **Edit** (fix a finished banner's text via masked inpainting with a pixel-preservation guarantee, then recompose the corrected banner into more sizes; `app/banner_edit.py` + `frontend/src/bannerBuilder/BannerEdit.tsx`).
+- **Landing Page Builder** — **LP Builder** (in progress) and **LP Materials** (review avatars with name-driven nationality/gender detection, section-card image sets with an optional recurring persona, advertorial visuals; `app/lp_materials.py` + `frontend/src/lpMaterials/`). Generated materials contain no text — a vision QA flags any that sneaks in.
+
+See `docs/feature-product-split-banner-edit-lp-materials.md` for the full feature notes.
 
 - **Backend:** FastAPI (`platform/backend`) — a thin web layer that **reuses the existing banner engine in place** (`.claude/scripts/banner-openai/`), never copies it.
 - **Frontend:** React + Vite + TypeScript (`platform/frontend`) — a sidebar dashboard that renders its nav from `/api/tools`.

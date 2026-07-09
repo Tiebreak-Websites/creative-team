@@ -1362,6 +1362,72 @@ def add_sizes(run: Run, concept: str, new_sizes: List[str], api_key: str = "") -
     return {"ok": True, "added": to_add, "skipped": skipped}
 
 
+def create_run_from_image(png_bytes: bytes, *, title: str, created_by: str = "",
+                          locale: str = "en", edited_from: Optional[dict] = None) -> Run:
+    """Create a COMPLETED run whose single master frame IS the given PNG (no
+    generation). Powers the banner Edit workspace: an accepted text-corrected
+    banner becomes a normal run, so the gallery, persistence, rehydrate, delete,
+    zip and — crucially — add_sizes' recompose-off-the-master work unchanged.
+
+    `edited_from` ({run_id, label} of the source banner) is kept in intent_meta
+    as provenance. Raises ValueError when the image is unusable.
+    """
+    import io as _io
+    from PIL import Image
+    try:
+        with Image.open(_io.BytesIO(png_bytes)) as im:
+            im.load()
+            w, h = im.size
+            if im.mode not in ("RGB", "RGBA"):
+                im = im.convert("RGBA")
+            buf = _io.BytesIO()
+            im.save(buf, format="PNG")
+            png_bytes = buf.getvalue()
+    except Exception as e:  # noqa: BLE001
+        raise ValueError(f"not a usable image: {type(e).__name__}")
+    size = f"{w}x{h}"
+    ok, why = engine.ensure_size(size)
+    if not ok:
+        raise ValueError(why)
+    run_id = "r_" + uuid.uuid4().hex[:12]
+    run_dir = settings.ARTIFACT_ROOT / TOOL_ID / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    ck = "c1"
+    png = run_dir / f"{ck}__{size}.png"
+    png.write_bytes(png_bytes)
+    # add_sizes/recompose always edit off the file at the MASTER_SIZE path — for a
+    # non-square source, mirror the image there too (the path is a lookup key; the
+    # edits API takes the image as-is, whatever its true dimensions).
+    if size != engine.MASTER_SIZE:
+        (run_dir / f"{ck}__{engine.MASTER_SIZE}.png").write_bytes(png_bytes)
+    now = _now()
+    title = (title or "").strip() or "Edited banner"
+    concepts = {ck: {
+        "title": title, "locale": locale or "en",
+        "hook_phrase": " ".join(title.split()[:4]),
+        "creative_brief": ("Faithful recompose of the attached master creative — keep "
+                           "the same subject, palette, style and copy treatment."),
+    }}
+    plan = [{"concept": ck, "size": size,
+             "openai_size": engine.OPENAI_SIZE_MAP[size], "mode": "gen", "phase": "master"}]
+    frame_results = {_label(ck, size): FrameResult(
+        concept=ck, size=size, openai_size=engine.OPENAI_SIZE_MAP[size],
+        mode="gen", phase="master", status="ok",
+        bytes=len(png_bytes), png_path=str(png),
+    )}
+    run = Run(
+        id=run_id, status="completed", model="gpt-image-2", quality="high",
+        sizes=[size], concepts=concepts, frames_plan=plan,
+        frame_results=frame_results, dir=run_dir,
+        created_at=now, updated_at=now, created_by=created_by,
+        cards={ck: {"title": title, "subtitle": "", "button": ""}},
+        intent_meta={"source": "banner_edit", **({"edited_from": edited_from} if edited_from else {})},
+    )
+    STORE.add(run)
+    _persist(run)
+    return run
+
+
 def _normalize_rehydrated(run: Run) -> None:
     """After a restart, revert any approved-but-incomplete version to 'awaiting'
     (its recompose thread died and can't resume without an api_key) and recompute

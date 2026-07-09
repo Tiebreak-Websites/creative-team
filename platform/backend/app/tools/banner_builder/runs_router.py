@@ -20,6 +20,7 @@ from ...auth import require_admin, require_user
 from ... import copy_parse
 from ... import references as references_store
 from ... import runner
+from ...banner_edit import build_edits_router
 from ...brands import build_brands_router
 from ...presets import build_presets_router
 from ...sizes_config import build_sizes_router
@@ -477,5 +478,7 @@ def build_router() -> APIRouter:
     router.include_router(build_presets_router())
     # Size groups / bundles / custom sizes (shared, admin-editable).
     router.include_router(build_sizes_router())
+    # Banner Edit workspace: text correction on an existing banner.
+    router.include_router(build_edits_router())
 
     return router

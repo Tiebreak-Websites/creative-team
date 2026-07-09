@@ -1,10 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { HardDrive, HelpCircle, RefreshCw, Ruler, Settings, Tag } from 'lucide-react'
+import { Check, ChevronDown, HardDrive, HelpCircle, RefreshCw, Ruler, Settings, Tag } from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
+import { BannerEdit } from './bannerBuilder/BannerEdit'
 import { HelpModal } from './bannerBuilder/HelpModal'
 import { LPBuilder } from './lpBuilder/LPBuilder'
+import { LPMaterials } from './lpMaterials/LPMaterials'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { Login } from './auth/Login'
 import { UserMenu } from './auth/UserMenu'
@@ -143,8 +145,6 @@ function Gate() {
   return <Workspace />
 }
 
-type Page = 'banner' | 'lp' | 'disk'
-
 function Tab({
   active,
   onClick,
@@ -169,13 +169,76 @@ function Tab({
   )
 }
 
-// Banner Builder + LP Builder (placeholder). Admins also get the Disk Manager
-// (opened from the header storage gauge) and a Brands panel.
+// The two PRODUCTS behind the logo switcher, each with its own sub-tools shown
+// in the header nav. The last product+tool persists and lives in the URL
+// (?app=&tool=) so a refresh or deep-link restores the exact workspace.
+type ProductId = 'banner' | 'lp'
+const PRODUCTS: { id: ProductId; label: string; short: string; tools: { id: string; label: string }[] }[] = [
+  {
+    id: 'banner',
+    label: 'Banner Builder',
+    short: 'Banners',
+    tools: [
+      { id: 'generate', label: 'Generate' },
+      { id: 'edit', label: 'Edit' },
+    ],
+  },
+  {
+    id: 'lp',
+    label: 'Landing Page Builder',
+    short: 'LP',
+    tools: [
+      { id: 'builder', label: 'LP Builder' },
+      { id: 'materials', label: 'LP Materials' },
+    ],
+  },
+]
+
+function readWorkspaceFromUrl(): { app: ProductId; tool: string } | null {
+  try {
+    const p = new URLSearchParams(window.location.search)
+    const app = p.get('app')
+    const product = PRODUCTS.find((x) => x.id === app)
+    if (!product) return null
+    const tool = p.get('tool') || ''
+    return {
+      app: product.id,
+      tool: product.tools.some((t) => t.id === tool) ? tool : product.tools[0].id,
+    }
+  } catch {
+    return null
+  }
+}
+
+function initialWorkspace(): { app: ProductId; tool: string } {
+  const fromUrl = readWorkspaceFromUrl()
+  if (fromUrl) return fromUrl
+  try {
+    const app = localStorage.getItem('inv:app')
+    const tool = localStorage.getItem('inv:tool') || ''
+    const product = PRODUCTS.find((x) => x.id === app)
+    if (product) {
+      return {
+        app: product.id,
+        tool: product.tools.some((t) => t.id === tool) ? tool : product.tools[0].id,
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+  return { app: 'banner', tool: 'generate' }
+}
+
+// Two products behind the logo switcher; the header nav is the ACTIVE product's
+// sub-tool bar. Admins also get the Disk Manager (via the storage gauge) and
+// the Settings surface (brands + sizes) — those stay global.
 function Workspace() {
   const { user } = useAuth()
-  const [page, setPage] = useState<Page>('banner')
+  const [ws, setWs] = useState(initialWorkspace)
+  const [disk, setDisk] = useState(false)
   const [view, setView] = useState<'tool' | 'settings'>('tool')
   const [settingsTab, setSettingsTab] = useState<'brands' | 'sizes'>('brands')
+  const [productMenu, setProductMenu] = useState(false)
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -190,47 +253,109 @@ function Workspace() {
       .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
   }, [])
 
+  // Persist + mirror the workspace to the URL so refresh/deep-links restore it.
+  useEffect(() => {
+    try {
+      localStorage.setItem('inv:app', ws.app)
+      localStorage.setItem('inv:tool', ws.tool)
+      const url = new URL(window.location.href)
+      url.searchParams.set('app', ws.app)
+      url.searchParams.set('tool', ws.tool)
+      window.history.replaceState(null, '', url.toString())
+    } catch {
+      /* best-effort */
+    }
+  }, [ws])
+
   const isAdmin = user?.role === 'admin'
-  const bannerActive = page === 'banner' && view === 'tool'
-  const lpActive = page === 'lp' && view === 'tool'
-  const diskActive = page === 'disk' && view === 'tool'
-  function goBanner() {
-    setPage('banner')
+  const product = PRODUCTS.find((p) => p.id === ws.app) ?? PRODUCTS[0]
+  const inTool = view === 'tool' && !disk
+  function goTool(app: ProductId, toolId: string) {
+    setWs({ app, tool: toolId })
+    setDisk(false)
     setView('tool')
-  }
-  function goLp() {
-    setPage('lp')
-    setView('tool')
-  }
-  function goDisk() {
-    setPage('disk')
-    setView('tool')
+    setProductMenu(false)
   }
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
       <header className="flex h-16 shrink-0 items-center gap-2 bg-card/70 px-3 backdrop-blur-md sm:gap-5 sm:px-5">
-        <button
-          type="button"
-          className="group flex items-center"
-          onClick={goBanner}
-          title="Internovus - Creative Builder"
-          aria-label="Internovus - Creative Builder — go to Banner Builder"
-        >
-          <Logo className="h-8 w-auto transition-transform duration-200 group-hover:scale-[1.03]" />
-        </button>
+        {/* Logo = product switcher: Banner Builder / Landing Page Builder */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setProductMenu((v) => !v)}
+            title="Switch product"
+            aria-label={`Current product: ${product.label} — switch product`}
+            aria-haspopup="menu"
+            aria-expanded={productMenu}
+            className="group flex items-center gap-2 rounded-lg px-1.5 py-1 transition-colors hover:bg-secondary/60"
+          >
+            <Logo className="h-8 w-auto transition-transform duration-200 group-hover:scale-[1.03]" />
+            <span className="hidden items-baseline gap-1.5 md:flex">
+              <span className="font-display text-sm font-bold tracking-tight">{product.label}</span>
+            </span>
+            <ChevronDown
+              className={`h-4 w-4 text-muted-foreground transition-transform ${productMenu ? 'rotate-180' : ''}`}
+            />
+          </button>
+          {productMenu && (
+            <>
+              <button
+                type="button"
+                aria-hidden
+                tabIndex={-1}
+                onClick={() => setProductMenu(false)}
+                className="fixed inset-0 z-40 cursor-default"
+              />
+              <div
+                role="menu"
+                className="absolute left-0 top-full z-50 mt-2 w-64 space-y-0.5 rounded-xl border border-border bg-popover p-1.5 shadow-xl animate-fade-up"
+              >
+                {PRODUCTS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => goTool(p.id, p.tools[0].id)}
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition-colors ${
+                      p.id === product.id && inTool
+                        ? 'bg-secondary text-foreground'
+                        : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                    }`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block font-display text-sm font-semibold">{p.label}</span>
+                      <span className="block truncate text-[11px] text-muted-foreground">
+                        {p.tools.map((t) => t.label).join(' · ')}
+                      </span>
+                    </span>
+                    {p.id === product.id && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Sub-tools of the active product */}
         <nav className="flex items-center gap-1">
-          <Tab active={bannerActive} onClick={goBanner}>
-            <span className="sm:hidden">Banner</span>
-            <span className="hidden sm:inline">Banner Builder</span>
-          </Tab>
-          <Tab active={lpActive} onClick={goLp}>
-            <span className="sm:hidden">LP</span>
-            <span className="hidden sm:inline">LP Builder</span>
-          </Tab>
+          {product.tools.map((t) => (
+            <Tab
+              key={t.id}
+              active={inTool && ws.tool === t.id}
+              onClick={() => goTool(product.id, t.id)}
+            >
+              {t.label}
+            </Tab>
+          ))}
         </nav>
+
         <div className="ml-auto flex items-center gap-2">
-          <StorageBadge onOpen={isAdmin ? goDisk : undefined} active={diskActive} />
+          <StorageBadge
+            onOpen={isAdmin ? () => { setDisk(true); setView('tool') } : undefined}
+            active={disk && view === 'tool'}
+          />
           <span className="hidden sm:inline-flex">
             <VersionBadge />
           </span>
@@ -249,7 +374,7 @@ function Workspace() {
           <span className="hidden sm:inline-flex">
             <InstallButton />
           </span>
-          {bannerActive && (
+          {inTool && ws.app === 'banner' && ws.tool === 'generate' && (
             <Button
               variant="ghost"
               size="icon"
@@ -280,12 +405,14 @@ function Workspace() {
               {settingsTab === 'brands' ? <BrandsSettings /> : <SizesSettings />}
             </div>
           </div>
-        ) : page === 'disk' && isAdmin ? (
+        ) : disk && isAdmin ? (
           <div className="h-full overflow-y-auto">
             <DiskManager />
           </div>
-        ) : page === 'lp' ? (
-          <LPBuilder />
+        ) : ws.app === 'lp' ? (
+          ws.tool === 'materials' ? <LPMaterials /> : <LPBuilder />
+        ) : ws.tool === 'edit' ? (
+          <BannerEdit />
         ) : loadError ? (
           <div className="p-6">
             <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">

@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .auth import build_auth_router, require_user
+from .lp_materials import build_lp_materials_router
 from .registry import ToolRegistry, mount_tool_routers
 from .routers import meta_router, tools_router
 from .settings import settings
@@ -122,6 +123,10 @@ def create_app() -> FastAPI:
     app.include_router(meta_router.router, dependencies=protected)
     app.include_router(tools_router.router, dependencies=protected)
     mount_tool_routers(app, dependencies=protected)
+    # LP Materials (avatars / section cards / advertorial images) — its own
+    # workspace + store, same session gate as everything else.
+    app.include_router(build_lp_materials_router(),
+                       prefix="/api/tools/lp-materials", dependencies=protected)
 
     # Restore persisted banner runs from the durable disk (PLATFORM_ARTIFACT_DIR)
     # so the gallery survives restarts/redeploys. Run in a BACKGROUND thread so a
@@ -130,8 +135,11 @@ def create_app() -> FastAPI:
     try:
         import threading as _threading
         from . import runner as _banner_runner
+        from . import lp_materials as _lp_materials
         _threading.Thread(target=_banner_runner.rehydrate_runs, daemon=True,
                           name="bb-rehydrate").start()
+        _threading.Thread(target=_lp_materials.rehydrate_jobs, daemon=True,
+                          name="lpm-rehydrate").start()
     except Exception:  # noqa: BLE001
         pass
 
