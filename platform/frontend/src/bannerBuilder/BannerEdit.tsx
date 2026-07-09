@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Check,
+  Eraser,
   Eye,
   GripVertical,
   ImagePlus,
@@ -13,6 +14,7 @@ import {
   ScanText,
   Sparkles,
   Trash2,
+  Type,
   Upload,
   X,
 } from 'lucide-react'
@@ -43,6 +45,8 @@ interface Region {
   h: number
   current: string
   next: string
+  /** "replace" renders new text; "remove" erases the marked text for good. */
+  mode: 'replace' | 'remove'
 }
 
 interface SourceState {
@@ -54,7 +58,6 @@ interface SourceState {
   editedFrom?: { run_id: string; label: string }
 }
 
-/** A floating card's position, px relative to the canvas container. */
 interface CardPos {
   x: number
   y: number
@@ -66,11 +69,11 @@ const newRegionId = () => `rg${++regionUid}`
 const CARD_W = 240
 
 /**
- * Banner **Edit** workspace — canvas edition. The banner floats in the center;
- * each marked text region gets a FLOATING card (draggable, connected to its
- * region by a line). Regions themselves move/resize after a double-click. A
- * bottom command console carries source, auto-detect, variants, quality,
- * extra sizes and Generate.
+ * Banner **Edit** workspace — canvas v2. The banner floats center-left; every
+ * marked region gets a floating card whose connector line points at the
+ * region's NUMBER badge. Candidates stack in a column on the right. One-row
+ * command console at the bottom; after accepting, a post-accept console takes
+ * its place (pick sizes → its own Generate starts the recompose).
  */
 export function BannerEdit() {
   const [src, setSrc] = useState<SourceState | null>(null)
@@ -80,7 +83,6 @@ export function BannerEdit() {
   const [blocks, setBlocks] = useState<DetectedBlock[]>([])
   const [typography, setTypography] = useState('')
   const [detecting, setDetecting] = useState(false)
-  const [candidatesN, setCandidatesN] = useState(2)
   const [quality, setQuality] = useState<'low' | 'medium' | 'high'>('high')
   const [extraSizes, setExtraSizes] = useState<string[]>([])
   const [sizesOpen, setSizesOpen] = useState(false)
@@ -90,6 +92,7 @@ export function BannerEdit() {
   const [showOriginal, setShowOriginal] = useState(false)
   const [accepted, setAccepted] = useState<RunData | null>(null)
   const [accepting, setAccepting] = useState(false)
+  const [recomposing, setRecomposing] = useState(false)
   const [recomposeNote, setRecomposeNote] = useState('')
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -134,8 +137,19 @@ export function BannerEdit() {
     setJob(null)
     setViewCandidate(null)
     setAccepted(null)
+    setRecomposing(false)
     setRecomposeNote('')
+    setExtraSizes([])
     setError(null)
+  }
+
+  /** True when leaving now would lose work — gates the Exit button. */
+  const dirty =
+    regions.some((r) => r.next.trim() || r.mode === 'remove') ||
+    (!!job && !accepted)
+  function exitEdit() {
+    if (dirty && !window.confirm('Discard this edit?')) return
+    resetForSource(null)
   }
 
   async function onUpload(files: FileList | null) {
@@ -156,8 +170,7 @@ export function BannerEdit() {
     }
   }
 
-  // Text detection runs AUTOMATICALLY on attach (background) so newly drawn
-  // regions can pre-fill their current text instantly.
+  // Text detection runs AUTOMATICALLY on attach so drawn regions prefill.
   const detectRan = useRef<string>('')
   useEffect(() => {
     if (!src) return
@@ -171,12 +184,11 @@ export function BannerEdit() {
         setTypography(d.typography)
       })
       .catch(() => {
-        /* silent — the user can still mark regions manually */
+        /* silent — manual marking still works */
       })
       .finally(() => setDetecting(false))
   }, [src])
 
-  /** Text of every detected block substantially covered by the rect. */
   function textInRect(r: { x: number; y: number; w: number; h: number }): string {
     const hits = blocks.filter((b) => {
       const ix = Math.max(0, Math.min(r.x + r.w, b.x_pct + b.w_pct) - Math.max(r.x, b.x_pct))
@@ -186,15 +198,15 @@ export function BannerEdit() {
     return hits.map((b) => b.text).join(' ').trim()
   }
 
-  /** Marking a region auto-creates its floating card, pre-filled with the
-   * analyzed text under the box. */
   function addRegion(rect: { x: number; y: number; w: number; h: number }) {
     const id = newRegionId()
-    setRegions((prev) => [...prev, { ...rect, id, current: textInRect(rect), next: '' }])
+    setRegions((prev) => [
+      ...prev,
+      { ...rect, id, current: textInRect(rect), next: '', mode: 'replace' },
+    ])
     setActiveRegion(id)
   }
 
-  /** Pull all detected blocks in as regions (the console's Auto-detect). */
   function regionsFromBlocks() {
     if (!blocks.length) {
       setError('No text blocks were detected on this image — draw a box over the text instead.')
@@ -209,6 +221,7 @@ export function BannerEdit() {
         h: b.h_pct,
         current: b.text,
         next: '',
+        mode: 'replace' as const,
       })),
     )
     setCardPos({})
@@ -228,7 +241,8 @@ export function BannerEdit() {
     if (activeRegion === id) setActiveRegion(null)
   }
 
-  const readyRegions = regions.filter((r) => r.next.trim())
+  // A region is runnable when it has replacement text OR is a removal.
+  const readyRegions = regions.filter((r) => r.mode === 'remove' || r.next.trim())
 
   function snapToBlocks(r: Region): Region {
     let { x, y, w, h } = r
@@ -268,8 +282,9 @@ export function BannerEdit() {
           h_pct: r.h,
           current_text: r.current || undefined,
           new_text: r.next.trim(),
+          mode: r.mode,
         })),
-        candidates: candidatesN,
+        candidates: 2,
         quality,
         typography: typography || undefined,
       })
@@ -287,21 +302,11 @@ export function BannerEdit() {
     setError(null)
     try {
       const run = await acceptEdit(job.job_id, index, {
-        title: readyRegions[0]?.next.trim() || src?.title,
+        title:
+          readyRegions.find((r) => r.mode === 'replace')?.next.trim() || src?.title,
         editedFrom: src?.editedFrom,
       })
       setAccepted(run)
-      // Recompose into the sizes picked in the console, in the same motion.
-      if (extraSizes.length) {
-        try {
-          await addSizes(run.run_id, 'c1', extraSizes)
-          setRecomposeNote(
-            `Recomposing ${extraSizes.length} size${extraSizes.length > 1 ? 's' : ''} — watch them fill in under Generate.`,
-          )
-        } catch (e) {
-          setError(e instanceof Error ? e.message : String(e))
-        }
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -309,20 +314,23 @@ export function BannerEdit() {
     }
   }
 
+  // Deferred recompose: sizes are only CHIPS until the post-accept console's
+  // Generate is pressed — same recompose path as the Banner Builder (the
+  // accepted image is a fresh MVP master; add_sizes recomposes off it).
   const acceptedSize = accepted?.banners?.[0]?.size
-  async function recomposeInto(sizes: string[]) {
-    setSizesOpen(false)
-    if (!accepted) {
-      setExtraSizes(sizes)
-      return
-    }
+  async function startRecompose() {
+    if (!accepted || !extraSizes.length || recomposing) return
+    setRecomposing(true)
+    setError(null)
     try {
-      await addSizes(accepted.run_id, 'c1', sizes)
+      await addSizes(accepted.run_id, 'c1', extraSizes)
       setRecomposeNote(
-        `Recomposing ${sizes.length} size${sizes.length > 1 ? 's' : ''} — watch them fill in under Generate.`,
+        `Recomposing ${extraSizes.length} size${extraSizes.length > 1 ? 's' : ''} — watch them fill in under Generate.`,
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRecomposing(false)
     }
   }
 
@@ -385,7 +393,17 @@ export function BannerEdit() {
         />
       ) : (
         <>
-          {/* -------- the canvas: centered banner + floating connected cards -------- */}
+          {/* Exit — top-right of the canvas */}
+          <button
+            type="button"
+            onClick={exitEdit}
+            title="Close this edit"
+            aria-label="Close this edit"
+            className="absolute right-4 top-4 z-40 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card/90 text-muted-foreground shadow backdrop-blur transition-colors hover:border-destructive hover:text-destructive"
+          >
+            <X className="h-4 w-4" />
+          </button>
+
           <EditCanvas
             url={stageUrl}
             regions={currentCandidate && !showOriginal ? [] : regions}
@@ -397,242 +415,258 @@ export function BannerEdit() {
             onPatchRegion={patchRegion}
             onRemoveRegion={removeRegion}
             disabled={!!currentCandidate && !showOriginal}
+            shiftForColumn={!!job && !accepted}
           />
 
-          {/* -------- candidates strip (above the console) -------- */}
-          {job && (
-            <div className="absolute inset-x-0 bottom-24 z-30 flex justify-center px-4">
-              <div className="max-w-3xl rounded-2xl border border-border bg-card/95 p-3 shadow-xl backdrop-blur">
-                {accepted ? (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                      <Check className="h-4 w-4" /> Saved to the gallery
-                    </span>
-                    {recomposeNote ? (
-                      <span className="text-xs font-medium text-primary">{recomposeNote}</span>
-                    ) : (
-                      <Button size="sm" variant="outline" onClick={() => setSizesOpen(true)}>
-                        <Ruler className="h-4 w-4" /> Add sizes
-                      </Button>
-                    )}
-                    <Button size="sm" variant="outline" onClick={() => resetForSource(null)}>
-                      <Pencil className="h-4 w-4" /> New edit
-                    </Button>
-                  </div>
+          {/* -------- candidates: vertical column on the RIGHT -------- */}
+          {job && !accepted && (
+            <div className="absolute bottom-28 right-6 top-6 z-30 flex w-56 flex-col gap-3">
+              {/* status on top */}
+              <div className="shrink-0 rounded-xl border border-border bg-card/95 px-3 py-2 text-center shadow backdrop-blur">
+                {job.status === 'running' ? (
+                  <span className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                    Generating candidates…
+                  </span>
+                ) : job.status === 'failed' ? (
+                  <span className="text-xs font-medium text-destructive">
+                    Generation failed{job.error ? `: ${job.error}` : ''}
+                  </span>
                 ) : (
-                  <div className="flex items-center gap-3 overflow-x-auto">
-                    {job.status === 'running' && (
-                      <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating…
-                      </span>
-                    )}
-                    {job.candidates.map((c, i) =>
-                      c?.ready && c.url ? (
-                        <div
-                          key={i}
-                          className={cn(
-                            'w-40 shrink-0 overflow-hidden rounded-xl border bg-card shadow-sm transition-all',
-                            viewCandidate === c.index
-                              ? 'border-primary ring-2 ring-primary/40'
-                              : 'border-border hover:border-foreground/25',
-                          )}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setViewCandidate(c.index)}
-                            className="block w-full"
-                            title="Preview this candidate on the canvas"
-                          >
-                            <img src={c.url} alt={`Candidate ${i + 1}`} className="h-24 w-full object-contain" />
-                          </button>
-                          <div className="space-y-1.5 border-t border-border p-2">
-                            <QaBadge qaOk={c.qa_ok} qaRead={c.qa_read} />
-                            <Button
-                              size="sm"
-                              className="h-7 w-full text-xs"
-                              disabled={accepting}
-                              onClick={() => void accept(c.index)}
-                            >
-                              {accepting ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Check className="h-3.5 w-3.5" />
-                              )}
-                              Use this
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div
-                          key={i}
-                          className="flex h-32 w-40 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border bg-muted/40 p-2 text-center"
-                        >
-                          {c?.error ? (
-                            <>
-                              <AlertTriangle className="h-4 w-4 text-destructive" />
-                              <span className="text-[11px] text-destructive">{c.error}</span>
-                            </>
-                          ) : (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                              <span className="text-[11px] text-muted-foreground">Candidate {i + 1}…</span>
-                            </>
-                          )}
-                        </div>
-                      ),
-                    )}
-                    {currentCandidate && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="shrink-0"
-                        onPointerDown={() => setShowOriginal(true)}
-                        onPointerUp={() => setShowOriginal(false)}
-                        onPointerLeave={() => setShowOriginal(false)}
-                        title="Hold to see the original"
-                      >
-                        <Eye className="h-4 w-4" /> Compare
-                      </Button>
-                    )}
-                    {job.status !== 'running' && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="shrink-0 text-muted-foreground"
-                        onClick={() => setJob(null)}
-                        title="Back to editing the regions"
-                      >
-                        <X className="h-4 w-4" /> Dismiss
-                      </Button>
-                    )}
-                  </div>
+                  <span className="text-xs font-medium text-foreground">Pick the best one</span>
                 )}
               </div>
+
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+                {job.candidates.map((c, i) =>
+                  c?.ready && c.url ? (
+                    <div
+                      key={i}
+                      className={cn(
+                        'overflow-hidden rounded-xl border bg-card shadow-md transition-all',
+                        viewCandidate === c.index
+                          ? 'border-primary ring-2 ring-primary/40'
+                          : 'border-border hover:border-foreground/25',
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setViewCandidate(c.index)}
+                        className="block w-full"
+                        title="Preview this candidate on the canvas"
+                      >
+                        <img src={c.url} alt={`Candidate ${i + 1}`} className="max-h-36 w-full object-contain" />
+                      </button>
+                      <div className="space-y-1.5 border-t border-border p-2">
+                        <QaBadge qaOk={c.qa_ok} qaRead={c.qa_read} />
+                        <Button
+                          size="sm"
+                          className="h-7 w-full text-xs"
+                          disabled={accepting}
+                          onClick={() => void accept(c.index)}
+                        >
+                          {accepting ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Check className="h-3.5 w-3.5" />
+                          )}
+                          Use this
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      key={i}
+                      className="flex h-28 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border bg-muted/40 p-2 text-center"
+                    >
+                      {c?.error ? (
+                        <>
+                          <AlertTriangle className="h-4 w-4 text-destructive" />
+                          <span className="text-[11px] text-destructive">{c.error}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          <span className="text-[11px] text-muted-foreground">Candidate {i + 1}…</span>
+                        </>
+                      )}
+                    </div>
+                  ),
+                )}
+              </div>
+
+              {/* compare at the bottom */}
+              {currentCandidate && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full shrink-0 shadow"
+                  onPointerDown={() => setShowOriginal(true)}
+                  onPointerUp={() => setShowOriginal(false)}
+                  onPointerLeave={() => setShowOriginal(false)}
+                  title="Hold to see the original"
+                >
+                  <Eye className="h-4 w-4" /> Hold to compare
+                </Button>
+              )}
             </div>
           )}
 
-          {/* -------- bottom command console -------- */}
+          {/* -------- bottom console: main OR post-accept (same spot) -------- */}
           <div className="absolute inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-4">
-            <div className="flex w-full max-w-3xl flex-wrap items-center gap-2 rounded-2xl border border-border bg-card/95 p-2 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md">
-              {/* Source thumb + swap */}
-              <span
-                className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-border bg-muted/40"
-                title={`${src.title || 'attached'} · ${src.width}×${src.height}`}
-              >
-                <img src={src.url} alt="Current banner" className="h-full w-full object-cover" />
-              </span>
-              <span className="flex shrink-0 items-center gap-1">
-                <ConsoleIcon onClick={() => fileRef.current?.click()} title="Upload another image">
-                  <Upload className="h-4 w-4" />
-                </ConsoleIcon>
-                <ConsoleIcon onClick={() => setGalleryOpen(true)} title="Pick from the gallery">
-                  <ImagePlus className="h-4 w-4" />
-                </ConsoleIcon>
-              </span>
-
-              <Divider />
-
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={regionsFromBlocks}
-                disabled={detecting}
-                title="Create a region for every detected text block"
-              >
-                {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanText className="h-4 w-4" />}
-                <span className="hidden md:inline">{detecting ? 'Reading…' : 'Auto-detect'}</span>
-              </Button>
-
-              <Divider />
-
-              {/* Variants */}
-              <span className="flex shrink-0 items-center gap-1.5" title="How many candidates to generate">
-                <span className="hidden text-[11px] text-muted-foreground lg:inline">Variants</span>
-                <span className="inline-flex rounded-lg border border-border bg-secondary p-0.5">
-                  {[1, 2, 3].map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => setCandidatesN(n)}
-                      aria-pressed={candidatesN === n}
-                      className={cn(
-                        'rounded-md px-2 py-1 text-xs font-medium transition-colors',
-                        candidatesN === n
-                          ? 'bg-primary text-primary-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground',
-                      )}
-                    >
-                      {n}
-                    </button>
-                  ))}
+            {accepted ? (
+              /* Post-accept console REPLACES the main one: pick sizes, then ITS
+                 Generate starts the recompose (nothing runs before that). */
+              <div className="flex w-full max-w-3xl flex-nowrap items-center gap-2 overflow-x-auto rounded-2xl border border-emerald-600/40 bg-card/95 p-2 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md">
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                  <Check className="h-4 w-4" /> Saved
                 </span>
-              </span>
-
-              {/* Quality */}
-              <span className="flex shrink-0 items-center gap-1.5" title="Image model quality">
-                <span className="inline-flex rounded-lg border border-border bg-secondary p-0.5">
-                  {(['low', 'medium', 'high'] as const).map((q) => (
-                    <button
-                      key={q}
-                      type="button"
-                      onClick={() => setQuality(q)}
-                      aria-pressed={quality === q}
-                      className={cn(
-                        'rounded-md px-2 py-1 text-xs font-medium capitalize transition-colors',
-                        quality === q
-                          ? 'bg-primary text-primary-foreground shadow-sm'
-                          : 'text-muted-foreground hover:text-foreground',
-                      )}
-                    >
-                      {q === 'medium' ? 'Med' : q}
-                    </button>
-                  ))}
-                </span>
-              </span>
-
-              {/* Extra sizes for the accepted result */}
-              <button
-                type="button"
-                onClick={() => setSizesOpen(true)}
-                title="Also recompose the corrected banner into more sizes after you accept it"
-                className={cn(
-                  'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 font-display text-[13px] font-medium transition-colors',
-                  extraSizes.length
-                    ? 'border-primary/50 bg-primary/10 text-primary'
-                    : 'border-border bg-secondary text-foreground hover:border-foreground/25',
-                )}
-              >
-                <Ruler className="h-4 w-4" />
-                <span className="hidden md:inline">Sizes</span>
-                {extraSizes.length > 0 && (
-                  <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
-                    {extraSizes.length}
+                <Divider />
+                {recomposeNote ? (
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-primary">
+                    {recomposeNote}
                   </span>
-                )}
-              </button>
-
-              <Button
-                className={cn(
-                  'ml-auto shrink-0 bg-emerald-600 px-6 font-display text-white hover:bg-emerald-700',
-                  readyRegions.length > 0 && !starting && job?.status !== 'running' && 'tb-glow-success',
-                )}
-                disabled={readyRegions.length === 0 || starting || job?.status === 'running'}
-                onClick={() => void generate()}
-                title={
-                  readyRegions.length === 0
-                    ? 'Mark a region and type its new text first'
-                    : 'Generate the correction'
-                }
-              >
-                {starting || job?.status === 'running' ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Sparkles className="h-4 w-4" />
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setSizesOpen(true)}
+                      title="Pick the sizes to recompose this corrected banner into"
+                      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-border bg-secondary px-3 font-display text-[13px] font-medium text-foreground transition-colors hover:border-foreground/25"
+                    >
+                      <Ruler className="h-4 w-4" /> Pick sizes
+                    </button>
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+                      {extraSizes.length === 0 ? (
+                        <span className="truncate text-xs text-muted-foreground">
+                          No sizes selected yet — the corrected banner is a fresh MVP master.
+                        </span>
+                      ) : (
+                        extraSizes.map((s) => (
+                          <span
+                            key={s}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary bg-primary/10 py-0.5 pl-2.5 pr-1.5 font-display text-xs font-semibold text-primary"
+                          >
+                            {s}
+                            <button
+                              type="button"
+                              onClick={() => setExtraSizes((prev) => prev.filter((x) => x !== s))}
+                              title={`Remove ${s}`}
+                              aria-label={`Remove size ${s}`}
+                              className="hover:text-destructive"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </span>
+                    <Button
+                      size="lg"
+                      className="shrink-0 bg-emerald-600 px-6 font-display text-white hover:bg-emerald-700"
+                      disabled={!extraSizes.length || recomposing}
+                      onClick={() => void startRecompose()}
+                      title={
+                        extraSizes.length
+                          ? 'Recompose the corrected banner into the selected sizes'
+                          : 'Pick at least one size first'
+                      }
+                    >
+                      {recomposing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4" />
+                      )}
+                      Generate
+                    </Button>
+                  </>
                 )}
-                Generate
-              </Button>
-            </div>
+                <Divider />
+                <Button
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => resetForSource(null)}
+                  title="Finish and start another edit"
+                >
+                  <Pencil className="h-4 w-4" /> Edit another
+                </Button>
+              </div>
+            ) : (
+              /* Main console — ONE row, big Generate. */
+              <div className="flex w-full max-w-3xl flex-nowrap items-center gap-2 overflow-x-auto rounded-2xl border border-border bg-card/95 p-2 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md">
+                <span
+                  className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-border bg-muted/40"
+                  title={`${src.title || 'attached'} · ${src.width}×${src.height}`}
+                >
+                  <img src={src.url} alt="Current banner" className="h-full w-full object-cover" />
+                </span>
+                <ConsoleAction onClick={() => fileRef.current?.click()} title="Upload another image" label="Upload">
+                  <Upload className="h-4 w-4" />
+                </ConsoleAction>
+                <ConsoleAction onClick={() => setGalleryOpen(true)} title="Pick from the gallery" label="Gallery">
+                  <ImagePlus className="h-4 w-4" />
+                </ConsoleAction>
+
+                <Divider />
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={regionsFromBlocks}
+                  disabled={detecting}
+                  title="Create a region for every detected text block"
+                >
+                  {detecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanText className="h-4 w-4" />}
+                  <span className="hidden md:inline">{detecting ? 'Reading…' : 'Auto-detect'}</span>
+                </Button>
+
+                <Divider />
+
+                <span className="flex shrink-0 items-center" title="Image model quality">
+                  <span className="inline-flex rounded-lg border border-border bg-secondary p-0.5">
+                    {(['low', 'medium', 'high'] as const).map((q) => (
+                      <button
+                        key={q}
+                        type="button"
+                        onClick={() => setQuality(q)}
+                        aria-pressed={quality === q}
+                        className={cn(
+                          'rounded-md px-2 py-1 text-xs font-medium capitalize transition-colors',
+                          quality === q
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        {q === 'medium' ? 'Med' : q}
+                      </button>
+                    ))}
+                  </span>
+                </span>
+
+                <Button
+                  size="lg"
+                  className={cn(
+                    'ml-auto min-w-[150px] shrink-0 bg-emerald-600 px-8 font-display text-base text-white hover:bg-emerald-700',
+                    readyRegions.length > 0 && !starting && job?.status !== 'running' && 'tb-glow-success',
+                  )}
+                  disabled={readyRegions.length === 0 || starting || job?.status === 'running'}
+                  onClick={() => void generate()}
+                  title={
+                    readyRegions.length === 0
+                      ? 'Mark a region and type its new text (or set it to Remove) first'
+                      : 'Generate the correction'
+                  }
+                >
+                  {starting || job?.status === 'running' ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-5 w-5" />
+                  )}
+                  Generate
+                </Button>
+              </div>
+            )}
           </div>
 
           {sizesOpen && (
@@ -640,10 +674,15 @@ export function BannerEdit() {
               <AddSizesModal
                 groups={sizeConfig?.groups ?? []}
                 availableSizes={sizeConfig?.sizes ?? []}
-                existingSizes={accepted && acceptedSize ? [acceptedSize] : src ? [`${src.width}x${src.height}`] : []}
+                existingSizes={acceptedSize ? [acceptedSize] : src ? [`${src.width}x${src.height}`] : []}
                 onAddCustomSize={addCustomSize}
                 onCancel={() => setSizesOpen(false)}
-                onGenerate={(sizes) => void recomposeInto(sizes)}
+                onGenerate={(sizes) => {
+                  // Deferred by design: picking sizes only records them as chips —
+                  // the post-accept console's Generate starts the recompose.
+                  setExtraSizes(sizes)
+                  setSizesOpen(false)
+                }}
               />
             </div>
           )}
@@ -662,14 +701,16 @@ export function BannerEdit() {
   )
 }
 
-function ConsoleIcon({
+function ConsoleAction({
   children,
   onClick,
   title,
+  label,
 }: {
   children: React.ReactNode
   onClick: () => void
   title: string
+  label: string
 }) {
   return (
     <button
@@ -677,9 +718,10 @@ function ConsoleIcon({
       onClick={onClick}
       title={title}
       aria-label={title}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
+      className="inline-flex h-11 shrink-0 flex-col items-center justify-center gap-0.5 rounded-xl border border-border bg-secondary px-2.5 text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground"
     >
       {children}
+      <span className="text-[9px] font-medium leading-none">{label}</span>
     </button>
   )
 }
@@ -700,7 +742,7 @@ function QaBadge({ qaOk, qaRead }: { qaOk: boolean | null; qaRead: string }) {
         title={qaRead ? `Read as: ${qaRead}` : undefined}
         className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400"
       >
-        <AlertTriangle className="h-3 w-3" /> Check spelling
+        <AlertTriangle className="h-3 w-3" /> Check result
       </span>
     )
   }
@@ -745,7 +787,7 @@ function EmptyDropzone({
         <h3 className="font-display text-lg font-bold tracking-tight">Fix a banner’s text</h3>
         <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
           Drag &amp; drop a banner here — or upload / pick one from the gallery. Mark the wrong
-          text, type the correction; everything else stays pixel-identical.
+          text, replace it or remove it; everything else stays pixel-identical.
         </p>
         <div className="mt-6 flex justify-center gap-2">
           <Button onClick={onUpload}>
@@ -761,7 +803,7 @@ function EmptyDropzone({
 }
 
 // ---------------------------------------------------------------------------
-// The canvas: centered banner, floating cards connected by lines
+// The canvas
 // ---------------------------------------------------------------------------
 type DragState =
   | { kind: 'draw'; x0: number; y0: number; x1: number; y1: number }
@@ -781,6 +823,7 @@ function EditCanvas({
   onPatchRegion,
   onRemoveRegion,
   disabled,
+  shiftForColumn,
 }: {
   url: string
   regions: Region[]
@@ -792,11 +835,12 @@ function EditCanvas({
   onPatchRegion: (id: string, patch: Partial<Region>) => void
   onRemoveRegion: (id: string) => void
   disabled?: boolean
+  /** While candidates occupy the right column, shift the banner left. */
+  shiftForColumn?: boolean
 }) {
   const outerRef = useRef<HTMLDivElement>(null)
   const imgBoxRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<DragState>(null)
-  // The image box's rect relative to the outer canvas — anchors regions↔cards lines.
   const [imgRect, setImgRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null)
 
   function measure() {
@@ -818,9 +862,8 @@ function EditCanvas({
       window.removeEventListener('resize', measure)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url])
+  }, [url, shiftForColumn])
 
-  /** Pointer position in image-percentage coords. */
   function pctPoint(e: { clientX: number; clientY: number }) {
     const box = imgBoxRef.current
     if (!box) return null
@@ -830,14 +873,12 @@ function EditCanvas({
       y: Math.max(0, Math.min(100, ((e.clientY - r.top) / r.height) * 100)),
     }
   }
-  /** Pointer position in outer-canvas px coords. */
   function outerPoint(e: { clientX: number; clientY: number }) {
     const o = outerRef.current?.getBoundingClientRect()
     if (!o) return { x: 0, y: 0 }
     return { x: e.clientX - o.left, y: e.clientY - o.top }
   }
 
-  /** Default card slots: alternate left/right of the image, stacked downward. */
   function defaultCardPos(index: number): CardPos {
     const outer = outerRef.current?.getBoundingClientRect()
     const ir = imgRect
@@ -902,12 +943,13 @@ function EditCanvas({
         }
       : null
 
-  /** Region center in outer-canvas px — the line's target. */
-  function regionCenter(r: Region) {
+  /** The connector line points at the region's NUMBER BADGE (top-left), not
+   * the region center — the badge is the visual handle of the region. */
+  function badgePoint(r: Region) {
     if (!imgRect) return { x: 0, y: 0 }
     return {
-      x: imgRect.left + ((r.x + r.w / 2) / 100) * imgRect.width,
-      y: imgRect.top + ((r.y + r.h / 2) / 100) * imgRect.height,
+      x: imgRect.left + (r.x / 100) * imgRect.width + 12,
+      y: imgRect.top + (r.y / 100) * imgRect.height - 10,
     }
   }
 
@@ -918,35 +960,38 @@ function EditCanvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     >
-      {/* connection lines */}
       <svg className="pointer-events-none absolute inset-0 z-10 h-full w-full">
         {imgRect &&
           regions.map((r, i) => {
             const pos = cardPos[r.id] ?? defaultCardPos(i)
-            const c = regionCenter(r)
+            const b = badgePoint(r)
             const cardCx = pos.x + CARD_W / 2
-            const fromX = cardCx < c.x ? pos.x + CARD_W : pos.x
+            const fromX = cardCx < b.x ? pos.x + CARD_W : pos.x
             const fromY = pos.y + 24
             return (
               <g key={r.id}>
                 <line
                   x1={fromX}
                   y1={fromY}
-                  x2={c.x}
-                  y2={c.y}
+                  x2={b.x}
+                  y2={b.y}
                   stroke="hsl(217 90% 55%)"
                   strokeWidth={activeRegion === r.id ? 2 : 1.25}
                   strokeDasharray="5 4"
                   opacity={0.7}
                 />
-                <circle cx={c.x} cy={c.y} r={3} fill="hsl(217 90% 55%)" opacity={0.8} />
+                <circle cx={b.x} cy={b.y} r={3.5} fill="hsl(217 90% 55%)" opacity={0.9} />
               </g>
             )
           })}
       </svg>
 
-      {/* centered banner */}
-      <div className="flex h-full items-center justify-center">
+      <div
+        className={cn(
+          'flex h-full items-center justify-center transition-[padding]',
+          shiftForColumn && 'pr-72',
+        )}
+      >
         <div
           ref={imgBoxRef}
           className={cn(
@@ -955,7 +1000,6 @@ function EditCanvas({
           )}
           onPointerDown={(e) => {
             if (disabled) return
-            // Drawing starts only on the empty image (regions stop propagation).
             const p = pctPoint(e)
             if (!p) return
             setActiveRegion(null)
@@ -970,6 +1014,7 @@ function EditCanvas({
           <img src={url} alt="Banner being edited" className="block max-h-[56vh] max-w-full" draggable={false} onLoad={measure} />
           {regions.map((r, i) => {
             const active = activeRegion === r.id
+            const removeMode = r.mode === 'remove'
             return (
               <div
                 key={r.id}
@@ -990,12 +1035,21 @@ function EditCanvas({
                 }}
                 className={cn(
                   'absolute rounded border-2',
-                  r.next.trim() ? 'border-emerald-500 bg-emerald-500/10' : 'border-primary bg-primary/10',
+                  removeMode
+                    ? 'border-red-500 bg-red-500/10'
+                    : r.next.trim()
+                      ? 'border-emerald-500 bg-emerald-500/10'
+                      : 'border-primary bg-primary/10',
                   active && 'cursor-move border-amber-400 bg-amber-400/10 ring-2 ring-amber-400/40',
                 )}
                 style={{ left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%` }}
               >
-                <span className="absolute -left-px -top-5 rounded bg-primary px-1.5 font-display text-[11px] font-bold text-primary-foreground">
+                <span
+                  className={cn(
+                    'absolute -left-px -top-5 rounded px-1.5 font-display text-[11px] font-bold text-primary-foreground',
+                    removeMode ? 'bg-red-500' : 'bg-primary',
+                  )}
+                >
                   {i + 1}
                 </span>
                 {active &&
@@ -1035,12 +1089,17 @@ function EditCanvas({
       {/* floating cards */}
       {regions.map((r, i) => {
         const pos = cardPos[r.id] ?? defaultCardPos(i)
+        const removeMode = r.mode === 'remove'
         return (
           <div
             key={r.id}
             className={cn(
               'absolute z-20 rounded-xl border bg-card/95 shadow-lg backdrop-blur transition-shadow',
-              activeRegion === r.id ? 'border-amber-400/60' : 'border-border',
+              activeRegion === r.id
+                ? 'border-amber-400/60'
+                : removeMode
+                  ? 'border-red-500/50'
+                  : 'border-border',
             )}
             style={{ left: pos.x, top: pos.y, width: CARD_W }}
           >
@@ -1053,7 +1112,12 @@ function EditCanvas({
               title="Drag to move this card"
             >
               <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-primary font-display text-[10px] font-bold text-primary-foreground">
+              <span
+                className={cn(
+                  'inline-flex h-4 w-4 items-center justify-center rounded font-display text-[10px] font-bold text-primary-foreground',
+                  removeMode ? 'bg-red-500' : 'bg-primary',
+                )}
+              >
                 {i + 1}
               </span>
               <span className="truncate text-[10px] text-muted-foreground">
@@ -1070,6 +1134,37 @@ function EditCanvas({
               </button>
             </div>
             <div className="space-y-1.5 p-2">
+              {/* Replace / Remove mode switch */}
+              <div className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-secondary p-0.5">
+                <button
+                  type="button"
+                  onClick={() => onPatchRegion(r.id, { mode: 'replace' })}
+                  aria-pressed={!removeMode}
+                  title="Replace the marked text with new text"
+                  className={cn(
+                    'inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-semibold transition-colors',
+                    !removeMode
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Type className="h-3 w-3" /> Replace
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onPatchRegion(r.id, { mode: 'remove' })}
+                  aria-pressed={removeMode}
+                  title="Erase the marked text entirely — background is rebuilt"
+                  className={cn(
+                    'inline-flex items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-semibold transition-colors',
+                    removeMode
+                      ? 'bg-red-500 text-white shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Eraser className="h-3 w-3" /> Remove
+                </button>
+              </div>
               <input
                 value={r.current}
                 onChange={(e) => onPatchRegion(r.id, { current: e.target.value })}
@@ -1077,14 +1172,21 @@ function EditCanvas({
                 aria-label={`Region ${i + 1} current text`}
                 className="h-7 w-full rounded-md border border-input bg-background px-2 text-[11px] text-foreground/80 transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
               />
-              <textarea
-                value={r.next}
-                onChange={(e) => onPatchRegion(r.id, { next: e.target.value })}
-                rows={2}
-                placeholder="New text — exactly as it should read"
-                aria-label={`Region ${i + 1} new text`}
-                className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs font-medium text-foreground transition-colors placeholder:font-normal placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
-              />
+              {removeMode ? (
+                <p className="rounded-md border border-dashed border-red-500/40 bg-red-500/5 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
+                  This text will be <b className="font-semibold text-red-500">removed</b> — the
+                  background is rebuilt seamlessly.
+                </p>
+              ) : (
+                <textarea
+                  value={r.next}
+                  onChange={(e) => onPatchRegion(r.id, { next: e.target.value })}
+                  rows={2}
+                  placeholder="New text — exactly as it should read"
+                  aria-label={`Region ${i + 1} new text`}
+                  className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs font-medium text-foreground transition-colors placeholder:font-normal placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
+                />
+              )}
             </div>
           </div>
         )

@@ -23,7 +23,10 @@ export interface EditRegionInput {
   w_pct: number
   h_pct: number
   current_text?: string
+  /** Required for mode "replace"; ignored for "remove". */
   new_text: string
+  /** "replace" (default) renders new text; "remove" erases the text for good. */
+  mode?: 'replace' | 'remove'
   hints?: string
 }
 

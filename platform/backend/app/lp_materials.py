@@ -88,7 +88,12 @@ _JOBS: Dict[str, dict] = {}
 _JOBS_LOCK = threading.Lock()
 _CAMPAIGNS: Dict[str, dict] = {}
 _LLM_MODEL = "gpt-5.5"
-_AGES = ("20s", "30s", "40s", "50s", "60s", "70s")
+_AGES = ("20s", "30s", "40s", "50s", "60s", "70s", "80s")
+# Authenticity flags a customer photo can opt into. ALL default OFF — only the
+# selected ones shape the prompt; the baseline stays "ordinary believable
+# person, eye contact, slight smile, never a studio model".
+_AVATAR_STYLE_FLAGS = ("group_crop", "low_quality", "candid", "degrade",
+                       "flash", "outdoor", "indoor", "dated")
 
 _NO_TEXT_RULE = ("The image must contain absolutely NO text, NO letters, NO numbers, "
                  "NO captions, NO logos, NO watermarks, NO UI elements.")
@@ -221,6 +226,25 @@ def _degrade(png_bytes: bytes) -> bytes:
             return out.getvalue()
 
 
+_AVATAR_FLAG_LINES = {
+    "group_crop": ("Cropped out of a larger casual photo: framing slightly off-center, "
+                   "a sliver of another person's shoulder or arm at the frame edge."),
+    "low_quality": ("Everyday smartphone photo quality: slightly soft focus, mild noise, "
+                    "uneven real-world lighting, colors a touch washed out."),
+    "candid": ("An unstaged real-life moment — imperfect angle, natural surroundings — "
+               "but still looking at the camera."),
+    # "degrade" is the deterministic Pillow post-pass, not a prompt line.
+    "flash": ("Shot with a direct on-camera flash: slightly harsh frontal lighting, "
+              "mild hot spots on the skin, darker background falloff."),
+    "outdoor": ("Everyday OUTDOOR background — a street, market, park or terrace, "
+                "natural daylight."),
+    "indoor": ("Everyday INDOOR home background — living room, kitchen or hallway, "
+               "domestic lighting."),
+    "dated": ("Looks taken years ago on an older phone or compact camera — slightly "
+              "dated color rendering and lower-resolution feel."),
+}
+
+
 def _avatar_prompt(row: dict, style: dict) -> str:
     gender_word = {"female": "woman", "male": "man"}.get(row.get("gender"), "person")
     parts = [
@@ -233,15 +257,9 @@ def _avatar_prompt(row: dict, style: dict) -> str:
         "smile — warm, friendly and confident; a genuinely good, likeable profile "
         "picture moment.",
     ]
-    if style.get("group_crop", True):
-        parts.append("Cropped out of a larger casual photo: framing slightly off-center, "
-                     "a sliver of another person's shoulder or arm at the frame edge.")
-    if style.get("low_quality", True):
-        parts.append("Everyday smartphone photo quality: slightly soft focus, mild noise, "
-                     "uneven real-world lighting or direct flash, colors a touch washed out.")
-    if style.get("candid", True):
-        parts.append("An unstaged real-life moment — imperfect angle and a busy everyday "
-                     "background (street, cafe, living room) — but still looking at the camera.")
+    for flag, line in _AVATAR_FLAG_LINES.items():
+        if style.get(flag):
+            parts.append(line)
     look = (row.get("look") or "").strip()
     if look:
         parts.append(f"Distinctive details for this person: {look}.")
@@ -692,12 +710,8 @@ def build_lp_materials_router() -> APIRouter:
         if len(rows_in) > _MAX_AVATAR_ROWS:
             raise HTTPException(status_code=422, detail=f"at most {_MAX_AVATAR_ROWS} avatars per job")
         style_in = payload.get("style") or {}
-        style = {
-            "group_crop": bool(style_in.get("group_crop", True)),
-            "low_quality": bool(style_in.get("low_quality", True)),
-            "candid": bool(style_in.get("candid", True)),
-            "degrade": bool(style_in.get("degrade", True)),
-        }
+        # Every authenticity flag defaults OFF — only explicit picks apply.
+        style = {flag: bool(style_in.get(flag, False)) for flag in _AVATAR_STYLE_FLAGS}
         # The target market (usually from the campaign) drives the customers'
         # nationality: rows without an explicit country fall back to it. (The
         # hero image deliberately does NOT influence customer photos.)
@@ -743,7 +757,8 @@ def build_lp_materials_router() -> APIRouter:
             if not title:
                 raise HTTPException(status_code=422, detail=f"cards[{i}] needs a title")
             cards.append({"title": title, "text": text})
-        same_person = bool(payload.get("same_person"))
+        people = bool(payload.get("people", True))
+        same_person = bool(payload.get("same_person")) and people
         aspect = payload.get("aspect") if payload.get("aspect") in _ASPECT_SIZES else "4:3"
         size = _ASPECT_SIZES[aspect]
         engine.ensure_size(size)
@@ -751,14 +766,23 @@ def build_lp_materials_router() -> APIRouter:
         cid, market, ref_id = _campaign_context(payload)
         hero_path, hero_id = _resolve_reference_id(ref_id)
 
-        persona_rule = (
-            "The user wants the SAME single person to appear in EVERY scene. Invent one "
-            "specific, believable persona and describe them in detail in `persona`; every "
-            "scene must feature exactly that person doing what the card describes."
-            if same_person else
-            "Each scene may cast freely (different people, or objects/environments when "
-            "that visualizes the card better). Set `persona` to an empty string."
-        )
+        if not people:
+            persona_rule = (
+                "NO people anywhere: absolutely no humans, faces, hands or body parts in "
+                "any scene — visualize with objects, products, environments, screens and "
+                "close-ups instead. Set `persona` to an empty string."
+            )
+        elif same_person:
+            persona_rule = (
+                "The user wants the SAME single person to appear in EVERY scene. Invent one "
+                "specific, believable persona and describe them in detail in `persona`; every "
+                "scene must feature exactly that person doing what the card describes."
+            )
+        else:
+            persona_rule = (
+                "Each scene may cast freely (different people, or objects/environments when "
+                "that visualizes the card better). Set `persona` to an empty string."
+            )
         hero_rule = (
             " The attached image is the HERO visual of the landing page these cards will sit "
             "on. Anchor the whole set to it: mirror its palette, lighting, mood, art style "
@@ -798,6 +822,7 @@ def build_lp_materials_router() -> APIRouter:
                 "Professional advertising photograph for a landing page.",
                 f"Scene: {scene}",
                 f"Recurring person (must look IDENTICAL in every image of this set): {persona}." if persona else "",
+                "Absolutely NO people, faces, hands or human figures anywhere." if not people else "",
                 f"Shared set style: {shared}" if shared else "",
                 _market_line(market).strip(),
                 "Crisp, editorial, color-graded commercial photography.",
@@ -807,8 +832,8 @@ def build_lp_materials_router() -> APIRouter:
                           "prompt": prompt, "status": "pending", "error": None,
                           "qa": None, "degrade": False})
         job = _new_job("cards", user_key,
-                       {"cards": cards, "same_person": same_person, "aspect": aspect,
-                        "shared_direction": shared, "persona": persona,
+                       {"cards": cards, "same_person": same_person, "people": people,
+                        "aspect": aspect, "shared_direction": shared, "persona": persona,
                         "style_note": style_note, "market": market,
                         "reference": hero_id, "quality": "medium"},
                        items, api_key, campaign_id=cid)
@@ -827,10 +852,14 @@ def build_lp_materials_router() -> APIRouter:
         size = _ASPECT_SIZES[aspect]
         engine.ensure_size(size)
         try:
-            candidates = int(payload.get("candidates") or 2)
+            candidates = int(payload.get("candidates") or 1)
         except (TypeError, ValueError):
-            candidates = 2
+            candidates = 1
         candidates = max(1, min(_MAX_ADV_CANDIDATES, candidates))
+        people = bool(payload.get("people", True))
+        people_rule = ("" if people else
+                       " NO people: absolutely no humans, faces, hands or body parts — tell "
+                       "the story with objects, places, screens and details instead.")
         cid, market, ref_id = _campaign_context(payload)
         hero_path, hero_id = _resolve_reference_id(ref_id)
         hero_rule = (
@@ -846,7 +875,7 @@ def build_lp_materials_router() -> APIRouter:
                         "long advertorial text on a landing page. Read the story and pick "
                         "its SINGLE strongest visual moment — one scene, one subject, told "
                         "like documentary/editorial photography. Concrete and literal; the "
-                        f"image will contain no text.{hero_rule}{_market_line(market)}"),
+                        f"image will contain no text.{people_rule}{hero_rule}{_market_line(market)}"),
                 user_text=f"Title: {title}\n\nText:\n{text}",
                 schema_name="advertorial_scene", schema=_ADVERTORIAL_SCHEMA, effort="medium",
                 image_bytes=hero_path.read_bytes() if hero_path else None,
@@ -857,6 +886,7 @@ def build_lp_materials_router() -> APIRouter:
         prompt = " ".join(filter(None, [
             "Editorial documentary photograph for an advertorial article.",
             f"Scene: {scene}" if scene else f"A concrete scene visualizing: {title}. {text[:300]}",
+            "Absolutely NO people, faces, hands or human figures anywhere." if not people else "",
             _market_line(market).strip(),
             "Natural, believable, story-telling composition; crisp editorial color grade.",
             _NO_TEXT_RULE,
@@ -868,7 +898,7 @@ def build_lp_materials_router() -> APIRouter:
         job = _new_job("advertorial", user_key,
                        {"title": title, "text": text, "aspect": aspect,
                         "scene": scene, "market": market, "reference": hero_id,
-                        "quality": "medium"},
+                        "people": people, "quality": "medium"},
                        items, api_key, campaign_id=cid)
         return _public_job(job)
 

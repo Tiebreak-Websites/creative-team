@@ -6,7 +6,7 @@ import { API_BASE as BASE, asJson } from '../http'
 
 const LPM_URL = `${BASE}/tools/lp-materials`
 
-export const AVATAR_AGES = ['20s', '30s', '40s', '50s', '60s', '70s'] as const
+export const AVATAR_AGES = ['20s', '30s', '40s', '50s', '60s', '70s', '80s'] as const
 export type AvatarAge = (typeof AVATAR_AGES)[number]
 
 export interface AvatarRow {
@@ -19,11 +19,16 @@ export interface AvatarRow {
   look?: string
 }
 
+/** Authenticity flags — ALL default off; only picked ones shape the photo. */
 export interface AvatarStyle {
   group_crop: boolean
   low_quality: boolean
   candid: boolean
   degrade: boolean
+  flash: boolean
+  outdoor: boolean
+  indoor: boolean
+  dated: boolean
 }
 
 export interface MaterialItem {
@@ -151,6 +156,8 @@ export function createAvatars(
 export function createCards(payload: {
   cards: { title: string; text: string }[]
   same_person: boolean
+  /** false → no humans anywhere in the set. */
+  people: boolean
   aspect: string
   style_note?: string
   campaign_id: string
@@ -162,7 +169,8 @@ export function createAdvertorial(payload: {
   title: string
   text: string
   aspect: string
-  candidates: number
+  /** false → the story is told without humans. */
+  people: boolean
   campaign_id: string
 }): Promise<MaterialJob> {
   return post('/advertorial', payload, 'Could not start the advertorial image')

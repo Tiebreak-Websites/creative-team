@@ -201,18 +201,25 @@ def _edit_instruction(regions: List[dict], typography: str) -> str:
     lines = [
         "This is a finished advertising banner. The old text inside the transparent "
         "(masked) regions has ALREADY BEEN ERASED — the blur there is only a "
-        "placeholder. Repaint each masked region: reconstruct the clean background, "
-        "then render the replacement text on it.",
+        "placeholder. Repaint each masked region as instructed below.",
     ]
     for i, r in enumerate(regions, 1):
         cur = (r.get("current_text") or "").strip()
         was = f" (it previously read “{cur}”)" if cur else ""
         hint = (r.get("hints") or "").strip()
         hint = f" {hint}." if hint else ""
-        lines.append(
-            f"Masked region {i} (around {round(r['x_pct'])}%,{round(r['y_pct'])}% of the frame): "
-            f"render EXACTLY this text{was}: “{r['new_text']}”.{hint}"
-        )
+        where = f"around {round(r['x_pct'])}%,{round(r['y_pct'])}% of the frame"
+        if r.get("mode") == "remove":
+            lines.append(
+                f"Masked region {i} ({where}): the text{was} is REMOVED for good. "
+                "Reconstruct ONLY the clean background there, seamlessly continuing the "
+                f"surrounding design — render NO text in this region.{hint}"
+            )
+        else:
+            lines.append(
+                f"Masked region {i} ({where}): "
+                f"render EXACTLY this text{was}: “{r['new_text']}”.{hint}"
+            )
     typo = f" Typography notes: {typography}." if typography else ""
     lines.append(
         "The SECOND attached image is the ORIGINAL banner before erasing — copy its "
@@ -296,17 +303,29 @@ def _composite_preserving(original, model_out, mask):
     return Image.composite(model_out, original, editable)
 
 
-def _qa_candidate(api_key: str, png_bytes: bytes, expected: List[str]) -> dict:
-    """Vision read-back: did every replacement render exactly? Never raises."""
+def _qa_candidate(api_key: str, png_bytes: bytes, present: List[str],
+                  absent: List[str]) -> dict:
+    """Vision read-back: replacements rendered exactly AND erased text is gone.
+    Never raises."""
+    if not present and not absent:
+        return {"qa_ok": None, "qa_read": ""}
+    parts = []
+    if present:
+        parts.append("Text(s) that MUST appear in the image exactly:\n"
+                     + "\n".join(f"- “{t}”" for t in present))
+    if absent:
+        parts.append("Text(s) that were ERASED and must NOT appear anywhere "
+                     "(matches=true only if the text is completely gone):\n"
+                     + "\n".join(f"- “{t}”" for t in absent))
     try:
         data = _vision_json(
             api_key,
-            system=("You are a meticulous proofreader for ad creatives. Read the text in "
-                    "the image and check it against the expected strings. Exact match "
-                    "means spelling, punctuation and diacritics all correct; ignore "
-                    "line-break differences and letter case of purely stylistic all-caps."),
-            user_text=("Expected text(s) that must appear in the image:\n"
-                       + "\n".join(f"- “{t}”" for t in expected)),
+            system=("You are a meticulous proofreader for ad creatives. Check the image "
+                    "against the checklist. For required texts, exact match means "
+                    "spelling, punctuation and diacritics all correct (ignore line-break "
+                    "differences and purely stylistic all-caps). For erased texts, "
+                    "matches=true means NO trace of that text remains."),
+            user_text="\n\n".join(parts),
             image_bytes=png_bytes,
             schema_name="edit_qa", schema=_QA_SCHEMA, effort="low",
         )
@@ -349,8 +368,12 @@ def _run_candidate(job: dict, index: int) -> None:
         comp.save(buf, format="PNG")
         comp_bytes = buf.getvalue()
         (d / f"cand_{index}.png").write_bytes(comp_bytes)
-        qa = _qa_candidate(job["api_key"], comp_bytes,
-                           [r["new_text"] for r in job["regions"]])
+        qa = _qa_candidate(
+            job["api_key"], comp_bytes,
+            [r["new_text"] for r in job["regions"] if r.get("mode") != "remove"],
+            [r["current_text"] for r in job["regions"]
+             if r.get("mode") == "remove" and r.get("current_text")],
+        )
         result = {"index": index, "ready": True, "error": None, **qa}
     except engine.GenError as e:
         result = {"index": index, "ready": False, "error": e.message, "qa_ok": None, "qa_read": ""}
@@ -382,7 +405,7 @@ def _public_job(job: dict) -> dict:
         "error": job.get("error"),
         "width": job["width"], "height": job["height"],
         "regions": [{k: r[k] for k in ("x_pct", "y_pct", "w_pct", "h_pct",
-                                       "current_text", "new_text")} for r in job["regions"]],
+                                       "current_text", "new_text", "mode")} for r in job["regions"]],
         "source_url": f"/api/tools/banner-builder/edits/{job['id']}/files/source.png",
         "candidates": [
             None if r is None else {
@@ -502,9 +525,11 @@ def build_edits_router() -> APIRouter:
                 }
             except (TypeError, ValueError):
                 raise HTTPException(status_code=422, detail=f"regions[{i}] has bad coordinates")
+            mode = "remove" if r.get("mode") == "remove" else "replace"
             new_text = str(r.get("new_text") or "").strip()
-            if not new_text:
+            if mode == "replace" and not new_text:
                 raise HTTPException(status_code=422, detail=f"regions[{i}] needs the new text")
+            reg["mode"] = mode
             reg["new_text"] = new_text[:_MAX_TEXT]
             reg["current_text"] = str(r.get("current_text") or "").strip()[:_MAX_TEXT]
             reg["hints"] = str(r.get("hints") or "").strip()[:200]
