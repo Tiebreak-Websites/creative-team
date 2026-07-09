@@ -24,7 +24,7 @@ import { Button } from '@/components/ui/button'
 import { cn, formatUserName } from '@/lib/utils'
 import { useAuth } from '../auth/AuthContext'
 import type { RunData } from '../types'
-import { addSizes, assetUrl } from '../api'
+import { addSizes, assetUrl, getRun } from '../api'
 import { listRuns } from './campaignApi'
 import { AddSizesModal } from './BannerLibrary'
 import { addCustomSize as addCustomSizeApi, getSizeConfig, type SizeConfig } from './sizesApi'
@@ -71,6 +71,25 @@ const newRegionId = () => `rg${++regionUid}`
 
 const CARD_W = 240
 
+/** The whole edit session, cached at module level so switching to another
+ * tool/page never loses in-flight work (the backend job keeps running and the
+ * UI reattaches on return). ONLY the explicit Close (or attaching a new
+ * source) clears it. A full browser reload starts fresh. */
+interface EditSession {
+  src: SourceState | null
+  regions: Region[]
+  cardPos: Record<string, CardPos>
+  blocks: DetectedBlock[]
+  typography: string
+  quality: 'low' | 'medium' | 'high'
+  extraSizes: string[]
+  job: EditJob | null
+  viewCandidate: number | null
+  accepted: RunData | null
+  recomposeNote: string
+}
+let SESSION: EditSession | null = null
+
 /**
  * Banner **Edit** workspace — canvas v2. The banner floats center-left; every
  * marked region gets a floating card whose connector line points at the
@@ -79,27 +98,55 @@ const CARD_W = 240
  * its place (pick sizes → its own Generate starts the recompose).
  */
 export function BannerEdit() {
-  const [src, setSrc] = useState<SourceState | null>(null)
-  const [regions, setRegions] = useState<Region[]>([])
-  const [cardPos, setCardPos] = useState<Record<string, CardPos>>({})
+  // Every session-worthy piece of state initializes from the module cache, so
+  // navigating away and back reattaches the exact same edit.
+  const [src, setSrc] = useState<SourceState | null>(() => SESSION?.src ?? null)
+  const [regions, setRegions] = useState<Region[]>(() => SESSION?.regions ?? [])
+  const [cardPos, setCardPos] = useState<Record<string, CardPos>>(() => SESSION?.cardPos ?? {})
   const [activeRegion, setActiveRegion] = useState<string | null>(null)
-  const [blocks, setBlocks] = useState<DetectedBlock[]>([])
-  const [typography, setTypography] = useState('')
+  const [blocks, setBlocks] = useState<DetectedBlock[]>(() => SESSION?.blocks ?? [])
+  const [typography, setTypography] = useState(() => SESSION?.typography ?? '')
   const [detecting, setDetecting] = useState(false)
-  const [quality, setQuality] = useState<'low' | 'medium' | 'high'>('high')
-  const [extraSizes, setExtraSizes] = useState<string[]>([])
+  const [quality, setQuality] = useState<'low' | 'medium' | 'high'>(() => SESSION?.quality ?? 'high')
+  const [extraSizes, setExtraSizes] = useState<string[]>(() => SESSION?.extraSizes ?? [])
   const [sizesOpen, setSizesOpen] = useState(false)
   const [starting, setStarting] = useState(false)
-  const [job, setJob] = useState<EditJob | null>(null)
-  const [viewCandidate, setViewCandidate] = useState<number | null>(null)
+  const [job, setJob] = useState<EditJob | null>(() => SESSION?.job ?? null)
+  const [viewCandidate, setViewCandidate] = useState<number | null>(() => SESSION?.viewCandidate ?? null)
   const [showOriginal, setShowOriginal] = useState(false)
-  const [accepted, setAccepted] = useState<RunData | null>(null)
+  const [accepted, setAccepted] = useState<RunData | null>(() => SESSION?.accepted ?? null)
   const [accepting, setAccepting] = useState(false)
   const [recomposing, setRecomposing] = useState(false)
-  const [recomposeNote, setRecomposeNote] = useState('')
+  const [recomposeNote, setRecomposeNote] = useState(() => SESSION?.recomposeNote ?? '')
+  const [recomposeRun, setRecomposeRun] = useState<RunData | null>(null)
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // Keep the cache in sync — cheap object write per relevant change.
+  useEffect(() => {
+    SESSION = {
+      src, regions, cardPos, blocks, typography, quality, extraSizes,
+      job, viewCandidate, accepted, recomposeNote,
+    }
+  }, [src, regions, cardPos, blocks, typography, quality, extraSizes,
+      job, viewCandidate, accepted, recomposeNote])
+
+  // A job restored from the cache may be stale (it kept running while we were
+  // away) — refetch it once on mount. A 404 means the server restarted and the
+  // working session is gone.
+  const restoredJob = useRef(SESSION?.job ?? null)
+  useEffect(() => {
+    const j = restoredJob.current
+    if (!j) return
+    restoredJob.current = null
+    getEditJob(j.job_id)
+      .then(setJob)
+      .catch(() => {
+        setJob(null)
+        setError('The previous correction is no longer available — the server may have restarted.')
+      })
+  }, [])
 
   const [sizeConfig, setSizeConfig] = useState<SizeConfig | null>(null)
   useEffect(() => {
@@ -131,6 +178,7 @@ export function BannerEdit() {
   }, [job, viewCandidate])
 
   function resetForSource(next: SourceState | null) {
+    SESSION = null // the ONLY place edit work is deliberately dropped
     setSrc(next)
     setRegions([])
     setCardPos({})
@@ -142,6 +190,7 @@ export function BannerEdit() {
     setAccepted(null)
     setRecomposing(false)
     setRecomposeNote('')
+    setRecomposeRun(null)
     setExtraSizes([])
     setError(null)
   }
@@ -174,7 +223,12 @@ export function BannerEdit() {
   }
 
   // Text detection runs AUTOMATICALLY on attach so drawn regions prefill.
-  const detectRan = useRef<string>('')
+  // A restored session already carries its blocks — don't re-detect those.
+  const detectRan = useRef<string>(
+    SESSION?.src && (SESSION.blocks.length || SESSION.typography)
+      ? JSON.stringify(SESSION.src.source)
+      : '',
+  )
   useEffect(() => {
     if (!src) return
     const key = JSON.stringify(src.source)
@@ -287,7 +341,7 @@ export function BannerEdit() {
           new_text: r.next.trim(),
           mode: r.mode,
         })),
-        candidates: 2,
+        candidates: 1,
         quality,
         typography: typography || undefined,
       })
@@ -317,7 +371,7 @@ export function BannerEdit() {
     }
   }
 
-  // Deferred recompose: sizes are only CHIPS until the post-accept console's
+  // Deferred recompose: sizes are only PILLS until the post-accept console's
   // Generate is pressed — same recompose path as the Banner Builder (the
   // accepted image is a fresh MVP master; add_sizes recomposes off it).
   const acceptedSize = accepted?.banners?.[0]?.size
@@ -328,7 +382,7 @@ export function BannerEdit() {
     try {
       await addSizes(accepted.run_id, 'c1', extraSizes)
       setRecomposeNote(
-        `Recomposing ${extraSizes.length} size${extraSizes.length > 1 ? 's' : ''} — watch them fill in under Generate.`,
+        `Recomposing ${extraSizes.length} size${extraSizes.length > 1 ? 's' : ''}…`,
       )
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -336,6 +390,34 @@ export function BannerEdit() {
       setRecomposing(false)
     }
   }
+
+  // The new sizes fill in RIGHT HERE in the edit page (and, being a normal
+  // run, in the shared Generate gallery too): poll the accepted run until
+  // every requested size settles.
+  useEffect(() => {
+    if (!accepted || !recomposeNote || !extraSizes.length) return
+    let alive = true
+    let timer: number | undefined
+    const tick = async () => {
+      try {
+        const run = (await getRun(accepted.run_id)) as RunData
+        if (!alive) return
+        setRecomposeRun(run)
+        const unsettled = extraSizes.some((s) => {
+          const b = run.banners.find((x) => x.label === `c1__${s}`)
+          return !b || b.status === 'pending' || b.status === 'running'
+        })
+        if (unsettled) timer = window.setTimeout(tick, 2500)
+      } catch {
+        if (alive) timer = window.setTimeout(tick, 4000)
+      }
+    }
+    void tick()
+    return () => {
+      alive = false
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [accepted, recomposeNote, extraSizes])
 
   async function addCustomSize(text: string): Promise<string | null> {
     const norm = (text || '').trim().toLowerCase().replace(/[×*]/g, 'x').replace(/\s+/g, '')
@@ -396,13 +478,14 @@ export function BannerEdit() {
         />
       ) : (
         <>
-          {/* Exit — top-right of the canvas */}
+          {/* Exit — top-LEFT of the canvas. Closing is the only way to drop
+              the session; navigating elsewhere keeps the work running. */}
           <button
             type="button"
             onClick={exitEdit}
             title="Close this edit"
             aria-label="Close this edit"
-            className="absolute right-4 top-4 z-40 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card/90 text-muted-foreground shadow backdrop-blur transition-colors hover:border-destructive hover:text-destructive"
+            className="absolute left-4 top-4 z-40 inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card/90 text-muted-foreground shadow backdrop-blur transition-colors hover:border-destructive hover:text-destructive"
           >
             <X className="h-4 w-4" />
           </button>
@@ -418,7 +501,7 @@ export function BannerEdit() {
             onPatchRegion={patchRegion}
             onRemoveRegion={removeRegion}
             disabled={!!currentCandidate && !showOriginal}
-            shiftForColumn={!!job && !accepted}
+            shiftForColumn={(!!job && !accepted) || (!!accepted && !!recomposeNote)}
           />
 
           {/* -------- candidates: vertical column on the RIGHT -------- */}
@@ -515,8 +598,82 @@ export function BannerEdit() {
             </div>
           )}
 
-          {/* -------- bottom console: main OR post-accept (same spot) -------- */}
-          <div className="absolute inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-4">
+          {/* -------- recompose progress: the new sizes fill in right here -------- */}
+          {accepted && recomposeNote && (
+            <div className="absolute bottom-28 right-6 top-6 z-30 flex w-56 flex-col gap-3">
+              <div className="shrink-0 rounded-xl border border-border bg-card/95 px-3 py-2 text-center shadow backdrop-blur">
+                {extraSizes.every((s) => {
+                  const b = recomposeRun?.banners.find((x) => x.label === `c1__${s}`)
+                  return b && b.status !== 'pending' && b.status !== 'running'
+                }) ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <Check className="h-3.5 w-3.5" /> New sizes ready
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                    {recomposeNote}
+                  </span>
+                )}
+              </div>
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+                {extraSizes.map((s) => {
+                  const b = recomposeRun?.banners.find((x) => x.label === `c1__${s}`)
+                  const ok = b?.status === 'ok' && b.url
+                  const failed = b && !ok && b.status !== 'pending' && b.status !== 'running'
+                  return (
+                    <div key={s} className="overflow-hidden rounded-xl border border-border bg-card shadow-md">
+                      {ok ? (
+                        <img src={assetUrl(b!.url as string)} alt={s} className="max-h-36 w-full object-contain" />
+                      ) : (
+                        <div className="flex h-24 flex-col items-center justify-center gap-1.5 p-2 text-center">
+                          {failed ? (
+                            <>
+                              <AlertTriangle className="h-4 w-4 text-destructive" />
+                              <span className="text-[11px] text-destructive">{b?.error || 'failed'}</span>
+                            </>
+                          ) : (
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          )}
+                        </div>
+                      )}
+                      <div className="border-t border-border px-2 py-1 text-center font-display text-[11px] font-semibold">
+                        {s}
+                      </div>
+                    </div>
+                  )
+                })}
+                <p className="px-1 text-center text-[10px] leading-snug text-muted-foreground">
+                  Also in the Generate gallery — safe to leave this page.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* -------- bottom: size pills ABOVE the console + the console -------- */}
+          <div className="absolute inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-4">
+            {/* Selected sizes float above the console, like the Generate tool. */}
+            {accepted && !recomposeNote && extraSizes.length > 0 && (
+              <div className="flex max-w-2xl flex-wrap items-center justify-center gap-2">
+                {extraSizes.map((s) => (
+                  <span
+                    key={s}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary py-1 pl-3.5 pr-2 font-display text-[13px] font-semibold text-primary-foreground shadow-sm"
+                  >
+                    {s}
+                    <button
+                      type="button"
+                      onClick={() => setExtraSizes((prev) => prev.filter((x) => x !== s))}
+                      title={`Remove ${s}`}
+                      aria-label={`Remove size ${s}`}
+                      className="text-primary-foreground/80 hover:text-primary-foreground"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             {accepted ? (
               /* Post-accept console REPLACES the main one: pick sizes, then ITS
                  Generate starts the recompose (nothing runs before that). */
@@ -527,7 +684,7 @@ export function BannerEdit() {
                 <Divider />
                 {recomposeNote ? (
                   <span className="min-w-0 flex-1 truncate text-xs font-medium text-primary">
-                    {recomposeNote}
+                    New sizes are generating on the right — they land in the Generate gallery too.
                   </span>
                 ) : (
                   <>
@@ -539,30 +696,10 @@ export function BannerEdit() {
                     >
                       <Ruler className="h-4 w-4" /> Pick sizes
                     </button>
-                    <span className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
-                      {extraSizes.length === 0 ? (
-                        <span className="truncate text-xs text-muted-foreground">
-                          No sizes selected yet — the corrected banner is a fresh MVP master.
-                        </span>
-                      ) : (
-                        extraSizes.map((s) => (
-                          <span
-                            key={s}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-primary bg-primary/10 py-0.5 pl-2.5 pr-1.5 font-display text-xs font-semibold text-primary"
-                          >
-                            {s}
-                            <button
-                              type="button"
-                              onClick={() => setExtraSizes((prev) => prev.filter((x) => x !== s))}
-                              title={`Remove ${s}`}
-                              aria-label={`Remove size ${s}`}
-                              className="hover:text-destructive"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </span>
-                        ))
-                      )}
+                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                      {extraSizes.length === 0
+                        ? 'No sizes selected yet — the corrected banner is a fresh MVP master.'
+                        : `${extraSizes.length} size${extraSizes.length > 1 ? 's' : ''} selected — press Generate to start.`}
                     </span>
                     <Button
                       size="lg"
