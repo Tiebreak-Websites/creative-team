@@ -199,26 +199,74 @@ def _resolve_source(src: dict) -> tuple[Path, str]:
 # ---------------------------------------------------------------------------
 def _edit_instruction(regions: List[dict], typography: str) -> str:
     lines = [
-        "This is a finished advertising banner. Edit ONLY the transparent (masked) "
-        "regions — everything else must remain EXACTLY as it is.",
+        "This is a finished advertising banner. The old text inside the transparent "
+        "(masked) regions has ALREADY BEEN ERASED — the blur there is only a "
+        "placeholder. Repaint each masked region: reconstruct the clean background, "
+        "then render the replacement text on it.",
     ]
     for i, r in enumerate(regions, 1):
         cur = (r.get("current_text") or "").strip()
-        was = f" It currently reads “{cur}”." if cur else ""
+        was = f" (it previously read “{cur}”)" if cur else ""
         hint = (r.get("hints") or "").strip()
         hint = f" {hint}." if hint else ""
         lines.append(
-            f"Masked region {i} (around {round(r['x_pct'])}%,{round(r['y_pct'])}% of the frame):"
-            f"{was} Replace the text so it reads EXACTLY: “{r['new_text']}”.{hint}"
+            f"Masked region {i} (around {round(r['x_pct'])}%,{round(r['y_pct'])}% of the frame): "
+            f"render EXACTLY this text{was}: “{r['new_text']}”.{hint}"
         )
-    typo = f" Original typography: {typography}." if typography else ""
+    typo = f" Typography notes: {typography}." if typography else ""
     lines.append(
-        "Match the original typography — font style, weight, size, color, letter-spacing, "
-        f"alignment and any effects.{typo} Rebuild the background behind the text seamlessly. "
-        "Render the replacement text with PERFECT spelling exactly as given, including "
-        "punctuation and diacritics. Add no other text, no logos, no watermarks."
+        "The SECOND attached image is the ORIGINAL banner before erasing — copy its "
+        "typography for each replacement (font style, weight, size, color, case, "
+        "effects and alignment of the text that used to sit there), but take the "
+        f"WORDING only from the instructions above, never from that image.{typo}"
+    )
+    lines.append(
+        "Every replacement must fit ENTIRELY inside its masked region with a clear "
+        "margin on all sides — scale the text down if needed; letters must never "
+        "touch or cross the region edge. Perfect spelling exactly as given, including "
+        "punctuation and diacritics. Change nothing outside the masked regions; add "
+        "no other text, no logos, no watermarks."
     )
     return "\n".join(lines)
+
+
+# Padding around each marked region before masking/erasing: replacement text is
+# rarely the same length as the original, so the model needs breathing room —
+# and the erase must swallow the old text entirely (its anti-aliased fringes
+# included) so nothing ghosts through or clips at the box edge.
+def _pad_region(r: dict, width: int, height: int) -> dict:
+    rx = width * r["x_pct"] / 100.0
+    ry = height * r["y_pct"] / 100.0
+    rw = width * r["w_pct"] / 100.0
+    rh = height * r["h_pct"] / 100.0
+    pad_x = max(16.0, rh * 0.5)
+    pad_y = max(12.0, rh * 0.35)
+    x0 = max(0.0, rx - pad_x)
+    y0 = max(0.0, ry - pad_y)
+    x1 = min(float(width), rx + rw + pad_x)
+    y1 = min(float(height), ry + rh + pad_y)
+    return {"x_pct": x0 / width * 100.0, "y_pct": y0 / height * 100.0,
+            "w_pct": (x1 - x0) / width * 100.0, "h_pct": (y1 - y0) / height * 100.0}
+
+
+def _erase_regions(img, regions: List[dict]):
+    """Blur-erase the marked regions in the image the MODEL sees, so the old
+    text simply is not there to be reproduced (the main ghosting fix). The blur
+    radius scales with the largest region so text strokes fully dissolve; the
+    model then reconstructs the background and paints the new text over it."""
+    from PIL import ImageFilter
+    w, h = img.size
+    max_rh = max((h * r["h_pct"] / 100.0 for r in regions), default=40.0)
+    blurred = img.filter(ImageFilter.GaussianBlur(max(24.0, max_rh * 0.6)))
+    out = img.copy()
+    for r in regions:
+        x = int(w * r["x_pct"] / 100.0)
+        y = int(h * r["y_pct"] / 100.0)
+        ww = max(1, int(w * r["w_pct"] / 100.0))
+        hh = max(1, int(h * r["h_pct"] / 100.0))
+        box = (x, y, min(x + ww, w), min(y + hh, h))
+        out.paste(blurred.crop(box), box)
+    return out
 
 
 def _build_mask(width: int, height: int, regions: List[dict]):
@@ -276,12 +324,17 @@ def _run_candidate(job: dict, index: int) -> None:
     from PIL import Image
     d: Path = job["dir"]
     try:
+        # The style reference (the original, text intact) rides along as a second
+        # image[] so the model can match typography even though the first image
+        # has the old text erased.
+        style_ref = d / "style_ref.png"
         with _EDIT_SEM:
             out_bytes = engine.generate_png(
                 api_key=job["api_key"], prompt=job["prompt"], mode="edit",
                 openai_size=job["gen_size"], model="gpt-image-2", quality="high",
                 master_png_path=str(d / "source_gen.png"),
                 mask_png_path=str(d / "mask_gen.png"),
+                extra_image_paths=[str(style_ref)] if style_ref.is_file() else None,
                 timeout=settings.OPENAI_IMAGE_TIMEOUT,
                 max_retries=settings.OPENAI_IMAGE_MAX_RETRIES,
             )
@@ -476,9 +529,17 @@ def build_edits_router() -> APIRouter:
                 raise HTTPException(status_code=422, detail=f"unsupported image size: {why}")
             gen_size = engine.OPENAI_SIZE_MAP[size]
             gw, gh = (int(x) for x in gen_size.split("x"))
-            mask = _build_mask(w, h, regions)
+            # Mask + erase use PADDED regions (breathing room for length changes);
+            # the instruction keeps the user's original coordinates for reference.
+            padded = [_pad_region(r, w, h) for r in regions]
+            mask = _build_mask(w, h, padded)
             mask.save(job_dir / "mask.png")
-            im.resize((gw, gh), Image.LANCZOS).save(job_dir / "source_gen.png")
+            # The model sees the source with the old text ERASED (blur fill) —
+            # nothing to ghost — plus the untouched original as a style reference.
+            prefilled = _erase_regions(im, padded)
+            prefilled.save(job_dir / "prefilled.png")
+            prefilled.resize((gw, gh), Image.LANCZOS).save(job_dir / "source_gen.png")
+            im.resize((gw, gh), Image.LANCZOS).save(job_dir / "style_ref.png")
             mask.resize((gw, gh), Image.NEAREST).save(job_dir / "mask_gen.png")
 
         job = {

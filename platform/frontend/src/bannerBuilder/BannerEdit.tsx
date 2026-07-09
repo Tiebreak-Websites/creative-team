@@ -67,6 +67,12 @@ const newRegionId = () => `rg${++regionUid}`
 export function BannerEdit() {
   const [src, setSrc] = useState<SourceState | null>(null)
   const [regions, setRegions] = useState<Region[]>([])
+  // Every block the vision pass found — hand-drawn regions snap to these on
+  // generate, so a box that only partly covers a text block grows to cover it
+  // whole (a partial box leaves old text lines behind, mixing old and new copy).
+  const [detectedBlocks, setDetectedBlocks] = useState<
+    { x_pct: number; y_pct: number; w_pct: number; h_pct: number }[]
+  >([])
   const [typography, setTypography] = useState('')
   const [candidates, setCandidates] = useState(2)
   const [detecting, setDetecting] = useState(false)
@@ -116,6 +122,7 @@ export function BannerEdit() {
   function resetForSource(next: SourceState | null) {
     setSrc(next)
     setRegions([])
+    setDetectedBlocks([])
     setTypography('')
     setJob(null)
     setViewCandidate(null)
@@ -149,6 +156,7 @@ export function BannerEdit() {
     try {
       const d = await detectText(src.source)
       setTypography(d.typography)
+      setDetectedBlocks(d.blocks)
       if (d.blocks.length) {
         setRegions(
           d.blocks.map((b) => ({
@@ -173,6 +181,27 @@ export function BannerEdit() {
   }
 
   const readyRegions = regions.filter((r) => r.next.trim())
+
+  // Grow a region to the union of every detected text block it substantially
+  // overlaps — a box covering only part of a multi-line block would otherwise
+  // leave the old lines outside it untouched (mixed old + new copy).
+  function snapToBlocks(r: Region): Region {
+    let { x, y, w, h } = r
+    for (const b of detectedBlocks) {
+      const ix = Math.max(0, Math.min(x + w, b.x_pct + b.w_pct) - Math.max(x, b.x_pct))
+      const iy = Math.max(0, Math.min(y + h, b.y_pct + b.h_pct) - Math.max(y, b.y_pct))
+      if (ix * iy > 0.3 * (b.w_pct * b.h_pct)) {
+        const nx = Math.min(x, b.x_pct)
+        const ny = Math.min(y, b.y_pct)
+        w = Math.max(x + w, b.x_pct + b.w_pct) - nx
+        h = Math.max(y + h, b.y_pct + b.h_pct) - ny
+        x = nx
+        y = ny
+      }
+    }
+    return { ...r, x, y, w, h }
+  }
+
   async function generate() {
     if (!src || starting || readyRegions.length === 0) return
     setStarting(true)
@@ -181,10 +210,13 @@ export function BannerEdit() {
     setViewCandidate(null)
     setAccepted(null)
     setRecomposeNote('')
+    const snapped = readyRegions.map(snapToBlocks)
+    // Reflect the snap in the canvas so the user sees the boxes that ran.
+    setRegions((prev) => prev.map((r) => snapped.find((s) => s.id === r.id) ?? r))
     try {
       const j = await createEdit({
         source: src.source,
-        regions: readyRegions.map((r) => ({
+        regions: snapped.map((r) => ({
           x_pct: r.x,
           y_pct: r.y,
           w_pct: r.w,

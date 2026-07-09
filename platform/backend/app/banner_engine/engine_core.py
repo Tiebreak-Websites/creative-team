@@ -110,13 +110,15 @@ def post_images_generations(api_key, prompt, openai_size, model, quality, timeou
 
 
 def post_images_edits(api_key, prompt, master_png_path, openai_size, model, quality, timeout,
-                      mask_png_path=None):
+                      mask_png_path=None, extra_image_paths=None):
     """POST multipart/form-data to /v1/images/edits with the master image.
 
     stdlib only - assembles the multipart body manually. Returns PNG bytes.
     Moved verbatim from run.py v1.7; `mask_png_path` (optional) attaches an
     inpainting mask — its fully-transparent pixels mark where the model may
-    edit (the banner Edit workspace's text-correction path).
+    edit; `extra_image_paths` (optional) appends further image[] entries
+    (e.g. a style reference) — the mask applies to the FIRST image only.
+    (Both power the banner Edit workspace's text-correction path.)
     """
     if not os.path.exists(master_png_path):
         raise FileNotFoundError(f"master_png not found: {master_png_path}")
@@ -128,6 +130,11 @@ def post_images_edits(api_key, prompt, master_png_path, openai_size, model, qual
             raise FileNotFoundError(f"mask_png not found: {mask_png_path}")
         with open(mask_png_path, "rb") as fh:
             mask_bytes = fh.read()
+    extra_images = []
+    for p in extra_image_paths or []:
+        if os.path.exists(p):
+            with open(p, "rb") as fh:
+                extra_images.append((os.path.basename(p), fh.read()))
 
     boundary = "----banner-openai-" + uuid.uuid4().hex
     crlf = b"\r\n"
@@ -150,6 +157,8 @@ def post_images_edits(api_key, prompt, master_png_path, openai_size, model, qual
     _field("n", "1")
     _field("quality", quality)
     _file("image[]", os.path.basename(master_png_path), master_bytes)
+    for fname, data in extra_images:
+        _file("image[]", fname, data)
     if mask_bytes is not None:
         _file("mask", os.path.basename(mask_png_path), mask_bytes)
     body.write(b"--" + boundary.encode() + b"--" + crlf)
@@ -179,8 +188,8 @@ def post_images_edits(api_key, prompt, master_png_path, openai_size, model, qual
 
 def generate_png(*, api_key, prompt, mode, openai_size, model="gpt-image-2",
                  quality="medium", master_png_path=None, mask_png_path=None,
-                 timeout=180, max_retries=2, base_backoff=8, sleep=time.sleep,
-                 on_attempt=None):
+                 extra_image_paths=None, timeout=180, max_retries=2,
+                 base_backoff=8, sleep=time.sleep, on_attempt=None):
     """Generate (mode='gen') or recompose (mode='edit') one PNG; return raw bytes.
 
     Owns the exponential-backoff retry loop for 429 (rate limit) and 5xx
@@ -206,7 +215,8 @@ def generate_png(*, api_key, prompt, mode, openai_size, model="gpt-image-2",
                     raise GenError("master_missing", "edit mode requires master_png_path")
                 return post_images_edits(api_key, prompt, master_png_path,
                                          openai_size, model, quality, timeout,
-                                         mask_png_path=mask_png_path)
+                                         mask_png_path=mask_png_path,
+                                         extra_image_paths=extra_image_paths)
             return post_images_generations(api_key, prompt, openai_size,
                                            model, quality, timeout)
         except urllib.error.HTTPError as e:
