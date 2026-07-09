@@ -64,14 +64,29 @@ async function post<T>(path: string, payload: unknown, fallback: string): Promis
   return r.json()
 }
 
-/** Names (any language) → detected {language, country, gender, age} rows. */
-export async function detectNames(names: string[]): Promise<AvatarRow[]> {
-  const d = await post<{ rows: AvatarRow[] }>('/avatars/detect', { names }, 'Name detection failed')
+/** Upload the landing page's HERO image — its id anchors cards + advertorial
+ * to the campaign's look (customers are deliberately unaffected). */
+export async function uploadReference(file: File): Promise<{ id: string; url: string }> {
+  const fd = new FormData()
+  fd.append('file', file)
+  const r = await fetch(`${LPM_URL}/reference`, { method: 'POST', credentials: 'include', body: fd })
+  if (!r.ok) return fail(r, 'Upload failed')
+  return r.json()
+}
+
+/** Names (any language) → detected {language, country, gender, age} rows.
+ * The target market steers `country` so customers look like its audience. */
+export async function detectNames(names: string[], market?: string): Promise<AvatarRow[]> {
+  const d = await post<{ rows: AvatarRow[] }>('/avatars/detect', { names, market }, 'Name detection failed')
   return d.rows
 }
 
-export function createAvatars(rows: AvatarRow[], style: AvatarStyle): Promise<MaterialJob> {
-  return post('/avatars', { rows, style }, 'Could not start the avatar job')
+export function createAvatars(
+  rows: AvatarRow[],
+  style: AvatarStyle,
+  market?: string,
+): Promise<MaterialJob> {
+  return post('/avatars', { rows, style, market }, 'Could not start the customer photos')
 }
 
 export function createCards(payload: {
@@ -79,6 +94,8 @@ export function createCards(payload: {
   same_person: boolean
   aspect: string
   style_note?: string
+  market?: string
+  reference?: string
 }): Promise<MaterialJob> {
   return post('/cards', payload, 'Could not start the card set')
 }
@@ -88,6 +105,8 @@ export function createAdvertorial(payload: {
   text: string
   aspect: string
   candidates: number
+  market?: string
+  reference?: string
 }): Promise<MaterialJob> {
   return post('/advertorial', payload, 'Could not start the advertorial image')
 }

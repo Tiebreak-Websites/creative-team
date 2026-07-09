@@ -917,6 +917,35 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
         <div className="space-y-3 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Sizes</h2>
 
+          {/* Search first — the fastest path to a size sits on top of the rail. */}
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={sizeQuery}
+              onChange={(e) => setSizeQuery(e.target.value)}
+              onPaste={(e) => {
+                if (applyPastedSizes(e.clipboardData.getData('text'))) e.preventDefault()
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && applyPastedSizes(sizeQuery)) e.preventDefault()
+              }}
+              aria-label="Search banner sizes"
+              placeholder="Search — or paste many sizes (e.g. 1080x1080, 300x250)"
+              className="h-8 w-full rounded-md border border-input bg-secondary pl-8 pr-7 text-xs text-foreground transition-colors placeholder:text-muted-foreground hover:border-foreground/25 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
+            />
+            {sizeQuery && (
+              <button
+                type="button"
+                onClick={() => setSizeQuery('')}
+                title="Clear"
+                aria-label="Clear size search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
           {/* Bundles — one-click size sets (admin-managed), in their own section. */}
           {bundles.length > 0 && (
             <div className="space-y-1.5 rounded-lg border border-border bg-secondary/40 p-2.5">
@@ -947,34 +976,6 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
               ))}
             </div>
           )}
-
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={sizeQuery}
-              onChange={(e) => setSizeQuery(e.target.value)}
-              onPaste={(e) => {
-                if (applyPastedSizes(e.clipboardData.getData('text'))) e.preventDefault()
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && applyPastedSizes(sizeQuery)) e.preventDefault()
-              }}
-              aria-label="Search banner sizes"
-              placeholder="Search — or paste many sizes (e.g. 1080x1080, 300x250)"
-              className="h-8 w-full rounded-md border border-input bg-secondary pl-8 pr-7 text-xs text-foreground transition-colors placeholder:text-muted-foreground hover:border-foreground/25 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
-            />
-            {sizeQuery && (
-              <button
-                type="button"
-                onClick={() => setSizeQuery('')}
-                title="Clear"
-                aria-label="Clear size search"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            )}
-          </div>
 
           {sizeQuery.trim() ? (
             (() => {

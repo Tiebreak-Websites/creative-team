@@ -49,7 +49,7 @@ import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from . import engine, runner
@@ -62,6 +62,13 @@ from .settings import settings
 log = logging.getLogger(__name__)
 
 LP_ROOT = settings.ARTIFACT_ROOT / "lp-materials"
+# Uploaded HERO reference images (the landing page's hero visual): section cards
+# and advertorials anchor their look to it. Customers deliberately do NOT.
+UPLOADS_DIR = LP_ROOT / "uploads"
+_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+_UPLOAD_MIME = {"image/png", "image/jpeg", "image/webp"}
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+_MAX_MARKET = 120
 
 _MAX_AVATAR_ROWS = 20
 _MAX_CARDS = 6
@@ -212,19 +219,24 @@ def _degrade(png_bytes: bytes) -> bytes:
 def _avatar_prompt(row: dict, style: dict) -> str:
     gender_word = {"female": "woman", "male": "man"}.get(row.get("gender"), "person")
     parts = [
-        f"Amateur candid photograph of a real, ordinary {row.get('age', '30s')} "
-        f"{row.get('country', '')} {gender_word}, an authentic user profile picture "
-        "for a product review.",
+        f"Amateur but likeable profile photo of a real, ordinary {row.get('age', '30s')} "
+        f"{row.get('country', '')} {gender_word} — the kind of picture a happy customer "
+        "uses as their account profile photo.",
+        # The customer look: eye contact + a natural slight smile. Still a real
+        # person's snapshot, never a studio portrait.
+        "Facing the camera and looking INTO the lens with a relaxed, natural slight "
+        "smile — warm, friendly and confident; a genuinely good, likeable profile "
+        "picture moment.",
     ]
     if style.get("group_crop", True):
-        parts.append("Awkwardly cropped from a larger group photo: subject off-center, "
+        parts.append("Cropped out of a larger casual photo: framing slightly off-center, "
                      "a sliver of another person's shoulder or arm at the frame edge.")
     if style.get("low_quality", True):
-        parts.append("Low-quality smartphone photo: slightly blurry, mild noise, uneven "
-                     "harsh lighting or direct flash, slightly washed-out colors.")
+        parts.append("Everyday smartphone photo quality: slightly soft focus, mild noise, "
+                     "uneven real-world lighting or direct flash, colors a touch washed out.")
     if style.get("candid", True):
-        parts.append("Not posing for the camera — caught mid-expression, imperfect angle, "
-                     "a busy everyday background (street, restaurant, living room).")
+        parts.append("An unstaged real-life moment — imperfect angle and a busy everyday "
+                     "background (street, cafe, living room) — but still looking at the camera.")
     parts.append(
         "An ordinary, believable face and body with imperfect skin and everyday clothes — "
         "absolutely NOT a model, NOT studio lighting, NOT a professional portrait, no bokeh "
@@ -422,13 +434,68 @@ def _slug(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "-", (s or "").strip()).strip("-").lower()[:60] or "item"
 
 
+def _resolve_reference(payload: dict):
+    """Optional hero-reference id -> (path, id) or (None, "")."""
+    rid = str(payload.get("reference") or "").strip()
+    if not rid:
+        return None, ""
+    if not _ID_RE.match(rid):
+        raise HTTPException(status_code=422, detail="bad reference id")
+    png = UPLOADS_DIR / f"{rid}.png"
+    if not png.is_file():
+        raise HTTPException(status_code=404, detail="hero image not found — upload it again")
+    return png, rid
+
+
+def _market_line(market: str) -> str:
+    return (f" TARGET MARKET: {market}. Cast people who authentically look like this "
+            "market's audience (ethnicity, styling) and localize the setting and "
+            "atmosphere to it." if market else "")
+
+
 # ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
 def build_lp_materials_router() -> APIRouter:
     router = APIRouter()
 
-    # ---- avatars ----------------------------------------------------------
+    # ---- hero reference (guides cards + advertorial; NOT customers) --------
+    @router.post("/reference")
+    async def upload_reference(file: UploadFile = File(...), _user: dict = Depends(require_user)):
+        """Upload the landing page's HERO image (PNG/JPG/WebP ≤10MB). Its id is
+        passed to /cards and /advertorial so the whole set anchors to its look."""
+        if (file.content_type or "") not in _UPLOAD_MIME:
+            raise HTTPException(status_code=422, detail="use a PNG, JPG or WebP image")
+        data = await file.read()
+        if not data or len(data) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=422, detail="image must be under 10MB")
+        from PIL import Image
+        try:
+            with Image.open(io.BytesIO(data)) as im:
+                im.load()
+                im = im.convert("RGB")
+                # The reference only steers style — cap its size so the vision
+                # payload stays small whatever the user uploads.
+                im.thumbnail((1536, 1536))
+                buf = io.BytesIO()
+                im.save(buf, format="PNG")
+        except Exception:  # noqa: BLE001
+            raise HTTPException(status_code=422, detail="could not read that image")
+        rid = uuid.uuid4().hex
+        UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        (UPLOADS_DIR / f"{rid}.png").write_bytes(buf.getvalue())
+        return {"id": rid, "url": f"/api/tools/lp-materials/reference/{rid}.png"}
+
+    @router.get("/reference/{rid}.png")
+    def get_reference(rid: str):
+        if not _ID_RE.match(rid):
+            raise HTTPException(status_code=404, detail="not found")
+        png = UPLOADS_DIR / f"{rid}.png"
+        if not png.is_file():
+            raise HTTPException(status_code=404, detail="not found")
+        return FileResponse(str(png), media_type="image/png")
+
+    # ---- customers (profile pictures) --------------------------------------
     @router.post("/avatars/detect")
     def detect_names(payload: dict = Body(default={}), _user: dict = Depends(require_user)):
         """Names (any language/script) -> {language, country, gender, age} per row,
@@ -438,13 +505,21 @@ def build_lp_materials_router() -> APIRouter:
         if not names:
             raise HTTPException(status_code=422, detail="enter at least one name")
         names = names[:_MAX_AVATAR_ROWS]
+        market = str(payload.get("market") or "").strip()[:_MAX_MARKET]
+        market_rule = (
+            f" The campaign targets this market: {market}. Set `country` to that market's "
+            "people for every name that plausibly belongs to it (the customer photos must "
+            "look like the target market's audience); only deviate when a name clearly "
+            "belongs to a different culture."
+            if market else ""
+        )
         try:
             data = _llm_json(
                 api_key,
                 system=("You analyse personal names for a testimonial generator. For each "
                         "name, infer the language/script it is written in, the most likely "
                         "country, the likely gender, and a plausible age band for a product "
-                        "reviewer. Keep the name EXACTLY as given."),
+                        f"reviewer. Keep the name EXACTLY as given.{market_rule}"),
                 user_text="Names:\n" + "\n".join(f"- {n}" for n in names),
                 schema_name="name_rows", schema=_DETECT_NAMES_SCHEMA, effort="low",
             )
@@ -457,7 +532,11 @@ def build_lp_materials_router() -> APIRouter:
             rows.append({
                 "name": n,
                 "language": str(r.get("language") or "")[:60],
-                "country": str(r.get("country") or "")[:60],
+                # The target market is AUTHORITATIVE for the customer's look —
+                # a review section for the Thai market shows Thai faces whatever
+                # script the name uses. The per-row chip stays editable for the
+                # rare deliberate exception.
+                "country": market or str(r.get("country") or "")[:60],
                 "gender": r.get("gender") if r.get("gender") in ("female", "male") else "female",
                 "age": r.get("age") if r.get("age") in ("20s", "30s", "40s", "50s", "60s") else "30s",
             })
@@ -479,6 +558,10 @@ def build_lp_materials_router() -> APIRouter:
             "candid": bool(style_in.get("candid", True)),
             "degrade": bool(style_in.get("degrade", True)),
         }
+        # The target market drives the customers' nationality: rows without an
+        # explicit country fall back to it. (The hero image deliberately does
+        # NOT influence customer photos.)
+        market = str(payload.get("market") or "").strip()[:_MAX_MARKET]
         size = _ASPECT_SIZES["1:1"]
         engine.ensure_size(size)
         items = []
@@ -487,7 +570,7 @@ def build_lp_materials_router() -> APIRouter:
                 raise HTTPException(status_code=422, detail=f"rows[{i}] needs a name")
             row = {
                 "name": str(r.get("name")).strip()[:120],
-                "country": str(r.get("country") or "")[:60],
+                "country": str(r.get("country") or "")[:60] or market,
                 "gender": r.get("gender") if r.get("gender") in ("female", "male") else "female",
                 "age": r.get("age") if r.get("age") in ("20s", "30s", "40s", "50s", "60s") else "30s",
             }
@@ -499,7 +582,7 @@ def build_lp_materials_router() -> APIRouter:
             })
         job = _new_job("avatars", user_key,
                        {"style": style, "rows": [it["label"] for it in items],
-                        "quality": "medium"},
+                        "market": market, "quality": "medium"},
                        items, api_key)
         return _public_job(job)
 
@@ -524,6 +607,8 @@ def build_lp_materials_router() -> APIRouter:
         size = _ASPECT_SIZES[aspect]
         engine.ensure_size(size)
         style_note = str(payload.get("style_note") or "").strip()[:400]
+        market = str(payload.get("market") or "").strip()[:_MAX_MARKET]
+        hero_path, hero_id = _resolve_reference(payload)
 
         persona_rule = (
             "The user wants the SAME single person to appear in EVERY scene. Invent one "
@@ -533,6 +618,13 @@ def build_lp_materials_router() -> APIRouter:
             "Each scene may cast freely (different people, or objects/environments when "
             "that visualizes the card better). Set `persona` to an empty string."
         )
+        hero_rule = (
+            " The attached image is the HERO visual of the landing page these cards will sit "
+            "on. Anchor the whole set to it: mirror its palette, lighting, mood, art style "
+            "and general world in `shared_direction` so the cards read as the same campaign. "
+            "Do NOT copy its composition and IGNORE any text in it."
+            if hero_path else ""
+        )
         try:
             direction = _llm_json(
                 api_key,
@@ -541,7 +633,7 @@ def build_lp_materials_router() -> APIRouter:
                         "photographic style, then one concrete scene per card that visualizes "
                         "its message. Scenes are literal and concrete (subject, action, "
                         "setting) — never abstract concepts or symbol soup. The images will "
-                        f"contain no text whatsoever. {persona_rule}"),
+                        f"contain no text whatsoever. {persona_rule}{hero_rule}{_market_line(market)}"),
                 user_text=(
                     (f"Style note from the user: {style_note}\n\n" if style_note else "")
                     + "Cards:\n"
@@ -550,6 +642,7 @@ def build_lp_materials_router() -> APIRouter:
                 ),
                 schema_name="card_set_direction", schema=_CARDS_DIRECTION_SCHEMA,
                 effort="medium",
+                image_bytes=hero_path.read_bytes() if hero_path else None,
             )
         except RuntimeError as e:
             raise HTTPException(status_code=502, detail=str(e))
@@ -565,6 +658,7 @@ def build_lp_materials_router() -> APIRouter:
                 f"Scene: {scene}",
                 f"Recurring person (must look IDENTICAL in every image of this set): {persona}." if persona else "",
                 f"Shared set style: {shared}" if shared else "",
+                _market_line(market).strip(),
                 "Crisp, editorial, color-graded commercial photography.",
                 _NO_TEXT_RULE,
             ]))
@@ -574,7 +668,8 @@ def build_lp_materials_router() -> APIRouter:
         job = _new_job("cards", user_key,
                        {"cards": cards, "same_person": same_person, "aspect": aspect,
                         "shared_direction": shared, "persona": persona,
-                        "style_note": style_note, "quality": "medium"},
+                        "style_note": style_note, "market": market,
+                        "reference": hero_id, "quality": "medium"},
                        items, api_key)
         return _public_job(job)
 
@@ -595,6 +690,14 @@ def build_lp_materials_router() -> APIRouter:
         except (TypeError, ValueError):
             candidates = 2
         candidates = max(1, min(_MAX_ADV_CANDIDATES, candidates))
+        market = str(payload.get("market") or "").strip()[:_MAX_MARKET]
+        hero_path, hero_id = _resolve_reference(payload)
+        hero_rule = (
+            " The attached image is the HERO visual of the landing page this advertorial "
+            "sits on — mirror its palette, lighting, mood and art style so the image reads "
+            "as the same campaign. Do NOT copy its composition; IGNORE any text in it."
+            if hero_path else ""
+        )
         try:
             direction = _llm_json(
                 api_key,
@@ -602,9 +705,10 @@ def build_lp_materials_router() -> APIRouter:
                         "long advertorial text on a landing page. Read the story and pick "
                         "its SINGLE strongest visual moment — one scene, one subject, told "
                         "like documentary/editorial photography. Concrete and literal; the "
-                        "image will contain no text."),
+                        f"image will contain no text.{hero_rule}{_market_line(market)}"),
                 user_text=f"Title: {title}\n\nText:\n{text}",
                 schema_name="advertorial_scene", schema=_ADVERTORIAL_SCHEMA, effort="medium",
+                image_bytes=hero_path.read_bytes() if hero_path else None,
             )
         except RuntimeError as e:
             raise HTTPException(status_code=502, detail=str(e))
@@ -612,6 +716,7 @@ def build_lp_materials_router() -> APIRouter:
         prompt = " ".join(filter(None, [
             "Editorial documentary photograph for an advertorial article.",
             f"Scene: {scene}" if scene else f"A concrete scene visualizing: {title}. {text[:300]}",
+            _market_line(market).strip(),
             "Natural, believable, story-telling composition; crisp editorial color grade.",
             _NO_TEXT_RULE,
         ]))
@@ -621,7 +726,8 @@ def build_lp_materials_router() -> APIRouter:
                  for i in range(candidates)]
         job = _new_job("advertorial", user_key,
                        {"title": title, "text": text, "aspect": aspect,
-                        "scene": scene, "quality": "medium"},
+                        "scene": scene, "market": market, "reference": hero_id,
+                        "quality": "medium"},
                        items, api_key)
         return _public_job(job)
 

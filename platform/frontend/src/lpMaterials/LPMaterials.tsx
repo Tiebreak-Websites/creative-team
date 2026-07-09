@@ -3,6 +3,8 @@ import {
   AlertTriangle,
   Download,
   DownloadCloud,
+  Globe,
+  ImagePlus,
   Loader2,
   Newspaper,
   Plus,
@@ -29,23 +31,50 @@ import {
   itemUrl,
   listJobs,
   regenerateItem,
+  uploadReference,
   zipUrl,
   type AvatarRow,
   type MaterialJob,
 } from './api'
 
-type Section = 'avatars' | 'cards' | 'advertorial'
+type Section = 'customers' | 'cards' | 'advertorial'
 
-const SECTIONS: { id: Section; label: string; icon: ReactNode }[] = [
-  { id: 'avatars', label: 'Review avatars', icon: <UserRound className="h-4 w-4" /> },
-  { id: 'cards', label: 'Section cards', icon: <LayoutGrid className="h-4 w-4" /> },
-  { id: 'advertorial', label: 'Advertorial', icon: <Newspaper className="h-4 w-4" /> },
+const SECTIONS: { id: Section; label: string; desc: string; icon: ReactNode; usesHero: boolean }[] = [
+  {
+    id: 'customers',
+    label: 'Customers',
+    desc: 'Profile photos for reviews — market drives the look',
+    icon: <UserRound className="h-4 w-4" />,
+    usesHero: false,
+  },
+  {
+    id: 'cards',
+    label: 'Section cards',
+    desc: 'A matching image set, anchored to your hero',
+    icon: <LayoutGrid className="h-4 w-4" />,
+    usesHero: true,
+  },
+  {
+    id: 'advertorial',
+    label: 'Advertorial',
+    desc: 'One story image beside long copy',
+    icon: <Newspaper className="h-4 w-4" />,
+    usesHero: true,
+  },
 ]
 
 const KIND_LABEL: Record<string, string> = {
-  avatars: 'Review avatars',
+  avatars: 'Customers',
   cards: 'Section cards',
   advertorial: 'Advertorial',
+}
+
+/** The campaign basis every generator reads from: the LP's hero image (style
+ * anchor for cards + advertorial) and the typed target market (drives customer
+ * nationality and localizes every scene). */
+interface Campaign {
+  hero: { id: string; url: string } | null
+  market: string
 }
 
 /**
@@ -59,7 +88,10 @@ export function LPMaterials() {
   const { user } = useAuth()
   const myEmail = (user?.email || '').toLowerCase()
   const isAdmin = user?.role === 'admin'
-  const [section, setSection] = useState<Section>('avatars')
+  const [section, setSection] = useState<Section>('customers')
+  const [campaign, setCampaign] = useState<Campaign>({ hero: null, market: '' })
+  const [heroBusy, setHeroBusy] = useState(false)
+  const heroInputRef = useRef<HTMLInputElement>(null)
   const [jobs, setJobs] = useState<MaterialJob[]>([])
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -118,6 +150,21 @@ export function LPMaterials() {
     }
   }
 
+  async function onHeroUpload(files: FileList | null) {
+    const file = files?.[0]
+    if (!file) return
+    setHeroBusy(true)
+    setError(null)
+    try {
+      const up = await uploadReference(file)
+      setCampaign((c) => ({ ...c, hero: up }))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setHeroBusy(false)
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
       {/* ---------------- Left rail: the three generators ---------------- */}
@@ -126,12 +173,86 @@ export function LPMaterials() {
           <div>
             <h2 className="font-display text-sm font-bold tracking-tight">LP Materials</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Images for landing-page sections. Generated images never contain text —
-              titles and copy live on the page.
+              Images for landing-page sections — no text ever renders inside them.
+              Start with the campaign basis, then pick a generator.
             </p>
           </div>
 
-          <div className="inline-flex w-full rounded-lg border border-border bg-secondary p-0.5">
+          {/* -------- 1 · Campaign basis: hero image + target market -------- */}
+          <div className="space-y-3 rounded-xl border border-border bg-secondary/40 p-3">
+            <FieldLabel>1 · Campaign</FieldLabel>
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                onClick={() => heroInputRef.current?.click()}
+                disabled={heroBusy}
+                title="Upload the landing page's hero image — Section cards and the Advertorial anchor their look to it"
+                className={cn(
+                  'relative flex h-20 w-28 shrink-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border transition-colors',
+                  campaign.hero
+                    ? 'border-primary/50'
+                    : 'border-dashed border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground',
+                )}
+              >
+                {campaign.hero ? (
+                  <img src={campaign.hero.url} alt="Hero reference" className="h-full w-full object-cover" />
+                ) : heroBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <ImagePlus className="h-4 w-4" />
+                    <span className="text-[10px] font-medium">Hero image</span>
+                  </>
+                )}
+              </button>
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  {campaign.hero ? (
+                    <>
+                      Cards &amp; advertorial will match this hero’s look.{' '}
+                      <button
+                        type="button"
+                        onClick={() => setCampaign((c) => ({ ...c, hero: null }))}
+                        className="font-medium text-destructive hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </>
+                  ) : (
+                    'Upload your LP’s hero visual — Section cards and the Advertorial copy its palette, mood and style. Customers are not affected.'
+                  )}
+                </p>
+              </div>
+              <input
+                ref={heroInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                hidden
+                aria-label="Upload the hero image"
+                onChange={(e) => {
+                  void onHeroUpload(e.target.files)
+                  e.target.value = ''
+                }}
+              />
+            </div>
+            <div className="relative">
+              <Globe className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={campaign.market}
+                onChange={(e) => setCampaign((c) => ({ ...c, market: e.target.value }))}
+                aria-label="Target market"
+                placeholder="Target market — e.g. Thailand, Gulf region, Brazil…"
+                className="h-8 w-full rounded-md border border-input bg-card pl-8 pr-2.5 text-xs text-foreground transition-colors placeholder:text-muted-foreground hover:border-foreground/25 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
+              />
+            </div>
+            <p className="text-[10px] leading-snug text-muted-foreground">
+              The market decides who your customers look like and localizes every scene.
+            </p>
+          </div>
+
+          {/* -------- 2 · Generator picker -------- */}
+          <div className="space-y-1.5">
+            <FieldLabel>2 · What do you need?</FieldLabel>
             {SECTIONS.map((s) => (
               <button
                 key={s.id}
@@ -139,21 +260,37 @@ export function LPMaterials() {
                 onClick={() => setSection(s.id)}
                 aria-pressed={section === s.id}
                 className={cn(
-                  'flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+                  'flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors',
                   section === s.id
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground',
+                    ? 'border-primary/50 bg-primary/10'
+                    : 'border-border bg-card hover:border-foreground/25',
                 )}
               >
-                {s.icon}
-                <span className="hidden xl:inline">{s.label}</span>
+                <span className={cn(section === s.id ? 'text-primary' : 'text-muted-foreground')}>
+                  {s.icon}
+                </span>
+                <span className="min-w-0">
+                  <span className={cn('block text-[13px] font-semibold', section === s.id && 'text-primary')}>
+                    {s.label}
+                  </span>
+                  <span className="block truncate text-[10px] text-muted-foreground">{s.desc}</span>
+                </span>
+                {s.usesHero && campaign.hero && (
+                  <ImagePlus className="ml-auto h-3.5 w-3.5 shrink-0 text-primary" aria-label="Uses the hero image" />
+                )}
               </button>
             ))}
           </div>
 
-          {section === 'avatars' && <AvatarsForm onStarted={upsertJob} onError={setError} />}
-          {section === 'cards' && <CardsForm onStarted={upsertJob} onError={setError} />}
-          {section === 'advertorial' && <AdvertorialForm onStarted={upsertJob} onError={setError} />}
+          {section === 'customers' && (
+            <CustomersForm campaign={campaign} onStarted={upsertJob} onError={setError} />
+          )}
+          {section === 'cards' && (
+            <CardsForm campaign={campaign} onStarted={upsertJob} onError={setError} />
+          )}
+          {section === 'advertorial' && (
+            <AdvertorialForm campaign={campaign} onStarted={upsertJob} onError={setError} />
+          )}
         </div>
       </aside>
 
@@ -211,6 +348,34 @@ export function LPMaterials() {
 // ---------------------------------------------------------------------------
 // Forms
 // ---------------------------------------------------------------------------
+/** What of the campaign basis this generator will use — shown atop its form. */
+function CampaignChips({ campaign }: { campaign: Campaign }) {
+  const market = campaign.market.trim()
+  if (!campaign.hero && !market) {
+    return (
+      <p className="rounded-lg border border-border bg-secondary/40 px-2.5 py-1.5 text-[11px] leading-snug text-muted-foreground">
+        Tip: upload the hero image and set the target market above — the result will match
+        your LP’s look and audience.
+      </p>
+    )
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {campaign.hero && (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 py-0.5 pl-0.5 pr-2 text-[11px] font-medium text-primary">
+          <img src={campaign.hero.url} alt="" className="h-5 w-5 rounded-full object-cover" />
+          Anchored to your hero
+        </span>
+      )}
+      {market && (
+        <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary">
+          <Globe className="h-3 w-3" /> {market}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function FieldLabel({ children, hint }: { children: ReactNode; hint?: string }) {
   return (
     <div className="flex items-baseline justify-between">
@@ -262,10 +427,12 @@ function Toggle({
   )
 }
 
-function AvatarsForm({
+function CustomersForm({
+  campaign,
   onStarted,
   onError,
 }: {
+  campaign: Campaign
   onStarted: (j: MaterialJob) => void
   onError: (e: string) => void
 }) {
@@ -281,12 +448,13 @@ function AvatarsForm({
   })
 
   const names = namesText.split('\n').map((n) => n.trim()).filter(Boolean)
+  const market = campaign.market.trim()
 
   async function detect() {
     if (!names.length || detecting) return
     setDetecting(true)
     try {
-      setRows(await detectNames(names.slice(0, 20)))
+      setRows(await detectNames(names.slice(0, 20), market || undefined))
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -298,7 +466,7 @@ function AvatarsForm({
     if (!rows.length || starting) return
     setStarting(true)
     try {
-      onStarted(await createAvatars(rows, style))
+      onStarted(await createAvatars(rows, style, market || undefined))
       setRows([])
       setNamesText('')
     } catch (e) {
@@ -310,8 +478,18 @@ function AvatarsForm({
 
   return (
     <div className="space-y-3">
+      {market ? (
+        <p className="rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-[11px] leading-snug text-muted-foreground">
+          Customers will look like the <b className="font-semibold text-primary">{market}</b>{' '}
+          audience. Eye contact + a natural slight smile, still authentically imperfect.
+        </p>
+      ) : (
+        <p className="rounded-lg border border-border bg-secondary/40 px-2.5 py-1.5 text-[11px] leading-snug text-muted-foreground">
+          Tip: set the target market above — it decides the customers’ nationality.
+        </p>
+      )}
       <div className="space-y-1.5">
-        <FieldLabel hint="one per line, any language">Reviewer names</FieldLabel>
+        <FieldLabel hint="one per line, any language">Customer names</FieldLabel>
         <Textarea
           value={namesText}
           onChange={(e) => setNamesText(e.target.value)}
@@ -413,16 +591,18 @@ function AvatarsForm({
         onClick={() => void start()}
       >
         {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-        Generate {rows.length || ''} avatar{rows.length === 1 ? '' : 's'}
+        Generate {rows.length || ''} customer photo{rows.length === 1 ? '' : 's'}
       </Button>
     </div>
   )
 }
 
 function CardsForm({
+  campaign,
   onStarted,
   onError,
 }: {
+  campaign: Campaign
   onStarted: (j: MaterialJob) => void
   onError: (e: string) => void
 }) {
@@ -448,6 +628,8 @@ function CardsForm({
           same_person: samePerson,
           aspect,
           style_note: styleNote.trim() || undefined,
+          market: campaign.market.trim() || undefined,
+          reference: campaign.hero?.id,
         }),
       )
     } catch (e) {
@@ -459,6 +641,7 @@ function CardsForm({
 
   return (
     <div className="space-y-3">
+      <CampaignChips campaign={campaign} />
       <FieldLabel hint="the image visualizes each card's text — no text IN the image">
         Section cards (one image each)
       </FieldLabel>
@@ -555,9 +738,11 @@ function CardsForm({
 }
 
 function AdvertorialForm({
+  campaign,
   onStarted,
   onError,
 }: {
+  campaign: Campaign
   onStarted: (j: MaterialJob) => void
   onError: (e: string) => void
 }) {
@@ -571,7 +756,16 @@ function AdvertorialForm({
     if ((!title.trim() && !text.trim()) || starting) return
     setStarting(true)
     try {
-      onStarted(await createAdvertorial({ title: title.trim(), text: text.trim(), aspect, candidates }))
+      onStarted(
+        await createAdvertorial({
+          title: title.trim(),
+          text: text.trim(),
+          aspect,
+          candidates,
+          market: campaign.market.trim() || undefined,
+          reference: campaign.hero?.id,
+        }),
+      )
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -581,6 +775,7 @@ function AdvertorialForm({
 
   return (
     <div className="space-y-3">
+      <CampaignChips campaign={campaign} />
       <FieldLabel hint="the image tells the story — without any text in it">
         Advertorial block
       </FieldLabel>
