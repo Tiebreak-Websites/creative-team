@@ -3,7 +3,7 @@ import {
   AlertCircle,
   Check,
   ChevronDown,
-  ChevronUp,
+  GripVertical,
   Layers,
   Loader2,
   Lock,
@@ -115,47 +115,52 @@ export function SizesSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups, bundles, config, loading, dirty])
 
-  // ---- group ops (position = list order) ----
-  function patchGroup(id: string, patch: Partial<SizeGroup>) {
-    setGroups((prev) => prev.map((g) => (g.id === id ? { ...g, ...patch } : g)))
-  }
-  function moveGroup(index: number, dir: -1 | 1) {
-    setGroups((prev) => {
-      const j = index + dir
-      if (j < 0 || j >= prev.length) return prev
-      const next = [...prev]
-      ;[next[index], next[j]] = [next[j], next[index]]
+  // ---- ops (position = list order; reordering is drag & drop) ----
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [drag, setDrag] = useState<{ list: 'groups' | 'bundles'; index: number } | null>(null)
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
+  }
+  function dropOn(list: 'groups' | 'bundles', index: number) {
+    if (!drag || drag.list !== list || drag.index === index) {
+      setDrag(null)
+      return
+    }
+    const move = <T,>(prev: T[]): T[] => {
+      const next = [...prev]
+      const [item] = next.splice(drag.index, 1)
+      next.splice(index, 0, item)
+      return next
+    }
+    if (list === 'groups') setGroups(move)
+    else setBundles(move)
+    setDrag(null)
+  }
+
+  function patchGroup(id: string, patch: Partial<SizeGroup>) {
+    setGroups((prev) => prev.map((g) => (g.id === id ? { ...g, ...patch } : g)))
   }
   function removeGroup(id: string) {
     setGroups((prev) => prev.filter((g) => g.id !== id))
   }
   function addGroup() {
-    setGroups((prev) => [
-      ...prev,
-      { id: `new-${Date.now().toString(36)}`, label: 'New group', sizes: [] },
-    ])
+    const id = `new-${Date.now().toString(36)}`
+    setGroups((prev) => [...prev, { id, label: 'New group', sizes: [] }])
+    setExpanded((prev) => new Set(prev).add(id))
   }
 
-  // ---- bundle ops ----
   function patchBundle(id: string, patch: Partial<SizeBundle>) {
     setBundles((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)))
   }
-  function moveBundle(index: number, dir: -1 | 1) {
-    setBundles((prev) => {
-      const j = index + dir
-      if (j < 0 || j >= prev.length) return prev
-      const next = [...prev]
-      ;[next[index], next[j]] = [next[j], next[index]]
-      return next
-    })
-  }
   function addBundle() {
-    setBundles((prev) => [
-      ...prev,
-      { id: `new-${Date.now().toString(36)}`, label: 'New bundle', sizes: [] },
-    ])
+    const id = `new-${Date.now().toString(36)}`
+    setBundles((prev) => [...prev, { id, label: 'New bundle', sizes: [] }])
+    setExpanded((prev) => new Set(prev).add(id))
   }
 
   return (
@@ -234,28 +239,32 @@ export function SizesSettings() {
         </div>
       ) : (
         <>
-          <div className="mt-5 space-y-3">
+          <div className="mt-5 space-y-1.5">
             {groups.map((g, i) => (
               <CollectionRow
                 key={g.id}
+                index={i}
                 label={g.label}
                 sizes={g.sizes}
                 locked={g.id === customGroupId}
                 lockedHint="Collects user-added custom sizes — rename/delete disabled"
-                first={i === 0}
-                last={i === groups.length - 1}
+                expanded={expanded.has(g.id)}
+                onToggleExpand={() => toggleExpanded(g.id)}
                 onLabel={(label) => patchGroup(g.id, { label })}
                 onSizes={(sizes) => patchGroup(g.id, { sizes })}
-                onMove={(dir) => moveGroup(i, dir)}
                 onRemove={() => removeGroup(g.id)}
+                dragging={drag?.list === 'groups' && drag.index === i}
+                onDragStart={() => setDrag({ list: 'groups', index: i })}
+                onDrop={() => dropOn('groups', i)}
+                onDragEnd={() => setDrag(null)}
               />
             ))}
-            <Button variant="outline" className="w-full border-dashed" onClick={addGroup}>
+            <Button variant="outline" size="sm" className="w-full border-dashed" onClick={addGroup}>
               <Plus className="h-4 w-4" /> Add group
             </Button>
           </div>
 
-          <div className="mt-8">
+          <div className="mt-6">
             <div className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-primary" />
               <h3 className="font-display text-sm font-semibold text-foreground">Bundles</h3>
@@ -263,21 +272,25 @@ export function SizesSettings() {
                 one-click size sets shown above the groups
               </span>
             </div>
-            <div className="mt-3 space-y-3">
+            <div className="mt-2 space-y-1.5">
               {bundles.map((b, i) => (
                 <CollectionRow
                   key={b.id}
+                  index={i}
                   label={b.label}
                   sizes={b.sizes}
-                  first={i === 0}
-                  last={i === bundles.length - 1}
+                  expanded={expanded.has(b.id)}
+                  onToggleExpand={() => toggleExpanded(b.id)}
                   onLabel={(label) => patchBundle(b.id, { label })}
                   onSizes={(sizes) => patchBundle(b.id, { sizes })}
-                  onMove={(dir) => moveBundle(i, dir)}
                   onRemove={() => setBundles((prev) => prev.filter((x) => x.id !== b.id))}
+                  dragging={drag?.list === 'bundles' && drag.index === i}
+                  onDragStart={() => setDrag({ list: 'bundles', index: i })}
+                  onDrop={() => dropOn('bundles', i)}
+                  onDragEnd={() => setDrag(null)}
                 />
               ))}
-              <Button variant="outline" className="w-full border-dashed" onClick={addBundle}>
+              <Button variant="outline" size="sm" className="w-full border-dashed" onClick={addBundle}>
                 <Plus className="h-4 w-4" /> Add bundle
               </Button>
             </div>
@@ -288,30 +301,39 @@ export function SizesSettings() {
   )
 }
 
-/** One editable group/bundle: label, size chips with remove, an add-size input,
- * up/down position controls and delete. */
+/** One group/bundle as a COMPACT, collapsible row: drag handle + numbered slot
+ * + inline name + size count. Expanding reveals the size chips + add input.
+ * Reorder by dragging a row onto another. */
 function CollectionRow({
+  index,
   label,
   sizes,
   locked,
   lockedHint,
-  first,
-  last,
+  expanded,
+  onToggleExpand,
   onLabel,
   onSizes,
-  onMove,
   onRemove,
+  dragging,
+  onDragStart,
+  onDrop,
+  onDragEnd,
 }: {
+  index: number
   label: string
   sizes: string[]
   locked?: boolean
   lockedHint?: string
-  first: boolean
-  last: boolean
+  expanded: boolean
+  onToggleExpand: () => void
   onLabel: (label: string) => void
   onSizes: (sizes: string[]) => void
-  onMove: (dir: -1 | 1) => void
   onRemove: () => void
+  dragging: boolean
+  onDragStart: () => void
+  onDrop: () => void
+  onDragEnd: () => void
 }) {
   const [newSize, setNewSize] = useState('')
   const [sizeError, setSizeError] = useState(false)
@@ -328,115 +350,122 @@ function CollectionRow({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-secondary/30 p-3">
-      <div className="flex items-center gap-2">
-        <div className="flex shrink-0 flex-col">
-          <button
-            type="button"
-            onClick={() => onMove(-1)}
-            disabled={first}
-            title="Move up"
-            aria-label={`Move ${label} up`}
-            className="text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
-          >
-            <ChevronUp className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onMove(1)}
-            disabled={last}
-            title="Move down"
-            aria-label={`Move ${label} down`}
-            className="text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
-          >
-            <ChevronDown className="h-4 w-4" />
-          </button>
-        </div>
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      className={cn(
+        'overflow-hidden rounded-lg border border-border bg-secondary/30 transition-opacity',
+        dragging && 'opacity-50 ring-2 ring-primary/40',
+      )}
+    >
+      <div className="flex h-9 items-center gap-2 px-2">
+        <span className="cursor-grab text-muted-foreground active:cursor-grabbing" title="Drag to reorder">
+          <GripVertical className="h-4 w-4" />
+        </span>
+        {/* numbered slot — the saved position */}
+        <span className="inline-flex h-5 w-6 shrink-0 items-center justify-center rounded bg-primary/15 font-display text-[11px] font-bold tabular-nums text-primary">
+          {index + 1}
+        </span>
         {locked ? (
           <span
             title={lockedHint}
-            className="flex h-9 flex-1 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-sm font-medium text-foreground"
+            className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm font-medium text-foreground"
           >
-            <Lock className="h-3.5 w-3.5 text-muted-foreground" /> {label}
+            <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> {label}
           </span>
         ) : (
-          <Input
+          <input
             value={label}
             onChange={(e) => onLabel(e.target.value)}
             aria-label="Group name"
-            className="flex-1"
+            className="h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 text-sm font-medium text-foreground transition-colors hover:border-input focus-visible:border-primary focus-visible:bg-background focus-visible:outline-none"
           />
         )}
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          title={expanded ? 'Collapse' : 'Edit sizes'}
+          aria-expanded={expanded}
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {sizes.length} size{sizes.length === 1 ? '' : 's'}
+          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-180')} />
+        </button>
         {!locked && (
-          <Button
-            size="sm"
-            variant="ghost"
+          <button
+            type="button"
             onClick={onRemove}
             title={`Delete “${label}”`}
             aria-label={`Delete ${label}`}
-            className="shrink-0 text-muted-foreground hover:text-destructive"
+            className="shrink-0 text-muted-foreground transition-colors hover:text-destructive"
           >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
         )}
       </div>
 
-      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-        {sizes.map((s) => (
-          <span
-            key={s}
-            className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 font-display text-[12px] font-semibold text-foreground"
-          >
-            {s}
+      {expanded && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-card/40 px-2.5 py-2">
+          {sizes.map((s) => (
+            <span
+              key={s}
+              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 font-display text-[12px] font-semibold text-foreground"
+            >
+              {s}
+              <button
+                type="button"
+                onClick={() => onSizes(sizes.filter((x) => x !== s))}
+                title={`Remove ${s}`}
+                aria-label={`Remove size ${s}`}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+          {sizes.length === 0 && (
+            <span className="px-1 text-xs text-muted-foreground">No sizes yet.</span>
+          )}
+          <span className="inline-flex items-center gap-1">
+            <input
+              value={newSize}
+              onChange={(e) => {
+                setNewSize(e.target.value)
+                if (sizeError) setSizeError(false)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  addSize()
+                }
+              }}
+              aria-label={`Add a size to ${label}`}
+              placeholder="e.g. 500x500"
+              className={cn(
+                'h-7 w-28 rounded-md border bg-secondary px-2 text-xs text-foreground transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20',
+                sizeError ? 'border-destructive' : 'border-input hover:border-foreground/25',
+              )}
+            />
             <button
               type="button"
-              onClick={() => onSizes(sizes.filter((x) => x !== s))}
-              title={`Remove ${s}`}
-              aria-label={`Remove size ${s}`}
-              className="text-muted-foreground hover:text-destructive"
+              onClick={addSize}
+              disabled={!newSize.trim()}
+              title="Add this size"
+              aria-label={`Add size to ${label}`}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
             >
-              <X className="h-3 w-3" />
+              <Plus className="h-3.5 w-3.5" />
             </button>
           </span>
-        ))}
-        {sizes.length === 0 && (
-          <span className="px-1 text-xs text-muted-foreground">No sizes yet.</span>
-        )}
-        <span className="inline-flex items-center gap-1">
-          <input
-            value={newSize}
-            onChange={(e) => {
-              setNewSize(e.target.value)
-              if (sizeError) setSizeError(false)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                addSize()
-              }
-            }}
-            aria-label={`Add a size to ${label}`}
-            placeholder="e.g. 500x500"
-            className={cn(
-              'h-7 w-28 rounded-md border bg-secondary px-2 text-xs text-foreground transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20',
-              sizeError ? 'border-destructive' : 'border-input hover:border-foreground/25',
-            )}
-          />
-          <button
-            type="button"
-            onClick={addSize}
-            disabled={!newSize.trim()}
-            title="Add this size"
-            aria-label={`Add size to ${label}`}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground transition-colors hover:border-foreground/25 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        </span>
-        {sizeError && (
-          <span className="text-[11px] text-destructive">Use width x height, e.g. 500x500.</span>
-        )}
-      </div>
+          {sizeError && (
+            <span className="text-[11px] text-destructive">Use width x height, e.g. 500x500.</span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -26,9 +26,15 @@ export function UserMenu() {
       >
         {user.email}
       </span>
-      <Button variant="ghost" size="sm" onClick={onLogout} disabled={busy}>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onLogout}
+        disabled={busy}
+        title={busy ? 'Signing out…' : 'Log out'}
+        aria-label="Log out"
+      >
         <LogOut className="h-4 w-4" />
-        {busy ? 'Signing out…' : 'Logout'}
       </Button>
     </div>
   )

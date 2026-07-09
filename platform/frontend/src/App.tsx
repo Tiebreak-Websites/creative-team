@@ -17,7 +17,7 @@ import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
 import { BannerEdit } from './bannerBuilder/BannerEdit'
-import { HelpModal } from './bannerBuilder/HelpModal'
+import { HelpModal, type HelpTool } from './bannerBuilder/HelpModal'
 import { LPBuilder } from './lpBuilder/LPBuilder'
 import { LPMaterials } from './lpMaterials/LPMaterials'
 import { AuthProvider, useAuth } from './auth/AuthContext'
@@ -407,7 +407,7 @@ function Workspace() {
           <span className="hidden sm:inline-flex">
             <InstallButton />
           </span>
-          {inTool && ws.app === 'banner' && ws.tool === 'generate' && (
+          {inTool && (
             <Button
               variant="ghost"
               size="icon"
@@ -460,7 +460,19 @@ function Workspace() {
           </div>
         )}
       </main>
-      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <HelpModal
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        tool={
+          (ws.app === 'banner'
+            ? ws.tool === 'edit'
+              ? 'edit'
+              : 'generate'
+            : ws.tool === 'materials'
+              ? 'materials'
+              : 'lp-builder') as HelpTool
+        }
+      />
     </div>
   )
 }

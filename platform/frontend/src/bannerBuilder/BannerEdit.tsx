@@ -16,10 +16,13 @@ import {
   Trash2,
   Type,
   Upload,
+  User,
+  Users,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatUserName } from '@/lib/utils'
+import { useAuth } from '../auth/AuthContext'
 import type { RunData } from '../types'
 import { addSizes, assetUrl } from '../api'
 import { listRuns } from './campaignApi'
@@ -1203,7 +1206,73 @@ function EditCanvas({
   )
 }
 
-/** Pick a banner from the shared gallery (any viewable banner, newest first). */
+/** One selectable banner tile inside a picker batch. */
+interface PickItem {
+  label: string
+  url: string
+  size: string
+  title: string
+  width: number
+  height: number
+  master: boolean
+}
+
+/** A whole generation (run) grouped like the main gallery. */
+interface PickBatch {
+  runId: string
+  title: string
+  by: string
+  at: string
+  versions: { n: number; items: PickItem[] }[]
+}
+
+function pickBatches(runs: RunData[]): PickBatch[] {
+  // The server list is newest-first already — keep that order.
+  const out: PickBatch[] = []
+  for (const run of runs) {
+    const byConcept = new Map<string, PickItem[]>()
+    const order: string[] = []
+    for (const b of run.banners) {
+      if (b.status !== 'ok' || !b.url) continue
+      if (!byConcept.has(b.concept)) {
+        byConcept.set(b.concept, [])
+        order.push(b.concept)
+      }
+      const [w, h] = b.size.split('x').map(Number)
+      byConcept.get(b.concept)!.push({
+        label: b.label,
+        url: assetUrl(b.url),
+        size: b.size,
+        title: b.title,
+        width: w || 0,
+        height: h || 0,
+        master: b.phase === 'master',
+      })
+    }
+    if (!order.length) continue
+    const versions = order.map((ck, i) => {
+      const m = /(\d+)/.exec(ck)
+      const items = byConcept.get(ck)!
+      // Master first, then by pixel area — same as the main gallery.
+      items.sort((a, b) => (Number(b.master) - Number(a.master)) || a.width * a.height - b.width * b.height)
+      return { n: m ? parseInt(m[1], 10) : i + 1, items }
+    })
+    out.push({
+      runId: run.run_id,
+      title: versions[0].items.find((x) => x.title)?.title ?? '',
+      by: run.created_by || '',
+      at: run.created_at,
+      versions,
+    })
+  }
+  return out
+}
+
+/**
+ * Pick a banner from the shared gallery — organized exactly like the main
+ * gallery: newest batches first, grouped per generation with versions, creator
+ * and time shown, plus a Mine / Everyone filter. Click ONE banner to attach it.
+ */
 function GalleryPickModal({
   open,
   onClose,
@@ -1213,35 +1282,28 @@ function GalleryPickModal({
   onClose: () => void
   onPick: (src: SourceState) => void
 }) {
+  const { user } = useAuth()
+  const myEmail = (user?.email || '').toLowerCase()
   const [runs, setRuns] = useState<RunData[] | null>(null)
+  const [mineOnly, setMineOnly] = useState(true)
   useEffect(() => {
     if (!open) return
     setRuns(null)
     listRuns().then((r) => setRuns(r ?? []))
   }, [open])
 
-  const items = useMemo(() => {
-    const out: { runId: string; label: string; url: string; size: string; title: string; by: string; width: number; height: number }[] = []
-    for (const run of [...(runs ?? [])].reverse()) {
-      for (const b of run.banners) {
-        if (b.status !== 'ok' || !b.url) continue
-        const [w, h] = b.size.split('x').map(Number)
-        out.push({
-          runId: run.run_id,
-          label: b.label,
-          url: assetUrl(b.url),
-          size: b.size,
-          title: b.title,
-          by: run.created_by || '',
-          width: w || 0,
-          height: h || 0,
-        })
-      }
-    }
-    return out
-  }, [runs])
+  const batches = useMemo(() => pickBatches(runs ?? []), [runs])
+  const visible = useMemo(
+    () => (mineOnly ? batches.filter((b) => b.by.toLowerCase() === myEmail) : batches),
+    [batches, mineOnly, myEmail],
+  )
 
   if (!open) return null
+  const segBtn = (on: boolean) =>
+    cn(
+      'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+      on ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+    )
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 sm:p-8">
       <button
@@ -1260,56 +1322,111 @@ function GalleryPickModal({
         <div className="flex items-center gap-2.5 border-b border-border px-5 py-3.5">
           <ImagePlus className="h-4 w-4 text-primary" />
           <h2 className="font-display text-base font-semibold">Pick a banner to edit</h2>
+          <span className="ml-auto inline-flex shrink-0 items-center rounded-lg border border-border bg-secondary p-0.5">
+            <button
+              type="button"
+              onClick={() => setMineOnly(true)}
+              aria-pressed={mineOnly}
+              title="Show only your banners"
+              className={segBtn(mineOnly)}
+            >
+              <User className="h-3.5 w-3.5" /> Mine
+            </button>
+            <button
+              type="button"
+              onClick={() => setMineOnly(false)}
+              aria-pressed={!mineOnly}
+              title="Show everyone’s banners"
+              className={segBtn(!mineOnly)}
+            >
+              <Users className="h-3.5 w-3.5" /> Everyone
+            </button>
+          </span>
           <button
             type="button"
             onClick={onClose}
             title="Close"
             aria-label="Close gallery picker"
-            className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           {runs === null ? (
             <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading banners…
             </div>
-          ) : items.length === 0 ? (
+          ) : visible.length === 0 ? (
             <p className="p-6 text-center text-sm text-muted-foreground">
-              No banners in the gallery yet — generate some first, or upload an image.
+              {mineOnly && batches.length > 0
+                ? 'None of these are yours — switch to Everyone to see the whole gallery.'
+                : 'No banners in the gallery yet — generate some first, or upload an image.'}
             </p>
           ) : (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
-              {items.map((it) => (
-                <button
-                  key={`${it.runId}|${it.label}`}
-                  type="button"
-                  onClick={() =>
-                    onPick({
-                      source: { run_id: it.runId, label: it.label },
-                      url: it.url,
-                      width: it.width,
-                      height: it.height,
-                      title: it.title,
-                      editedFrom: { run_id: it.runId, label: it.label },
-                    })
-                  }
-                  className="group overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md"
-                  title={`${it.size}${it.title ? ` · ${it.title}` : ''}`}
-                >
-                  <span className="block aspect-square bg-muted/40">
-                    <img src={it.url} alt="" loading="lazy" className="h-full w-full object-contain" />
-                  </span>
-                  <span className="block border-t border-border px-2 py-1.5">
-                    <span className="block truncate font-display text-xs font-semibold">{it.size}</span>
-                    <span className="block truncate text-[10px] text-muted-foreground">
-                      {it.title || (it.by ? `by ${formatUserName(it.by)}` : '')}
+            visible.map((batch) => (
+              <section key={batch.runId} className="rounded-2xl border border-border bg-card/40">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-2">
+                  {batch.title && (
+                    <span className="truncate font-display text-[13px] font-semibold">{batch.title}</span>
+                  )}
+                  {batch.by && (
+                    <span className="text-[11px] text-muted-foreground" title={batch.by}>
+                      by {formatUserName(batch.by)}
                     </span>
-                  </span>
-                </button>
-              ))}
-            </div>
+                  )}
+                  {batch.at && (
+                    <span
+                      className="text-[11px] text-muted-foreground/80"
+                      title={new Date(batch.at).toLocaleString()}
+                    >
+                      · {new Date(batch.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-3 border-t border-border px-3 py-3">
+                  {batch.versions.map((v) => (
+                    <div key={v.n}>
+                      <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">
+                        Version {v.n}
+                      </div>
+                      <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2.5">
+                        {v.items.map((it) => (
+                          <button
+                            key={it.label}
+                            type="button"
+                            onClick={() =>
+                              onPick({
+                                source: { run_id: batch.runId, label: it.label },
+                                url: it.url,
+                                width: it.width,
+                                height: it.height,
+                                title: it.title,
+                                editedFrom: { run_id: batch.runId, label: it.label },
+                              })
+                            }
+                            className="group overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md"
+                            title={`Edit this ${it.size}${it.title ? ` · ${it.title}` : ''}`}
+                          >
+                            <span className="block aspect-square bg-muted/40">
+                              <img src={it.url} alt="" loading="lazy" className="h-full w-full object-contain" />
+                            </span>
+                            <span className="flex items-center justify-between gap-1 border-t border-border px-2 py-1">
+                              <span className="truncate font-display text-[11px] font-semibold">{it.size}</span>
+                              {it.master && (
+                                <span className="shrink-0 rounded border border-primary/35 px-1 text-[9px] text-primary">
+                                  MVP
+                                </span>
+                              )}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))
           )}
         </div>
       </div>
