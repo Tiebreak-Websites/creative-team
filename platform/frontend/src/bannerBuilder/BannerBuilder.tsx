@@ -1169,7 +1169,7 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
               addRefs(e.dataTransfer.files)
             }}
             className={cn(
-              'relative flex w-full max-w-3xl flex-col gap-2 rounded-2xl border bg-card/95 p-2 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md transition-colors',
+              'relative flex w-full max-w-3xl animate-slide-up flex-col gap-2 rounded-2xl border bg-card/95 p-2 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md transition-colors',
               dragOver ? 'border-primary' : 'border-border',
             )}
           >

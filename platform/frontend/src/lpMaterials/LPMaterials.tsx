@@ -51,12 +51,13 @@ import {
   type MaterialJob,
 } from './api'
 
-type Section = 'customers' | 'cards' | 'advertorial'
+type Section = 'customers' | 'cards' | 'advertorial' | 'hero'
 
 const SECTIONS: { id: Section; label: string; desc: string; icon: ReactNode }[] = [
   { id: 'customers', label: 'Customers', desc: 'Profile photos', icon: <UserRound className="h-4 w-4" /> },
   { id: 'cards', label: 'Section cards', desc: 'Matching image set', icon: <LayoutGrid className="h-4 w-4" /> },
   { id: 'advertorial', label: 'Advertorial', desc: 'One story image', icon: <Newspaper className="h-4 w-4" /> },
+  { id: 'hero', label: 'Hero', desc: 'Hero variations', icon: <ImageIcon className="h-4 w-4" /> },
 ]
 
 const KIND_LABEL: Record<string, string> = {
@@ -215,7 +216,7 @@ function CampaignHome({
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-6">
       {/* ---- dashboard header ---- */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex animate-fade-up flex-wrap items-center gap-3">
         <div className="min-w-0">
           <h2 className="font-display text-xl font-bold tracking-tight">LP Materials</h2>
           <p className="text-sm text-muted-foreground">
@@ -231,23 +232,28 @@ function CampaignHome({
 
       {/* ---- stats strip ---- */}
       <div className="mt-4 grid grid-cols-3 gap-3">
-        <StatTile label="Campaigns" value={stats.campaigns} icon={<FolderPlus className="h-4 w-4" />} />
-        <StatTile label="Images generated" value={stats.images} icon={<ImageIcon className="h-4 w-4" />} />
-        <StatTile
-          label="Generating now"
-          value={stats.generating}
-          icon={
-            stats.generating > 0 ? (
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            ) : (
-              <Sparkles className="h-4 w-4" />
-            )
-          }
-        />
+        {[
+          { label: 'Campaigns', value: stats.campaigns, icon: <FolderPlus className="h-4 w-4" /> },
+          { label: 'Images generated', value: stats.images, icon: <ImageIcon className="h-4 w-4" /> },
+          {
+            label: 'Generating now',
+            value: stats.generating,
+            icon:
+              stats.generating > 0 ? (
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              ),
+          },
+        ].map((s, i) => (
+          <div key={s.label} className="animate-fade-up" style={{ animationDelay: `${60 + i * 70}ms` }}>
+            <StatTile label={s.label} value={s.value} icon={s.icon} />
+          </div>
+        ))}
       </div>
 
       {/* ---- toolbar ---- */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="mt-4 flex animate-fade-up flex-wrap items-center gap-2" style={{ animationDelay: '240ms' }}>
         <div className="relative min-w-[220px] flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -294,9 +300,7 @@ function CampaignHome({
       </div>
 
       {creating && (
-        <div className="mt-5">
-          <NewCampaignCard onCancel={() => setCreating(false)} onCreated={onCreated} onError={onError} />
-        </div>
+        <NewCampaignModal onClose={() => setCreating(false)} onCreated={onCreated} onError={onError} />
       )}
 
       {/* ---- groups grid ---- */}
@@ -313,12 +317,13 @@ function CampaignHome({
           </p>
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
-            {visible.map((c) => (
+            {visible.map((c, i) => (
               <button
                 key={c.campaign_id}
                 type="button"
                 onClick={() => onOpen(c)}
-                className="group overflow-hidden rounded-2xl border border-border bg-card text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md"
+                style={{ animationDelay: `${Math.min(i * 45, 450)}ms` }}
+                className="group animate-fade-up overflow-hidden rounded-2xl border border-border bg-card text-left shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-primary/50 hover:shadow-lg active:scale-[0.98]"
               >
                 <span className="relative block aspect-[16/9] bg-muted/40">
                   {c.hero_url ? (
@@ -373,22 +378,34 @@ function StatTile({ label, value, icon }: { label: string; value: number; icon: 
   )
 }
 
-function NewCampaignCard({
-  onCancel,
+function NewCampaignModal({
+  onClose,
   onCreated,
   onError,
 }: {
-  onCancel: () => void
+  onClose: () => void
   onCreated: (c: CampaignInfo) => void
   onError: (e: string) => void
 }) {
   const [name, setName] = useState('')
-  const [tag, setTag] = useState('')
   const [market, setMarket] = useState('')
   const [hero, setHero] = useState<{ id: string; url: string } | null>(null)
   const [heroBusy, setHeroBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [onClose])
 
   async function onUpload(files: FileList | null) {
     const f = files?.[0]
@@ -410,7 +427,6 @@ function NewCampaignCard({
       onCreated(
         await createCampaign({
           name: name.trim(),
-          tag: tag.trim() || undefined,
           market: market.trim() || undefined,
           reference: hero?.id,
         }),
@@ -422,89 +438,110 @@ function NewCampaignCard({
     }
   }
 
-  return (
-    <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-5 shadow-sm animate-fade-up">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="font-display text-base font-semibold">New campaign</h3>
-        <button
-          type="button"
-          onClick={onCancel}
-          title="Cancel"
-          aria-label="Cancel new campaign"
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          disabled={heroBusy}
-          title="Upload the landing page's hero image — it becomes the campaign's cover and style anchor"
-          className={cn(
-            'relative flex aspect-[16/9] w-full shrink-0 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-xl border transition-colors sm:w-56',
-            hero
-              ? 'border-primary/50'
-              : 'border-dashed border-border bg-secondary/40 text-muted-foreground hover:border-primary/50 hover:text-foreground',
-          )}
-        >
-          {hero ? (
-            <img src={hero.url} alt="Hero" className="h-full w-full object-cover" />
-          ) : heroBusy ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            <>
-              <ImagePlus className="h-5 w-5" />
-              <span className="text-[11px] font-medium">Hero image (cover)</span>
-            </>
-          )}
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          hidden
-          aria-label="Upload the hero image"
-          onChange={(e) => {
-            void onUpload(e.target.files)
-            e.target.value = ''
-          }}
-        />
-        <div className="min-w-0 flex-1 space-y-2.5">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Campaign name — e.g. BrainTrade Q3 LP"
-            aria-label="Campaign name"
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8">
+      {/* bluer + darker scrim so the popup clearly floats above everything */}
+      <button
+        type="button"
+        aria-hidden
+        tabIndex={-1}
+        onClick={onClose}
+        className="absolute inset-0 cursor-default bg-blue-950/70 backdrop-blur-md animate-fade-in"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="New campaign"
+        className="relative z-10 w-full max-w-2xl animate-scale-in rounded-3xl border border-border bg-card p-7 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.9)]"
+      >
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <h3 className="font-display text-xl font-bold tracking-tight">New campaign</h3>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              One campaign per landing page — the hero image becomes its cover and style anchor.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close"
+            aria-label="Close new campaign"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex flex-col gap-5 sm:flex-row">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={heroBusy}
+            title="Upload the landing page's hero image — it becomes the campaign's cover and style anchor"
+            className={cn(
+              'relative flex aspect-[16/9] w-full shrink-0 flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border transition-colors sm:w-72',
+              hero
+                ? 'border-primary/50'
+                : 'border-dashed border-border bg-secondary/40 text-muted-foreground hover:border-primary/50 hover:text-foreground',
+            )}
+          >
+            {hero ? (
+              <img src={hero.url} alt="Hero" className="h-full w-full object-cover" />
+            ) : heroBusy ? (
+              <Loader2 className="h-6 w-6 animate-spin" />
+            ) : (
+              <>
+                <ImagePlus className="h-6 w-6" />
+                <span className="text-xs font-medium">Hero image (cover)</span>
+              </>
+            )}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            hidden
+            aria-label="Upload the hero image"
+            onChange={(e) => {
+              void onUpload(e.target.files)
+              e.target.value = ''
+            }}
           />
-          <div className="relative">
-            <Tag className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={tag}
-              onChange={(e) => setTag(e.target.value)}
-              aria-label="Campaign tag"
-              placeholder="Tag — e.g. Malay"
-              className="h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
+          <div className="min-w-0 flex-1 space-y-3">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Campaign name — e.g. BrainTrade Q3 LP"
+              aria-label="Campaign name"
+              autoFocus
+              className="h-11 text-base"
             />
+            <div className="relative">
+              <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={market}
+                onChange={(e) => setMarket(e.target.value)}
+                aria-label="Target market"
+                placeholder="Target market — e.g. Malaysia"
+                className="h-11 w-full rounded-md border border-input bg-transparent pl-9 pr-3 text-base shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
+              />
+            </div>
+            <p className="text-xs leading-snug text-muted-foreground">
+              The market decides who your customers look like and localizes every scene.
+            </p>
+            <Button
+              size="lg"
+              className="w-full"
+              disabled={!name.trim() || saving}
+              onClick={() => void create()}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
+              Create campaign
+            </Button>
           </div>
-          <div className="relative">
-            <Globe className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={market}
-              onChange={(e) => setMarket(e.target.value)}
-              aria-label="Target market"
-              placeholder="Target market — e.g. Malaysia"
-              className="h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
-            />
-          </div>
-          <Button className="w-full" disabled={!name.trim() || saving} onClick={() => void create()}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
-            Create campaign
-          </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -641,8 +678,8 @@ function CampaignWorkspace({
       {/* two columns: console left (with breathing room), assets right */}
       <div className="grid gap-6 lg:grid-cols-[minmax(360px,430px)_1fr]">
         <div className="min-w-0">
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-            <div className="mb-4 grid grid-cols-3 gap-1.5">
+          <div className="animate-fade-up rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <div className="mb-4 grid grid-cols-4 gap-1.5">
               {SECTIONS.map((s) => (
                 <button
                   key={s.id}
@@ -650,7 +687,7 @@ function CampaignWorkspace({
                   onClick={() => setSection(s.id)}
                   aria-pressed={section === s.id}
                   className={cn(
-                    'flex flex-col items-center gap-1 rounded-xl border px-2 py-2.5 text-center transition-colors',
+                    'flex flex-col items-center gap-1 rounded-xl border px-2 py-2.5 text-center transition-all duration-200 active:scale-95',
                     section === s.id
                       ? 'border-primary/50 bg-primary/10 text-primary'
                       : 'border-border bg-secondary/40 text-muted-foreground hover:border-foreground/25 hover:text-foreground',
@@ -673,6 +710,19 @@ function CampaignWorkspace({
             )}
             {section === 'advertorial' && (
               <AdvertorialForm campaign={campaign} onStarted={upsertJob} onError={onError} />
+            )}
+            {section === 'hero' && (
+              <div className="animate-fade-up space-y-3 py-4 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-dashed border-border text-muted-foreground">
+                  <ImageIcon className="h-5 w-5" />
+                </div>
+                <p className="font-display text-sm font-semibold">Hero variations</p>
+                <p className="mx-auto max-w-xs text-xs leading-relaxed text-muted-foreground">
+                  Generating variations of your landing page’s hero image is{' '}
+                  <b className="font-semibold text-foreground">coming soon</b> — they’ll land in
+                  the Hero category on the right.
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -724,14 +774,18 @@ function AssetsPanel({
   const empty = jobs.length === 0
   return (
     <div className="min-w-0 space-y-5">
-      {CATEGORIES.map((cat) => {
+      {CATEGORIES.map((cat, catIndex) => {
         const catJobs = jobs.filter((j) => j.kind === cat.kind)
         const okCount = catJobs.reduce(
           (a, j) => a + j.items.filter((i) => i.status === 'ok').length,
           0,
         )
         return (
-          <section key={cat.kind} className="rounded-2xl border border-border bg-card/40">
+          <section
+            key={cat.kind}
+            className="animate-fade-up rounded-2xl border border-border bg-card/40"
+            style={{ animationDelay: `${80 + catIndex * 70}ms` }}
+          >
             <div className="flex items-center gap-2 px-4 py-2.5">
               <span className="text-primary">{cat.icon}</span>
               <span className="font-display text-sm font-bold tracking-tight">{cat.label}</span>
@@ -1374,10 +1428,14 @@ function CardsForm({
         {campaign.market ? ` Localized to ${campaign.market}.` : ''}
       </p>
       <FieldLabel hint="images visualize the text — no text IN the image">Cards</FieldLabel>
-      {/* horizontal card row */}
-      <div className="flex gap-2 overflow-x-auto pb-1.5">
+      {/* 2×2 grid — every card visible, no horizontal scrolling */}
+      <div className="grid grid-cols-2 gap-2">
         {cards.map((c, i) => (
-          <div key={i} className="w-52 shrink-0 space-y-1.5 rounded-xl border border-border bg-secondary/30 p-2">
+          <div
+            key={i}
+            className="animate-fade-up space-y-1.5 rounded-xl border border-border bg-secondary/30 p-2"
+            style={{ animationDelay: `${Math.min(i * 50, 300)}ms` }}
+          >
             <div className="flex items-center justify-between">
               <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-primary font-display text-[11px] font-bold text-primary-foreground">
                 {i + 1}
@@ -1417,10 +1475,10 @@ function CardsForm({
             onClick={() => setCards((prev) => [...prev, { title: '', text: '' }])}
             title="Add a card"
             aria-label="Add a card"
-            className="flex w-16 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+            className="flex min-h-[7rem] flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
           >
             <Plus className="h-4 w-4" />
-            <span className="text-[10px]">Add</span>
+            <span className="text-[10px]">Add card</span>
           </button>
         )}
       </div>

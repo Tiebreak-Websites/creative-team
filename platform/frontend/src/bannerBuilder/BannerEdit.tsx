@@ -506,7 +506,7 @@ export function BannerEdit() {
 
           {/* -------- candidates: vertical column on the RIGHT -------- */}
           {job && !accepted && (
-            <div className="absolute bottom-28 right-6 top-6 z-30 flex w-56 flex-col gap-3">
+            <div className="absolute bottom-28 right-6 top-6 z-30 flex w-56 animate-fade-up flex-col gap-3">
               {/* status on top */}
               <div className="shrink-0 rounded-xl border border-border bg-card/95 px-3 py-2 text-center shadow backdrop-blur">
                 {job.status === 'running' ? (
@@ -600,7 +600,7 @@ export function BannerEdit() {
 
           {/* -------- recompose progress: the new sizes fill in right here -------- */}
           {accepted && recomposeNote && (
-            <div className="absolute bottom-28 right-6 top-6 z-30 flex w-56 flex-col gap-3">
+            <div className="absolute bottom-28 right-6 top-6 z-30 flex w-56 animate-fade-up flex-col gap-3">
               <div className="shrink-0 rounded-xl border border-border bg-card/95 px-3 py-2 text-center shadow backdrop-blur">
                 {extraSizes.every((s) => {
                   const b = recomposeRun?.banners.find((x) => x.label === `c1__${s}`)
@@ -677,7 +677,7 @@ export function BannerEdit() {
             {accepted ? (
               /* Post-accept console REPLACES the main one: pick sizes, then ITS
                  Generate starts the recompose (nothing runs before that). */
-              <div className="flex w-full max-w-3xl flex-nowrap items-center gap-2 overflow-x-auto rounded-2xl border border-emerald-600/40 bg-card/95 p-2 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md">
+              <div className="flex w-full max-w-3xl animate-slide-up flex-nowrap items-center gap-2 overflow-x-auto rounded-2xl border border-emerald-600/40 bg-card/95 p-2 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md">
                 <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1.5 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
                   <Check className="h-4 w-4" /> Saved
                 </span>
@@ -733,7 +733,7 @@ export function BannerEdit() {
               </div>
             ) : (
               /* Main console — ONE row, big Generate. */
-              <div className="flex w-full max-w-3xl flex-nowrap items-center gap-2 overflow-x-auto rounded-2xl border border-border bg-card/95 p-2 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md">
+              <div className="flex w-full max-w-3xl animate-slide-up flex-nowrap items-center gap-2 overflow-x-auto rounded-2xl border border-border bg-card/95 p-2 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md">
                 <span
                   className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-border bg-muted/40"
                   title={`${src.title || 'attached'} · ${src.width}×${src.height}`}
@@ -1234,7 +1234,7 @@ function EditCanvas({
           <div
             key={r.id}
             className={cn(
-              'absolute z-20 rounded-xl border bg-card/95 shadow-lg backdrop-blur transition-shadow',
+              'absolute z-20 animate-pop-in rounded-xl border bg-card/95 shadow-lg backdrop-blur transition-shadow',
               activeRegion === r.id
                 ? 'border-amber-400/60'
                 : removeMode
