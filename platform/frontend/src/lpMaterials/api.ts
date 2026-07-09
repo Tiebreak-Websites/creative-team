@@ -6,12 +6,17 @@ import { API_BASE as BASE, asJson } from '../http'
 
 const LPM_URL = `${BASE}/tools/lp-materials`
 
+export const AVATAR_AGES = ['20s', '30s', '40s', '50s', '60s', '70s'] as const
+export type AvatarAge = (typeof AVATAR_AGES)[number]
+
 export interface AvatarRow {
   name: string
   language?: string
   country: string
   gender: 'female' | 'male'
-  age: '20s' | '30s' | '40s' | '50s' | '60s'
+  age: AvatarAge
+  /** Optional distinctive details for this person (glasses, hijab, beard…). */
+  look?: string
 }
 
 export interface AvatarStyle {
@@ -38,10 +43,27 @@ export interface MaterialJob {
   status: 'running' | 'done' | 'partial' | 'failed'
   error: string | null
   created_by: string
+  campaign_id: string
   created_at: string
   updated_at: string
   params: Record<string, unknown>
   items: MaterialItem[]
+}
+
+/** A campaign "group": name + tag + market + the hero image as its cover.
+ * Every generation belongs to one. */
+export interface CampaignInfo {
+  campaign_id: string
+  name: string
+  tag: string
+  market: string
+  reference: string
+  hero_url: string | null
+  created_by: string
+  created_at: string
+  jobs: number
+  items: number
+  generating: boolean
 }
 
 async function fail(r: Response, fallback: string): Promise<never> {
@@ -74,6 +96,43 @@ export async function uploadReference(file: File): Promise<{ id: string; url: st
   return r.json()
 }
 
+// ---- campaigns --------------------------------------------------------------
+export async function listCampaigns(): Promise<CampaignInfo[]> {
+  const r = await fetch(`${LPM_URL}/campaigns`, { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Failed to load campaigns')
+  return (await r.json()).campaigns ?? []
+}
+
+export function createCampaign(payload: {
+  name: string
+  tag?: string
+  market?: string
+  reference?: string
+}): Promise<CampaignInfo> {
+  return post('/campaigns', payload, 'Could not create the campaign')
+}
+
+export async function updateCampaign(
+  id: string,
+  patch: Partial<{ name: string; tag: string; market: string; reference: string }>,
+): Promise<CampaignInfo> {
+  const r = await fetch(`${LPM_URL}/campaigns/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(patch),
+  })
+  if (!r.ok) return fail(r, 'Could not update the campaign')
+  return r.json()
+}
+
+/** Deletes the campaign AND every generation inside it. */
+export async function deleteCampaign(id: string): Promise<void> {
+  const r = await fetch(`${LPM_URL}/campaigns/${id}`, { method: 'DELETE', credentials: 'include' })
+  if (!r.ok) await fail(r, 'Could not delete the campaign')
+}
+
+// ---- generators --------------------------------------------------------------
 /** Names (any language) → detected {language, country, gender, age} rows.
  * The target market steers `country` so customers look like its audience. */
 export async function detectNames(names: string[], market?: string): Promise<AvatarRow[]> {
@@ -84,9 +143,9 @@ export async function detectNames(names: string[], market?: string): Promise<Ava
 export function createAvatars(
   rows: AvatarRow[],
   style: AvatarStyle,
-  market?: string,
+  campaignId: string,
 ): Promise<MaterialJob> {
-  return post('/avatars', { rows, style, market }, 'Could not start the customer photos')
+  return post('/avatars', { rows, style, campaign_id: campaignId }, 'Could not start the customer photos')
 }
 
 export function createCards(payload: {
@@ -94,8 +153,7 @@ export function createCards(payload: {
   same_person: boolean
   aspect: string
   style_note?: string
-  market?: string
-  reference?: string
+  campaign_id: string
 }): Promise<MaterialJob> {
   return post('/cards', payload, 'Could not start the card set')
 }
@@ -105,14 +163,14 @@ export function createAdvertorial(payload: {
   text: string
   aspect: string
   candidates: number
-  market?: string
-  reference?: string
+  campaign_id: string
 }): Promise<MaterialJob> {
   return post('/advertorial', payload, 'Could not start the advertorial image')
 }
 
-export async function listJobs(): Promise<MaterialJob[]> {
-  const r = await fetch(`${LPM_URL}/jobs`, { credentials: 'include' })
+export async function listJobs(campaignId?: string): Promise<MaterialJob[]> {
+  const q = campaignId ? `?campaign=${encodeURIComponent(campaignId)}` : ''
+  const r = await fetch(`${LPM_URL}/jobs${q}`, { credentials: 'include' })
   if (!r.ok) return fail(r, 'Failed to load jobs')
   return (await r.json()).jobs ?? []
 }

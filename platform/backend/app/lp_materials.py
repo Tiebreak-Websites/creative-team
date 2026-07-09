@@ -62,6 +62,9 @@ from .settings import settings
 log = logging.getLogger(__name__)
 
 LP_ROOT = settings.ARTIFACT_ROOT / "lp-materials"
+# Campaign "groups": every generation belongs to a CAMPAIGN (name + tag +
+# market + the hero image as its cover). Campaigns persist like jobs.
+CAMPAIGNS_DIR = LP_ROOT / "campaigns"
 # Uploaded HERO reference images (the landing page's hero visual): section cards
 # and advertorials anchor their look to it. Customers deliberately do NOT.
 UPLOADS_DIR = LP_ROOT / "uploads"
@@ -83,7 +86,9 @@ _ASPECT_SIZES = {"1:1": "800x800", "4:3": "1200x900", "16:9": "1200x674"}
 _GEN_SEM = threading.Semaphore(2)
 _JOBS: Dict[str, dict] = {}
 _JOBS_LOCK = threading.Lock()
+_CAMPAIGNS: Dict[str, dict] = {}
 _LLM_MODEL = "gpt-5.5"
+_AGES = ("20s", "30s", "40s", "50s", "60s", "70s")
 
 _NO_TEXT_RULE = ("The image must contain absolutely NO text, NO letters, NO numbers, "
                  "NO captions, NO logos, NO watermarks, NO UI elements.")
@@ -148,7 +153,7 @@ _DETECT_NAMES_SCHEMA = {
             "language": {"type": "string", "description": "language/script of the name (e.g. Thai)"},
             "country": {"type": "string", "description": "most likely country/nationality for this name"},
             "gender": {"type": "string", "enum": ["female", "male"]},
-            "age": {"type": "string", "enum": ["20s", "30s", "40s", "50s", "60s"],
+            "age": {"type": "string", "enum": list(_AGES),
                     "description": "a plausible age band for a product reviewer with this name"},
         },
     }}},
@@ -237,6 +242,9 @@ def _avatar_prompt(row: dict, style: dict) -> str:
     if style.get("candid", True):
         parts.append("An unstaged real-life moment — imperfect angle and a busy everyday "
                      "background (street, cafe, living room) — but still looking at the camera.")
+    look = (row.get("look") or "").strip()
+    if look:
+        parts.append(f"Distinctive details for this person: {look}.")
     parts.append(
         "An ordinary, believable face and body with imperfect skin and everyday clothes — "
         "absolutely NOT a model, NOT studio lighting, NOT a professional portrait, no bokeh "
@@ -257,6 +265,7 @@ def _persist_job(job: dict) -> None:
     try:
         data = {k: job[k] for k in ("id", "kind", "status", "error", "created_by",
                                     "created_at", "updated_at", "params")}
+        data["campaign_id"] = job.get("campaign_id") or ""
         data["items"] = [{k: it.get(k) for k in ("index", "label", "size", "prompt",
                                                  "status", "error", "qa", "degrade")}
                          for it in job["items"]]
@@ -266,12 +275,54 @@ def _persist_job(job: dict) -> None:
         log.warning("lp-materials: could not persist job %s", job.get("id"))
 
 
+# --- Campaigns ---------------------------------------------------------------
+def _persist_campaign(c: dict) -> None:
+    try:
+        d = CAMPAIGNS_DIR / c["id"]
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "campaign.json").write_text(json.dumps(c, ensure_ascii=False), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        log.warning("lp-materials: could not persist campaign %s", c.get("id"))
+
+
+def _public_campaign(c: dict) -> dict:
+    ref = c.get("reference") or ""
+    jobs = [j for j in _JOBS.values() if j.get("campaign_id") == c["id"]]
+    items = sum(len(j["items"]) for j in jobs)
+    return {
+        "campaign_id": c["id"], "name": c.get("name", ""), "tag": c.get("tag", ""),
+        "market": c.get("market", ""), "reference": ref,
+        "hero_url": f"/api/tools/lp-materials/reference/{ref}.png" if ref else None,
+        "created_by": c.get("created_by", ""), "created_at": c.get("created_at", ""),
+        "jobs": len(jobs), "items": items,
+        "generating": any(j["status"] == "running" for j in jobs),
+    }
+
+
+def _get_campaign_or_404(campaign_id: str) -> dict:
+    c = _CAMPAIGNS.get(campaign_id)
+    if c is None:
+        raise HTTPException(status_code=404, detail="campaign not found")
+    return c
+
+
 def rehydrate_jobs() -> int:
-    """Restore persisted jobs on startup (idempotent, best-effort). A job that
-    was mid-generation when the server died settles its unfinished items to
-    'failed' (their prompts are kept, so per-item regenerate still works)."""
+    """Restore persisted campaigns + jobs on startup (idempotent, best-effort).
+    A job that was mid-generation when the server died settles its unfinished
+    items to 'failed' (their prompts are kept, so regenerate still works)."""
     if not LP_ROOT.exists():
         return 0
+    if CAMPAIGNS_DIR.exists():
+        for d in sorted(CAMPAIGNS_DIR.iterdir()):
+            meta = d / "campaign.json"
+            if not (d.is_dir() and meta.is_file()) or _CAMPAIGNS.get(d.name) is not None:
+                continue
+            try:
+                c = json.loads(meta.read_text(encoding="utf-8"))
+                if isinstance(c, dict) and c.get("id"):
+                    _CAMPAIGNS[c["id"]] = c
+            except Exception:  # noqa: BLE001
+                log.warning("lp-materials: skipping unreadable campaign %s", d.name)
     n = 0
     for d in sorted(LP_ROOT.iterdir()):
         meta = d / "job.json"
@@ -296,6 +347,7 @@ def rehydrate_jobs() -> int:
                 "created_at": data.get("created_at", _now()),
                 "updated_at": data.get("updated_at", _now()),
                 "params": data.get("params", {}), "items": items,
+                "campaign_id": data.get("campaign_id") or "",
                 "dir": d, "api_key": "",
             }
             # Recompute a sane terminal status from the item states.
@@ -315,6 +367,7 @@ def _public_job(job: dict) -> dict:
     return {
         "job_id": job["id"], "kind": job["kind"], "status": job["status"],
         "error": job.get("error"), "created_by": job.get("created_by", ""),
+        "campaign_id": job.get("campaign_id") or "",
         "created_at": job["created_at"], "updated_at": job["updated_at"],
         "params": {k: v for k, v in (job.get("params") or {}).items() if k != "api_key"},
         "items": [{
@@ -398,7 +451,7 @@ def _spawn_items(job: dict, indices: List[int]) -> None:
 
 
 def _new_job(kind: str, created_by: str, params: dict, items: List[dict],
-             api_key: str) -> dict:
+             api_key: str, campaign_id: str = "") -> dict:
     job_id = "m_" + uuid.uuid4().hex[:12]
     d = LP_ROOT / job_id
     d.mkdir(parents=True, exist_ok=True)
@@ -406,7 +459,8 @@ def _new_job(kind: str, created_by: str, params: dict, items: List[dict],
     job = {
         "id": job_id, "kind": kind, "status": "running", "error": None,
         "created_by": created_by, "created_at": now, "updated_at": now,
-        "params": params, "items": items, "dir": d, "api_key": api_key,
+        "params": params, "items": items, "campaign_id": campaign_id,
+        "dir": d, "api_key": api_key,
     }
     with _JOBS_LOCK:
         _JOBS[job_id] = job
@@ -434,9 +488,9 @@ def _slug(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "-", (s or "").strip()).strip("-").lower()[:60] or "item"
 
 
-def _resolve_reference(payload: dict):
+def _resolve_reference_id(rid: str):
     """Optional hero-reference id -> (path, id) or (None, "")."""
-    rid = str(payload.get("reference") or "").strip()
+    rid = (rid or "").strip()
     if not rid:
         return None, ""
     if not _ID_RE.match(rid):
@@ -445,6 +499,19 @@ def _resolve_reference(payload: dict):
     if not png.is_file():
         raise HTTPException(status_code=404, detail="hero image not found — upload it again")
     return png, rid
+
+
+def _campaign_context(payload: dict):
+    """(campaign_id, market, reference_id): the campaign is the default source
+    of the market + hero; explicit payload values win (rare overrides)."""
+    cid = str(payload.get("campaign_id") or "").strip()
+    market = str(payload.get("market") or "").strip()[:_MAX_MARKET]
+    ref = str(payload.get("reference") or "").strip()
+    if cid:
+        c = _get_campaign_or_404(cid)
+        market = market or str(c.get("market") or "")[:_MAX_MARKET]
+        ref = ref or str(c.get("reference") or "")
+    return cid, market, ref
 
 
 def _market_line(market: str) -> str:
@@ -495,6 +562,78 @@ def build_lp_materials_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="not found")
         return FileResponse(str(png), media_type="image/png")
 
+    # ---- campaigns (the "groups" every generation belongs to) --------------
+    @router.post("/campaigns")
+    def create_campaign(payload: dict = Body(default={}), user: dict = Depends(require_user)):
+        name = str(payload.get("name") or "").strip()[:120]
+        if not name:
+            raise HTTPException(status_code=422, detail="give the campaign a name")
+        _, ref = _resolve_reference_id(str(payload.get("reference") or ""))
+        c = {
+            "id": "cp_" + uuid.uuid4().hex[:12],
+            "name": name,
+            "tag": str(payload.get("tag") or "").strip()[:40],
+            "market": str(payload.get("market") or "").strip()[:_MAX_MARKET],
+            "reference": ref,
+            "created_by": (user or {}).get("email") or "",
+            "created_at": _now(),
+        }
+        with _JOBS_LOCK:
+            _CAMPAIGNS[c["id"]] = c
+        _persist_campaign(c)
+        return _public_campaign(c)
+
+    @router.get("/campaigns")
+    def list_campaigns():
+        with _JOBS_LOCK:
+            cs = sorted(_CAMPAIGNS.values(), key=lambda c: c.get("created_at", ""), reverse=True)
+        return {"campaigns": [_public_campaign(c) for c in cs]}
+
+    @router.put("/campaigns/{campaign_id}")
+    def update_campaign(campaign_id: str, payload: dict = Body(default={}),
+                        user: dict = Depends(require_user)):
+        c = _get_campaign_or_404(campaign_id)
+        email = ((user or {}).get("email") or "").lower()
+        if (user or {}).get("role") != "admin" and (c.get("created_by") or "").lower() != email:
+            raise HTTPException(status_code=403, detail="Only the campaign's creator can edit it.")
+        if "name" in payload:
+            name = str(payload.get("name") or "").strip()[:120]
+            if not name:
+                raise HTTPException(status_code=422, detail="the campaign needs a name")
+            c["name"] = name
+        if "tag" in payload:
+            c["tag"] = str(payload.get("tag") or "").strip()[:40]
+        if "market" in payload:
+            c["market"] = str(payload.get("market") or "").strip()[:_MAX_MARKET]
+        if "reference" in payload:
+            _, c["reference"] = _resolve_reference_id(str(payload.get("reference") or ""))
+        _persist_campaign(c)
+        return _public_campaign(c)
+
+    @router.delete("/campaigns/{campaign_id}", status_code=204)
+    def delete_campaign(campaign_id: str, user: dict = Depends(require_user)):
+        """Delete a campaign AND every generation inside it."""
+        c = _get_campaign_or_404(campaign_id)
+        email = ((user or {}).get("email") or "").lower()
+        if (user or {}).get("role") != "admin" and (c.get("created_by") or "").lower() != email:
+            raise HTTPException(status_code=403, detail="Only the campaign's creator can delete it.")
+        import shutil
+        with _JOBS_LOCK:
+            doomed = [j for j in _JOBS.values() if j.get("campaign_id") == campaign_id]
+            for j in doomed:
+                _JOBS.pop(j["id"], None)
+            _CAMPAIGNS.pop(campaign_id, None)
+        for j in doomed:
+            try:
+                shutil.rmtree(j["dir"], ignore_errors=True)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            shutil.rmtree(CAMPAIGNS_DIR / campaign_id, ignore_errors=True)
+        except Exception:  # noqa: BLE001
+            pass
+        return Response(status_code=204)
+
     # ---- customers (profile pictures) --------------------------------------
     @router.post("/avatars/detect")
     def detect_names(payload: dict = Body(default={}), _user: dict = Depends(require_user)):
@@ -538,7 +677,8 @@ def build_lp_materials_router() -> APIRouter:
                 # rare deliberate exception.
                 "country": market or str(r.get("country") or "")[:60],
                 "gender": r.get("gender") if r.get("gender") in ("female", "male") else "female",
-                "age": r.get("age") if r.get("age") in ("20s", "30s", "40s", "50s", "60s") else "30s",
+                "age": r.get("age") if r.get("age") in _AGES else "30s",
+                "look": "",
             })
         return {"rows": rows}
 
@@ -558,10 +698,10 @@ def build_lp_materials_router() -> APIRouter:
             "candid": bool(style_in.get("candid", True)),
             "degrade": bool(style_in.get("degrade", True)),
         }
-        # The target market drives the customers' nationality: rows without an
-        # explicit country fall back to it. (The hero image deliberately does
-        # NOT influence customer photos.)
-        market = str(payload.get("market") or "").strip()[:_MAX_MARKET]
+        # The target market (usually from the campaign) drives the customers'
+        # nationality: rows without an explicit country fall back to it. (The
+        # hero image deliberately does NOT influence customer photos.)
+        cid, market, _ref = _campaign_context(payload)
         size = _ASPECT_SIZES["1:1"]
         engine.ensure_size(size)
         items = []
@@ -572,7 +712,8 @@ def build_lp_materials_router() -> APIRouter:
                 "name": str(r.get("name")).strip()[:120],
                 "country": str(r.get("country") or "")[:60] or market,
                 "gender": r.get("gender") if r.get("gender") in ("female", "male") else "female",
-                "age": r.get("age") if r.get("age") in ("20s", "30s", "40s", "50s", "60s") else "30s",
+                "age": r.get("age") if r.get("age") in _AGES else "30s",
+                "look": str(r.get("look") or "").strip()[:160],
             }
             items.append({
                 "index": i, "label": row["name"], "size": size,
@@ -583,7 +724,7 @@ def build_lp_materials_router() -> APIRouter:
         job = _new_job("avatars", user_key,
                        {"style": style, "rows": [it["label"] for it in items],
                         "market": market, "quality": "medium"},
-                       items, api_key)
+                       items, api_key, campaign_id=cid)
         return _public_job(job)
 
     # ---- section cards -----------------------------------------------------
@@ -607,8 +748,8 @@ def build_lp_materials_router() -> APIRouter:
         size = _ASPECT_SIZES[aspect]
         engine.ensure_size(size)
         style_note = str(payload.get("style_note") or "").strip()[:400]
-        market = str(payload.get("market") or "").strip()[:_MAX_MARKET]
-        hero_path, hero_id = _resolve_reference(payload)
+        cid, market, ref_id = _campaign_context(payload)
+        hero_path, hero_id = _resolve_reference_id(ref_id)
 
         persona_rule = (
             "The user wants the SAME single person to appear in EVERY scene. Invent one "
@@ -670,7 +811,7 @@ def build_lp_materials_router() -> APIRouter:
                         "shared_direction": shared, "persona": persona,
                         "style_note": style_note, "market": market,
                         "reference": hero_id, "quality": "medium"},
-                       items, api_key)
+                       items, api_key, campaign_id=cid)
         return _public_job(job)
 
     # ---- advertorial -------------------------------------------------------
@@ -690,8 +831,8 @@ def build_lp_materials_router() -> APIRouter:
         except (TypeError, ValueError):
             candidates = 2
         candidates = max(1, min(_MAX_ADV_CANDIDATES, candidates))
-        market = str(payload.get("market") or "").strip()[:_MAX_MARKET]
-        hero_path, hero_id = _resolve_reference(payload)
+        cid, market, ref_id = _campaign_context(payload)
+        hero_path, hero_id = _resolve_reference_id(ref_id)
         hero_rule = (
             " The attached image is the HERO visual of the landing page this advertorial "
             "sits on — mirror its palette, lighting, mood and art style so the image reads "
@@ -728,14 +869,16 @@ def build_lp_materials_router() -> APIRouter:
                        {"title": title, "text": text, "aspect": aspect,
                         "scene": scene, "market": market, "reference": hero_id,
                         "quality": "medium"},
-                       items, api_key)
+                       items, api_key, campaign_id=cid)
         return _public_job(job)
 
-    # ---- jobs (shared list, like the banner gallery) ------------------------
+    # ---- jobs (shared list; ?campaign= scopes to one campaign) --------------
     @router.get("/jobs")
-    def list_jobs(limit: int = 100):
+    def list_jobs(limit: int = 100, campaign: str = ""):
         with _JOBS_LOCK:
             jobs = sorted(_JOBS.values(), key=lambda j: j["created_at"], reverse=True)
+        if campaign:
+            jobs = [j for j in jobs if j.get("campaign_id") == campaign]
         return {"jobs": [_public_job(j) for j in jobs[: max(1, min(limit, 300))]]}
 
     @router.get("/jobs/{job_id}")

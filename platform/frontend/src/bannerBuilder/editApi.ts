@@ -88,6 +88,8 @@ export async function createEdit(payload: {
   regions: EditRegionInput[]
   candidates: number
   typography?: string
+  /** Image model quality for the correction (default high). */
+  quality?: 'low' | 'medium' | 'high'
 }): Promise<EditJob> {
   const r = await fetch(EDITS_URL, {
     method: 'POST',

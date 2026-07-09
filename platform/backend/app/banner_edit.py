@@ -331,7 +331,8 @@ def _run_candidate(job: dict, index: int) -> None:
         with _EDIT_SEM:
             out_bytes = engine.generate_png(
                 api_key=job["api_key"], prompt=job["prompt"], mode="edit",
-                openai_size=job["gen_size"], model="gpt-image-2", quality="high",
+                openai_size=job["gen_size"], model="gpt-image-2",
+                quality=job.get("quality") or "high",
                 master_png_path=str(d / "source_gen.png"),
                 mask_png_path=str(d / "mask_gen.png"),
                 extra_image_paths=[str(style_ref)] if style_ref.is_file() else None,
@@ -513,6 +514,7 @@ def build_edits_router() -> APIRouter:
         except (TypeError, ValueError):
             candidates = 2
         candidates = max(1, min(_MAX_CANDIDATES, candidates))
+        quality = payload.get("quality") if payload.get("quality") in ("low", "medium", "high") else "high"
         typography = str(payload.get("typography") or "").strip()[:400]
 
         from PIL import Image
@@ -549,7 +551,7 @@ def build_edits_router() -> APIRouter:
             "regions": regions, "candidates": candidates,
             "results": [None] * candidates,
             "prompt": _edit_instruction(regions, typography),
-            "gen_size": gen_size, "api_key": api_key,
+            "gen_size": gen_size, "api_key": api_key, "quality": quality,
             "source_title": title,
         }
         with _JOBS_LOCK:
