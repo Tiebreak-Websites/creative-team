@@ -21,16 +21,19 @@ import {
   Gauge,
   DownloadCloud,
   ExternalLink,
+  Loader2,
   Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
+  Search,
   Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatUserName } from '@/lib/utils'
+import type { SizeGroup } from './sizesApi'
 
 export interface LibraryItem {
   label: string // banner label (concept__size) — NOT unique across runs
@@ -89,6 +92,8 @@ export function BannerLibrary({
   onRegenerate,
   onAddSizes,
   availableSizes,
+  sizeGroups,
+  onAddCustomSize,
   existingSizes,
 }: {
   open: boolean
@@ -108,9 +113,13 @@ export function BannerLibrary({
   /** Add more sizes to THIS version (recomposed off its master). Owner-only; already
    *  bound to the version's run + concept by the parent. */
   onAddSizes?: (sizes: string[]) => void
-  /** Every size the app can generate (from meta) — the add-sizes picker offers these. */
+  /** Every size the app can generate — the add-sizes picker offers these. */
   availableSizes?: string[]
-  /** Sizes this version already has, so the picker hides them. */
+  /** The shared size groups — the picker mirrors the dashboard's organization. */
+  sizeGroups?: SizeGroup[]
+  /** Save a new custom size (shared). Resolves to the normalized size, or null. */
+  onAddCustomSize?: (size: string) => Promise<string | null>
+  /** Sizes this version already has, so the picker marks them as generated. */
   existingSizes?: string[]
 }): JSX.Element | null {
   const count = items.length
@@ -122,13 +131,12 @@ export function BannerLibrary({
   const [promptExpanded, setPromptExpanded] = useState(false)
   const [adExpanded, setAdExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
-  // Prompt editing (owner-only, when onRegenerate is provided): edit the prompt and
-  // re-roll from it. `draft` holds the in-progress text; `editing` toggles the textarea.
+  // Prompt editing (owner-only, when onRegenerate is provided): "Edit prompt"
+  // opens a BIG modal with the whole prompt + Regenerate / Cancel inside it.
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState('')
-  // Add-sizes picker (owner-only, when onAddSizes is provided).
+  // Add-sizes picker modal (owner-only, when onAddSizes is provided) — mirrors
+  // the dashboard's size-group organization.
   const [addingSizes, setAddingSizes] = useState(false)
-  const [sizeSel, setSizeSel] = useState<Set<string>>(new Set())
 
   function copyPrompt() {
     if (!current?.prompt) return
@@ -141,42 +149,21 @@ export function BannerLibrary({
     )
   }
 
-  // Leave edit mode / close the size picker whenever the viewed banner changes
-  // (navigate / close), so a half-typed edit or selection never bleeds across.
+  // Close both modals whenever the viewed banner changes (navigate / close), so
+  // a half-typed edit or selection never bleeds across banners.
   useEffect(() => {
     setEditing(false)
-    setDraft('')
     setAddingSizes(false)
-    setSizeSel(new Set())
   }, [current?.runId, current?.label])
 
-  // Sizes offerable for "Add sizes" = everything the app supports minus what this
-  // version already has.
-  const offerableSizes = (availableSizes ?? []).filter((s) => !(existingSizes ?? []).includes(s))
-  function toggleSize(size: string) {
-    setSizeSel((prev) => {
-      const next = new Set(prev)
-      if (next.has(size)) next.delete(size)
-      else next.add(size)
-      return next
-    })
-  }
-  function generateSizes() {
-    if (!onAddSizes || sizeSel.size === 0) return
-    onAddSizes(Array.from(sizeSel))
-    setAddingSizes(false)
-    setSizeSel(new Set())
-  }
-
   const promptEdited = Boolean(current?.promptOverride)
-  function startEditing() {
-    setDraft(current?.prompt ?? '')
-    setEditing(true)
-    setPromptExpanded(true)
-  }
-  function saveAndRegenerate() {
+  function regenerateFromModal(draft: string) {
     if (!current || !onRegenerate) return
-    onRegenerate(current.runId, current.label, draft)
+    const next = draft.trim()
+    // Unchanged text = a plain re-roll (keeps whatever prompt the frame already
+    // uses); changed text = an override that sticks for future re-rolls.
+    if (next === (current.prompt ?? '').trim()) onRegenerate(current.runId, current.label)
+    else onRegenerate(current.runId, current.label, next)
     setEditing(false)
   }
   function resetPrompt() {
@@ -190,10 +177,19 @@ export function BannerLibrary({
     if (open && count && safeIndex !== index) onIndexChange(safeIndex)
   }, [open, count, safeIndex, index, onIndexChange])
 
-  // Keyboard: Escape closes, arrows navigate (clamped at the ends).
+  // Keyboard: Escape closes, arrows navigate (clamped at the ends). While a
+  // modal (prompt editor / size picker) is open, the modal owns the keyboard —
+  // Escape closes IT, not the whole viewer, and arrows don't switch banners.
   useEffect(() => {
     if (!open || !count) return
     const onKey = (e: KeyboardEvent) => {
+      if (editing || addingSizes) {
+        if (e.key === 'Escape') {
+          setEditing(false)
+          setAddingSizes(false)
+        }
+        return
+      }
       if (e.key === 'Escape') {
         onClose()
       } else if (e.key === 'ArrowLeft') {
@@ -211,7 +207,7 @@ export function BannerLibrary({
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = prevOverflow
     }
-  }, [open, count, safeIndex, onClose, onIndexChange])
+  }, [open, count, safeIndex, onClose, onIndexChange, editing, addingSizes])
 
   // Keep the active thumbnail scrolled into view as the selection moves.
   useEffect(() => {
@@ -459,69 +455,27 @@ export function BannerLibrary({
                 </span>
               )}
             </span>
-            {!editing && (
-              <div className="flex items-center gap-1.5">
-                {current.prompt && (
-                  <Button size="sm" variant="outline" onClick={copyPrompt} className="h-7 gap-1 px-2 text-xs">
-                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copied ? 'Copied' : 'Copy'}
-                  </Button>
-                )}
-                {onRegenerate && current.prompt && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={startEditing}
-                    className="h-7 gap-1 px-2 text-xs"
-                    title="Edit the prompt and regenerate this size"
-                  >
-                    <Pencil className="h-3.5 w-3.5" /> Edit
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
-          {editing ? (
-            <>
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                rows={10}
-                spellCheck={false}
-                className="w-full resize-y rounded-lg border border-border bg-background px-2.5 py-2 text-xs leading-relaxed text-foreground/90 outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/30"
-                placeholder="Describe the banner to generate…"
-              />
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  onClick={saveAndRegenerate}
-                  disabled={!draft.trim()}
-                  className="h-7 gap-1 px-2.5 text-xs"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" /> Save &amp; Regenerate
+            <div className="flex items-center gap-1.5">
+              {current.prompt && (
+                <Button size="sm" variant="outline" onClick={copyPrompt} className="h-7 gap-1 px-2 text-xs">
+                  {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? 'Copied' : 'Copy'}
                 </Button>
+              )}
+              {onRegenerate && (
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setEditing(false)}
-                  className="h-7 px-2.5 text-xs"
+                  onClick={() => setEditing(true)}
+                  className="h-7 gap-1 px-2 text-xs"
+                  title="Open the full prompt in a large editor and regenerate this size"
                 >
-                  Cancel
+                  <Pencil className="h-3.5 w-3.5" /> Edit prompt
                 </Button>
-                {promptEdited && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={resetPrompt}
-                    className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
-                    title="Discard the edit and regenerate from the original generated prompt"
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" /> Reset to generated
-                  </Button>
-                )}
-              </div>
-            </>
-          ) : current.prompt ? (
+              )}
+            </div>
+          </div>
+          {current.prompt ? (
             <>
               <p
                 className={cn(
@@ -541,7 +495,9 @@ export function BannerLibrary({
               </button>
             </>
           ) : (
-            <p className="text-xs text-muted-foreground">Not recorded for this banner.</p>
+            <p className="text-xs text-muted-foreground">
+              Not recorded for this banner{onRegenerate ? ' — “Edit prompt” lets you write one and regenerate.' : '.'}
+            </p>
           )}
         </div>
 
@@ -553,9 +509,6 @@ export function BannerLibrary({
           <InfoLine label="Size" value={current.size} />
           <InfoLine label="Version" value={`v${current.version}`} />
           <InfoLine label="Created" value={fmtDate(current.createdAt) || '—'} />
-          {current.approvalStatus && (
-            <InfoLine label="Status" value={cap(current.approvalStatus)} />
-          )}
         </div>
 
         {/* Actions */}
@@ -594,109 +547,408 @@ export function BannerLibrary({
               <span />
             )}
           </div>
-          {/* Add sizes — recompose this approved version into more sizes off its master */}
+          {/* Add sizes — opens a picker organized exactly like the dashboard's
+              size groups. Regenerate lives INSIDE the prompt editor now. */}
           {onAddSizes && (
-            <div className="rounded-xl border border-border bg-background/50 p-2">
-              {!addingSizes ? (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => setAddingSizes(true)}
-                  title="Generate more sizes of this version"
-                >
-                  <Plus className="h-4 w-4" /> Add sizes
-                </Button>
-              ) : offerableSizes.length === 0 ? (
-                <div className="flex items-center justify-between gap-2 px-1 py-1.5 text-xs text-muted-foreground">
-                  <span>Every size is already generated.</span>
-                  <button
-                    type="button"
-                    onClick={() => setAddingSizes(false)}
-                    className="font-medium hover:text-foreground"
-                  >
-                    Close
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="mb-2 flex flex-wrap gap-1.5">
-                    {offerableSizes.map((s) => {
-                      const on = sizeSel.has(s)
-                      return (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => toggleSize(s)}
-                          aria-pressed={on}
-                          className={cn(
-                            'rounded-md border px-2 py-1 text-[11px] font-medium transition-colors',
-                            on
-                              ? 'border-primary bg-primary/15 text-primary'
-                              : 'border-border text-foreground/80 hover:border-foreground/40',
-                          )}
-                        >
-                          {s}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      className="h-7 flex-1 gap-1 px-2 text-xs"
-                      disabled={sizeSel.size === 0}
-                      onClick={generateSizes}
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      {sizeSel.size ? `Generate ${sizeSel.size} size${sizeSel.size > 1 ? 's' : ''}` : 'Generate'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2.5 text-xs"
-                      onClick={() => {
-                        setAddingSizes(false)
-                        setSizeSel(new Set())
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setAddingSizes(true)}
+              title="Generate more sizes of this version"
+            >
+              <Plus className="h-4 w-4" /> Add sizes
+            </Button>
           )}
-          {(onRegenerate || onDelete) && (
-            <div className="grid grid-cols-2 gap-2">
-              {onRegenerate ? (
-                <Button
-                  variant="outline"
-                  onClick={() => onRegenerate(current.runId, current.label)}
-                  title="Regenerate just this size"
-                >
-                  <RefreshCw className="h-4 w-4" /> Regenerate
-                </Button>
-              ) : (
-                <span />
-              )}
-              {onDelete ? (
-                <Button
-                  variant="outline"
-                  onClick={() => onDelete(current.runId, current.label)}
-                  className="text-destructive hover:border-destructive hover:text-destructive"
-                  title="Delete this banner"
-                >
-                  <Trash2 className="h-4 w-4" /> Delete
-                </Button>
-              ) : (
-                <span />
-              )}
-            </div>
+          {onDelete && (
+            <Button
+              variant="outline"
+              onClick={() => onDelete(current.runId, current.label)}
+              className="w-full text-destructive hover:border-destructive hover:text-destructive"
+              title="Delete this banner"
+            >
+              <Trash2 className="h-4 w-4" /> Delete
+            </Button>
           )}
         </div>
       </aside>
+
+      {/* ---------------- Modals (above the whole viewer) ---------------- */}
+      {editing && onRegenerate && (
+        <PromptEditModal
+          key={`${current.runId}|${current.label}`}
+          size={current.size}
+          version={current.version}
+          initial={current.prompt ?? ''}
+          edited={promptEdited}
+          onCancel={() => setEditing(false)}
+          onRegenerate={regenerateFromModal}
+          onReset={resetPrompt}
+        />
+      )}
+      {addingSizes && onAddSizes && (
+        <AddSizesModal
+          groups={sizeGroups ?? []}
+          availableSizes={availableSizes ?? []}
+          existingSizes={existingSizes ?? []}
+          onAddCustomSize={onAddCustomSize}
+          onCancel={() => setAddingSizes(false)}
+          onGenerate={(picked) => {
+            onAddSizes(picked)
+            setAddingSizes(false)
+          }}
+        />
+      )}
     </div>,
     document.body,
+  )
+}
+
+/**
+ * BIG prompt editor: the whole prompt in a large textarea with Regenerate and
+ * Cancel inside the modal (plus "Reset to generated" when an edit is active).
+ * Unchanged text regenerates as a plain re-roll; changed text becomes a sticky
+ * override (see regenerateFromModal).
+ */
+function PromptEditModal({
+  size,
+  version,
+  initial,
+  edited,
+  onCancel,
+  onRegenerate,
+  onReset,
+}: {
+  size: string
+  version: number
+  initial: string
+  edited: boolean
+  onCancel: () => void
+  onRegenerate: (draft: string) => void
+  onReset: () => void
+}) {
+  const [draft, setDraft] = useState(initial)
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center p-4 sm:p-8">
+      <button
+        type="button"
+        aria-hidden
+        tabIndex={-1}
+        onClick={onCancel}
+        className="absolute inset-0 cursor-default bg-black/70 backdrop-blur-sm animate-fade-in"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit prompt"
+        className="relative z-10 flex h-[min(85vh,52rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_30px_80px_-20px_rgba(0,0,0,0.9)] animate-fade-up"
+      >
+        <div className="flex items-center gap-2.5 border-b border-border px-5 py-3.5">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <h2 className="font-display text-base font-semibold text-foreground">Edit prompt</h2>
+          <span className="rounded-md border border-primary/35 px-1.5 py-0.5 text-[11px] font-medium text-primary">
+            {size} · v{version}
+          </span>
+          {edited && (
+            <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+              edited
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onCancel}
+            title="Close"
+            aria-label="Close prompt editor"
+            className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          spellCheck={false}
+          autoFocus
+          placeholder="Describe the banner to generate…"
+          className="min-h-0 w-full flex-1 resize-none bg-background/50 px-5 py-4 text-sm leading-relaxed text-foreground/90 outline-none"
+        />
+        <div className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-3">
+          {edited && (
+            <Button
+              variant="ghost"
+              onClick={onReset}
+              className="gap-1.5 text-muted-foreground hover:text-foreground"
+              title="Discard the edit and regenerate from the original generated prompt"
+            >
+              <RotateCcw className="h-4 w-4" /> Reset to generated
+            </Button>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => onRegenerate(draft)}
+              disabled={!draft.trim()}
+              className="gap-1.5"
+              title="Regenerate this size from the prompt above"
+            >
+              <RefreshCw className="h-4 w-4" /> Regenerate
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Add-sizes picker: the SAME group organization as the dashboard's size rail
+ * (collapsible groups + search + custom sizes). Sizes the version already has
+ * show as checked-and-disabled so groups read complete.
+ */
+function AddSizesModal({
+  groups,
+  availableSizes,
+  existingSizes,
+  onAddCustomSize,
+  onCancel,
+  onGenerate,
+}: {
+  groups: SizeGroup[]
+  availableSizes: string[]
+  existingSizes: string[]
+  onAddCustomSize?: (size: string) => Promise<string | null>
+  onCancel: () => void
+  onGenerate: (sizes: string[]) => void
+}) {
+  const [sel, setSel] = useState<Set<string>>(new Set())
+  const [query, setQuery] = useState('')
+  const [openGroups, setOpenGroups] = useState<Set<string>>(
+    () => new Set(groups.length ? [groups[0].id] : []),
+  )
+  const [customValue, setCustomValue] = useState('')
+  const [customBusy, setCustomBusy] = useState(false)
+  // Custom sizes saved from THIS modal — offered immediately even before the
+  // parent's config state refreshes.
+  const [extraSizes, setExtraSizes] = useState<string[]>([])
+
+  const existing = new Set(existingSizes)
+  const known = new Set([...availableSizes, ...extraSizes])
+  const display: SizeGroup[] = (() => {
+    const base = groups.length
+      ? groups.map((g) => ({ ...g, sizes: g.sizes.filter((s) => known.has(s)) }))
+      : [{ id: 'all', label: 'All sizes', sizes: [...known] }]
+    const covered = new Set(base.flatMap((g) => g.sizes))
+    const other = [...known].filter((s) => !covered.has(s))
+    return other.length ? [...base, { id: 'other', label: 'Other', sizes: other }] : base
+  })()
+
+  function toggle(size: string) {
+    if (existing.has(size)) return
+    setSel((prev) => {
+      const next = new Set(prev)
+      if (next.has(size)) next.delete(size)
+      else next.add(size)
+      return next
+    })
+  }
+  async function addCustom() {
+    if (!onAddCustomSize || !customValue.trim() || customBusy) return
+    setCustomBusy(true)
+    try {
+      const size = await onAddCustomSize(customValue)
+      if (size) {
+        setExtraSizes((prev) => (prev.includes(size) ? prev : [...prev, size]))
+        if (!existing.has(size)) setSel((prev) => new Set(prev).add(size))
+        setCustomValue('')
+      }
+    } finally {
+      setCustomBusy(false)
+    }
+  }
+
+  const chip = (s: string) => {
+    const done = existing.has(s)
+    const on = sel.has(s)
+    return (
+      <button
+        key={s}
+        type="button"
+        onClick={() => toggle(s)}
+        disabled={done}
+        aria-pressed={on}
+        title={done ? 'Already generated for this version' : ''}
+        className={cn(
+          'flex items-center justify-between gap-1.5 rounded-md border px-2.5 py-1.5 font-display text-[12px] font-semibold transition-colors',
+          done
+            ? 'cursor-default border-border bg-secondary/50 text-muted-foreground/70'
+            : on
+              ? 'border-primary/50 bg-primary/10 text-primary'
+              : 'border-border bg-secondary text-muted-foreground hover:border-foreground/25 hover:text-foreground',
+        )}
+      >
+        <span>{s}</span>
+        {(done || on) && <Check className={cn('h-3.5 w-3.5', done && 'opacity-50')} />}
+      </button>
+    )
+  }
+
+  const q = query.trim().toLowerCase()
+  const matches = q ? [...known].filter((s) => s.includes(q)) : []
+
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center p-4 sm:p-8">
+      <button
+        type="button"
+        aria-hidden
+        tabIndex={-1}
+        onClick={onCancel}
+        className="absolute inset-0 cursor-default bg-black/70 backdrop-blur-sm animate-fade-in"
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add sizes"
+        className="relative z-10 flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_30px_80px_-20px_rgba(0,0,0,0.9)] animate-fade-up"
+      >
+        <div className="flex items-center gap-2.5 border-b border-border px-5 py-3.5">
+          <Plus className="h-4 w-4 text-primary" />
+          <h2 className="font-display text-base font-semibold text-foreground">Add sizes</h2>
+          <span className="text-xs text-muted-foreground">
+            recomposed from this version’s master
+          </span>
+          <button
+            type="button"
+            onClick={onCancel}
+            title="Close"
+            aria-label="Close size picker"
+            className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search sizes"
+              placeholder="Search sizes…"
+              className="h-8 w-full rounded-md border border-input bg-secondary pl-8 pr-7 text-xs text-foreground transition-colors placeholder:text-muted-foreground hover:border-foreground/25 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                title="Clear"
+                aria-label="Clear size search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {q ? (
+            matches.length ? (
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{matches.map(chip)}</div>
+            ) : (
+              <p className="px-1 py-1 text-xs text-muted-foreground">
+                No sizes match “{query}” — add it below as a custom size.
+              </p>
+            )
+          ) : (
+            display.map((g) => {
+              if (!g.sizes.length) return null
+              const open = openGroups.has(g.id)
+              const selCount = g.sizes.filter((s) => sel.has(s)).length
+              return (
+                <div key={g.id} className="overflow-hidden rounded-lg border border-border">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOpenGroups((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(g.id)) next.delete(g.id)
+                        else next.add(g.id)
+                        return next
+                      })
+                    }
+                    className="flex w-full items-center justify-between bg-secondary/50 px-3 py-2 text-left transition-colors hover:bg-secondary"
+                  >
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-foreground/80">
+                      {g.label}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {selCount > 0 && (
+                        <span className="rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary">
+                          {selCount}
+                        </span>
+                      )}
+                      <ChevronDown
+                        className={cn(
+                          'h-3.5 w-3.5 text-muted-foreground transition-transform',
+                          open && 'rotate-180',
+                        )}
+                      />
+                    </span>
+                  </button>
+                  {open && (
+                    <div className="grid grid-cols-3 gap-2 p-2 sm:grid-cols-4">{g.sizes.map(chip)}</div>
+                  )}
+                </div>
+              )
+            })
+          )}
+
+          {onAddCustomSize && (
+            <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-2">
+              <input
+                value={customValue}
+                onChange={(e) => setCustomValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    void addCustom()
+                  }
+                }}
+                aria-label="New custom size (width x height)"
+                placeholder="Custom size — e.g. 500x500"
+                className="h-8 w-full min-w-0 flex-1 rounded-md border border-input bg-secondary px-2.5 text-xs text-foreground transition-colors placeholder:text-muted-foreground hover:border-foreground/25 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 shrink-0 px-2.5 text-xs"
+                disabled={customBusy || !customValue.trim()}
+                onClick={() => void addCustom()}
+                title="Save as a shared custom size and select it"
+              >
+                {customBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                Add
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            disabled={sel.size === 0}
+            onClick={() => onGenerate(Array.from(sel))}
+            className="gap-1.5"
+            title="Recompose this version into the selected sizes"
+          >
+            <Plus className="h-4 w-4" />
+            {sel.size ? `Generate ${sel.size} size${sel.size > 1 ? 's' : ''}` : 'Generate'}
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
 

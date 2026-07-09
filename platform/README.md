@@ -113,7 +113,17 @@ Logged-in **admins** get two extra surfaces:
   which unlinks the real files from `PLATFORM_ARTIFACT_DIR` (reusing
   `runner.delete_frame` / `runner.delete_run`) and returns the bytes reclaimed — so
   it genuinely frees disk space, then refreshes the on-screen usage gauge.
-- **Brands** — a read-only built-in brand catalog (header → **Brands**).
+- **Settings** (header → **Settings**) — two tabs:
+  - **Brands** — the brand catalog (built-ins + admin-managed).
+  - **Sizes & bundles** (`frontend/src/admin/SizesSettings.tsx`) — the shared
+    size-group organization used by the dashboard rail AND the banner detail
+    view's "Add sizes" picker: create/rename/delete groups, reorder them
+    (order = position), add/remove sizes (any sane `WxH` — customs register
+    automatically), and manage one-click size bundles. Backed by
+    `GET/PUT /api/tools/banner-builder/size-config` (`app/sizes_config.py`),
+    persisted on the artifact disk. Any logged-in user can add a **custom
+    size** (`POST …/size-config/custom`); it lands in the shared "Custom
+    sizes" group.
 
 Both the shared gallery and the Disk Manager label each batch with **who generated
 it** (run `created_by`, captured from the session). Admin access is role-based

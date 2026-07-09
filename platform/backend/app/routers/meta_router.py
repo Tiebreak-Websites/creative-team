@@ -2,6 +2,7 @@
 from fastapi import APIRouter
 
 from .. import engine
+from .. import sizes_config
 from ..tool_config import merged_config
 
 router = APIRouter(prefix="/api", tags=["meta"])
@@ -29,7 +30,8 @@ def meta():
     cd = opts.get("creativeDirector") or {}
     return {
         "button_combos": [{"bg": bg, "text": text} for bg, text in engine.BUTTON_COMBOS],
-        "sizes": engine.SUPPORTED_SIZES,
+        # Dynamic: built-ins + every registered custom size (see sizes_config).
+        "sizes": sizes_config.all_sizes(),
         "master_size": engine.MASTER_SIZE,
         "models": engine.MODELS,
         "qualities": QUALITIES,

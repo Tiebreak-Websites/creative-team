@@ -419,6 +419,15 @@ def validate_request(req: RunRequest):
 
     concepts = {c.key: card_to_concept(c, req.locale, req.style or "") for c in req.concepts}
     sizes = normalize_sizes(req.sizes)
+    # Custom sizes: any sane WxH is generatable — register unknown ones with the
+    # engine (nearest aspect + layout family) or reject with a readable reason.
+    size_errors = []
+    for s in sizes:
+        ok, why = engine.ensure_size(s)
+        if not ok:
+            size_errors.append(f"size '{s}': {why}")
+    if size_errors:
+        return size_errors, {}, []
     manifest = {"concepts": concepts}
     urls_like = [
         {"concept": ck, "size": s, "openaiSize": engine.OPENAI_SIZE_MAP.get(s, "?")}
@@ -1303,9 +1312,10 @@ def add_sizes(run: Run, concept: str, new_sizes: List[str], api_key: str = "") -
         s.strip() for s in (new_sizes or []) if isinstance(s, str) and s.strip()))
     if not want:
         return {"ok": False, "reason": "no sizes requested"}
-    unknown = [s for s in want if s not in engine.OPENAI_SIZE_MAP]
-    if unknown:
-        return {"ok": False, "reason": f"unknown size(s): {', '.join(unknown[:5])}"}
+    # Register-or-reject each size: customs are as addable as built-ins.
+    bad = [s for s in want if not engine.ensure_size(s)[0]]
+    if bad:
+        return {"ok": False, "reason": f"unsupported size(s): {', '.join(bad[:5])}"}
     if len(want) > 12:
         return {"ok": False, "reason": "add at most 12 sizes at a time"}
     with run._lock:
@@ -1525,6 +1535,10 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
     for b in d.get("banners", []):
         ck, size = b.get("concept", ""), b.get("size", "")
         mode, phase = b.get("mode", "gen"), b.get("phase", "master")
+        # A persisted CUSTOM size must stay generatable in this process (its
+        # regenerate/add-sizes path needs the prompt tables) even if it was later
+        # removed from the shared size groups.
+        engine.ensure_size(size)
         # Restore the OpenAI size (persisted on new runs; recomputed for old ones)
         # so a rehydrated run can still recompose after a restart.
         openai_size = b.get("openai_size") or engine.OPENAI_SIZE_MAP.get(size, "")

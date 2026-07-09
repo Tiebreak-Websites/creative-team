@@ -22,6 +22,7 @@ from ... import references as references_store
 from ... import runner
 from ...brands import build_brands_router
 from ...presets import build_presets_router
+from ...sizes_config import build_sizes_router
 from ...creative_director import VALID_EFFORTS
 from ...models import RunRequest
 from ...secrets import get_secret
@@ -474,5 +475,7 @@ def build_router() -> APIRouter:
     router.include_router(build_brands_router())
     # Saved campaign presets (shared team library) under the same prefix.
     router.include_router(build_presets_router())
+    # Size groups / bundles / custom sizes (shared, admin-editable).
+    router.include_router(build_sizes_router())
 
     return router

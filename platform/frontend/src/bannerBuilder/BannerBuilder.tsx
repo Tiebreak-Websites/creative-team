@@ -35,6 +35,7 @@ import {
 import { loadBrand } from './brand'
 import { detectLocale } from './detectLocale'
 import { listBrands, type Brand } from './brandsApi'
+import { addCustomSize as addCustomSizeApi, getSizeConfig, type SizeConfig, type SizeGroup } from './sizesApi'
 import { useAuth } from '../auth/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -73,8 +74,9 @@ export const MODEL_LABELS: Record<string, string> = {
 }
 export const QUALITY_LABELS: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High' }
 
-// Per-platform size groups (from the team's master size sheet). Only sizes the
-// backend supports render; any supported size not listed falls into "Other".
+// FALLBACK size groups (the team's master size sheet) — used only until the
+// server-driven size config loads (or if it fails). The live organization is
+// admin-managed via /size-config and shared with the add-sizes picker.
 const PLATFORMS: { label: string; sizes: string[] }[] = [
   { label: 'Most used', sizes: ['1200x674', '1200x1200', '1200x800', '1200x628', '960x1200', '1080x1080', '1080x1920', '1440x1800'] },
   { label: 'Meta · Facebook · Instagram', sizes: ['1080x1080', '1080x1350', '1080x1920', '1200x628', '1440x1800'] },
@@ -267,19 +269,50 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
   // Sizes UI: collapsible platform groups + global search.
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(['Most used']))
   const [sizeQuery, setSizeQuery] = useState('')
-  // Bulk-paste sizes: add all supported ones at once; warn (toast, fades after 5s +
-  // closeable) about any size this platform doesn't support.
-  const [sizeNotice, setSizeNotice] = useState<{ added: number; unsupported: string[] } | null>(null)
+  // Toast under the size rail: bulk-paste feedback, custom-size results, and
+  // failed gallery actions (regenerate / add sizes) — fades after 5s, closeable.
+  const [sizeNotice, setSizeNotice] = useState<{
+    added: number
+    unsupported: string[]
+    message?: string
+  } | null>(null)
   useEffect(() => {
     if (!sizeNotice) return
     const t = window.setTimeout(() => setSizeNotice(null), 5000)
     return () => window.clearTimeout(t)
   }, [sizeNotice])
+
+  // Shared size groups / bundles / custom sizes — server-driven so admins can
+  // reorganize them and anyone can add a custom size. Falls back to the built-in
+  // PLATFORMS list until the config loads (or if the request fails).
+  const [sizeConfig, setSizeConfig] = useState<SizeConfig | null>(null)
+  useEffect(() => {
+    getSizeConfig()
+      .then(setSizeConfig)
+      .catch(() => {})
+  }, [])
+  const allSizes = useMemo(
+    () => (sizeConfig?.sizes?.length ? sizeConfig.sizes : meta.sizes),
+    [sizeConfig, meta.sizes],
+  )
+  const customGroupId = sizeConfig?.custom_group_id ?? 'custom'
+  // Display groups: the server organization (or the fallback), plus an "Other"
+  // group for any generatable size no group lists.
+  const sizeGroups: SizeGroup[] = useMemo(() => {
+    const groups =
+      sizeConfig?.groups?.length
+        ? sizeConfig.groups
+        : PLATFORMS.map((p, i) => ({ id: `builtin-${i}`, label: p.label, sizes: p.sizes }))
+    const covered = new Set(groups.flatMap((g) => g.sizes))
+    const other = allSizes.filter((s) => !covered.has(s))
+    return other.length ? [...groups, { id: 'other', label: 'Other', sizes: other }] : groups
+  }, [sizeConfig, allSizes])
+
   function applyPastedSizes(text: string): boolean {
     const parsed = parseSizes(text)
     if (parsed.length === 0) return false
-    const supported = parsed.filter((s) => meta.sizes.includes(s))
-    const unsupported = parsed.filter((s) => !meta.sizes.includes(s))
+    const supported = parsed.filter((s) => allSizes.includes(s))
+    const unsupported = parsed.filter((s) => !allSizes.includes(s))
     const addedNow = supported.filter((s) => !sizes.has(s))
     if (addedNow.length) {
       setSizes((prev) => {
@@ -291,6 +324,52 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
     setSizeNotice({ added: addedNow.length, unsupported })
     setSizeQuery('')
     return true
+  }
+
+  // Add ONE custom size (persisted server-side in the shared "Custom sizes"
+  // group). Returns the normalized size, or null when it was rejected.
+  const [customBusy, setCustomBusy] = useState(false)
+  async function addCustomSize(text: string, select: boolean): Promise<string | null> {
+    const norm = (text || '').trim().toLowerCase().replace(/[×*]/g, 'x').replace(/\s+/g, '')
+    if (!/^\d{2,4}x\d{2,4}$/.test(norm)) {
+      setSizeNotice({
+        added: 0,
+        unsupported: [],
+        message: `“${text.trim()}” is not a size — use width x height, e.g. 500x500.`,
+      })
+      return null
+    }
+    if (allSizes.includes(norm)) {
+      if (select) {
+        setSizes((prev) => new Set(prev).add(norm))
+        setSizeQuery('')
+      }
+      return norm
+    }
+    setCustomBusy(true)
+    try {
+      const cfg = await addCustomSizeApi(norm)
+      setSizeConfig(cfg)
+      if (select) {
+        setSizes((prev) => new Set(prev).add(norm))
+        setSizeQuery('')
+      }
+      setSizeNotice({
+        added: 1,
+        unsupported: [],
+        message: `Added custom size ${norm} — saved in “Custom sizes” for the whole team.`,
+      })
+      return norm
+    } catch (e) {
+      setSizeNotice({
+        added: 0,
+        unsupported: [],
+        message: e instanceof Error ? e.message : String(e),
+      })
+      return null
+    } finally {
+      setCustomBusy(false)
+    }
   }
 
   // Floating command bar popovers.
@@ -563,16 +642,25 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
     })
   }
 
-  // One-click size bundles. Standard = the square MVP + the two most-used social
-  // formats; applying a bundle replaces the current size selection.
-  const STANDARD_BUNDLE = ['1200x1200', '1200x628', '960x1200']
-  const standardBundleSizes = STANDARD_BUNDLE.filter((s) => meta.sizes.includes(s))
-  const standardBundleActive =
-    standardBundleSizes.length > 0 &&
-    sizes.size === standardBundleSizes.length &&
-    standardBundleSizes.every((s) => sizes.has(s))
-  function applyStandardBundle() {
-    setSizes(new Set(standardBundleSizes.length ? standardBundleSizes : [meta.master_size]))
+  // One-click size bundles — server-driven (admins create/edit them); falls back
+  // to the standard set. Applying a bundle REPLACES the current selection (the
+  // MVP master is always kept, matching the master-always-on invariant).
+  const bundles = useMemo(() => {
+    const list = sizeConfig?.bundles?.length
+      ? sizeConfig.bundles
+      : [{ id: 'standard', label: 'Standard bundle', sizes: ['1200x1200', '1200x628', '960x1200'] }]
+    return list
+      .map((b) => ({ ...b, sizes: b.sizes.filter((s) => allSizes.includes(s)) }))
+      .filter((b) => b.sizes.length > 0)
+  }, [sizeConfig, allSizes])
+  const bundleSelection = (b: { sizes: string[] }) =>
+    Array.from(new Set([meta.master_size, ...b.sizes]))
+  const bundleActive = (b: { sizes: string[] }) => {
+    const want = bundleSelection(b)
+    return sizes.size === want.length && want.every((s) => sizes.has(s))
+  }
+  function applyBundle(b: { sizes: string[] }) {
+    setSizes(new Set(bundleSelection(b)))
   }
 
   function toggleGroup(label: string) {
@@ -728,23 +816,32 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
     )
   }
 
+  // A failed gallery action must never die silently (that reads as "the button
+  // does nothing") — surface the backend's reason in the toast.
+  const surfaceActionError = (prefix: string) => (e: unknown) =>
+    setSizeNotice({
+      added: 0,
+      unsupported: [],
+      message: `${prefix}: ${e instanceof Error ? e.message : String(e)}`,
+    })
+
   // Re-roll ONE banner (a single size) in place. Optimistically swap in the
   // server's updated run and resume polling so the tile shows working → ok.
   // promptOverride: an edited prompt to re-roll from ('' resets it); omitted = plain re-roll.
   function regenerateBannerFrame(runId: string, label: string, promptOverride?: string) {
     void regenerateBanner(runId, label, promptOverride)
       .then((updated) => setRuns((prev) => prev.map((r) => (r.run_id === runId ? updated : r))))
-      .catch(() => {})
+      .catch(surfaceActionError('Could not regenerate'))
     setPolling(true)
   }
 
-  // Add more sizes to an approved version → recompose off its master. Swap in the
+  // Add more sizes to a version → recompose off its master. Swap in the
   // updated run and resume polling so the new sizes fill in as they finish.
   function addSizesToVersion(runId: string, concept: string, sizes: string[]) {
     if (!sizes.length) return
     void addSizes(runId, concept, sizes)
       .then((updated) => setRuns((prev) => prev.map((r) => (r.run_id === runId ? updated : r))))
-      .catch(() => {})
+      .catch(surfaceActionError('Could not add sizes'))
     setPolling(true)
   }
 
@@ -820,29 +917,34 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
         <div className="space-y-3 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Sizes</h2>
 
-          {/* Bundles — one-click size sets, kept in their own divided section. */}
-          {standardBundleSizes.length > 0 && (
+          {/* Bundles — one-click size sets (admin-managed), in their own section. */}
+          {bundles.length > 0 && (
             <div className="space-y-1.5 rounded-lg border border-border bg-secondary/40 p-2.5">
               <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 Bundles
               </div>
-              <button
-                type="button"
-                onClick={applyStandardBundle}
-                title="Select the standard 3 sizes: 1200×1200 (MVP), 1200×628 and 960×1200"
-                aria-pressed={standardBundleActive}
-                className={cn(
-                  'flex w-full flex-col items-start gap-0.5 rounded-md border px-3 py-2 text-left transition-colors',
-                  standardBundleActive
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border bg-card hover:border-primary/50',
-                )}
-              >
-                <span className="flex items-center gap-1.5 text-[13px] font-semibold">
-                  <Layers className="h-3.5 w-3.5" /> Standard bundle
-                </span>
-                <span className="text-[10px] text-muted-foreground">1200×1200 · 1200×628 · 960×1200</span>
-              </button>
+              {bundles.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => applyBundle(b)}
+                  title={`Select this bundle: ${bundleSelection(b).join(', ')}`}
+                  aria-pressed={bundleActive(b)}
+                  className={cn(
+                    'flex w-full flex-col items-start gap-0.5 rounded-md border px-3 py-2 text-left transition-colors',
+                    bundleActive(b)
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-card hover:border-primary/50',
+                  )}
+                >
+                  <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+                    <Layers className="h-3.5 w-3.5" /> {b.label}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {b.sizes.join(' · ').replace(/x/g, '×')}
+                  </span>
+                </button>
+              ))}
             </div>
           )}
 
@@ -877,53 +979,82 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
           {sizeQuery.trim() ? (
             (() => {
               const q = sizeQuery.trim().toLowerCase()
-              const matches = meta.sizes.filter((s) => s.toLowerCase().includes(q))
-              return matches.length ? (
-                <div className="grid grid-cols-2 gap-2">{matches.map(renderSizeChip)}</div>
-              ) : (
-                <p className="px-1 py-1 text-xs text-muted-foreground">No sizes match “{sizeQuery}”.</p>
+              const matches = allSizes.filter((s) => s.toLowerCase().includes(q))
+              // A well-formed WxH the app doesn't know yet → offer to save it as
+              // a custom size (it lands in the shared "Custom sizes" group).
+              const norm = q.replace(/[×*]/g, 'x').replace(/\s+/g, '')
+              const addable = /^\d{2,4}x\d{2,4}$/.test(norm) && !allSizes.includes(norm)
+              return (
+                <div className="space-y-2">
+                  {matches.length > 0 && (
+                    <div className="grid grid-cols-2 gap-2">{matches.map(renderSizeChip)}</div>
+                  )}
+                  {!matches.length && !addable && (
+                    <p className="px-1 py-1 text-xs text-muted-foreground">
+                      No sizes match “{sizeQuery}”. Type a full size (e.g. 500x500) to add it as custom.
+                    </p>
+                  )}
+                  {addable && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full border-dashed"
+                      disabled={customBusy}
+                      onClick={() => void addCustomSize(norm, true)}
+                      title="Save this size to the shared Custom sizes group and select it"
+                    >
+                      {customBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                      Add custom size {norm}
+                    </Button>
+                  )}
+                </div>
               )
             })()
           ) : (
             <div className="space-y-1.5">
-              {(() => {
-                const grouped = new Set(PLATFORMS.flatMap((p) => p.sizes))
-                const other = meta.sizes.filter((s) => !grouped.has(s))
-                const groups = other.length ? [...PLATFORMS, { label: 'Other', sizes: other }] : PLATFORMS
-                return groups.map((p) => {
-                  const avail = p.sizes.filter((s) => meta.sizes.includes(s))
-                  if (!avail.length) return null
-                  const open = openGroups.has(p.label)
-                  const selCount = avail.filter((s) => sizes.has(s)).length
-                  return (
-                    <div key={p.label} className="overflow-hidden rounded-lg border border-border">
-                      <button
-                        type="button"
-                        onClick={() => toggleGroup(p.label)}
-                        className="flex w-full items-center justify-between bg-secondary/50 px-3 py-2 text-left transition-colors hover:bg-secondary"
-                      >
-                        <span className="text-[11px] font-medium uppercase tracking-wide text-foreground/80">
-                          {p.label}
-                        </span>
-                        <span className="flex items-center gap-2">
-                          {selCount > 0 && (
-                            <span className="rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary">
-                              {selCount}
-                            </span>
+              {sizeGroups.map((p) => {
+                const avail = p.sizes.filter((s) => allSizes.includes(s))
+                const isCustomGroup = p.id === customGroupId
+                if (!avail.length && !isCustomGroup) return null
+                const open = openGroups.has(p.label)
+                const selCount = avail.filter((s) => sizes.has(s)).length
+                return (
+                  <div key={p.id} className="overflow-hidden rounded-lg border border-border">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(p.label)}
+                      className="flex w-full items-center justify-between bg-secondary/50 px-3 py-2 text-left transition-colors hover:bg-secondary"
+                    >
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-foreground/80">
+                        {p.label}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        {selCount > 0 && (
+                          <span className="rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary">
+                            {selCount}
+                          </span>
+                        )}
+                        <ChevronDown
+                          className={cn(
+                            'h-3.5 w-3.5 text-muted-foreground transition-transform',
+                            open && 'rotate-180',
                           )}
-                          <ChevronDown
-                            className={cn(
-                              'h-3.5 w-3.5 text-muted-foreground transition-transform',
-                              open && 'rotate-180',
-                            )}
-                          />
-                        </span>
-                      </button>
-                      {open && <div className="grid grid-cols-2 gap-2 p-2">{avail.map(renderSizeChip)}</div>}
-                    </div>
-                  )
-                })
-              })()}
+                        />
+                      </span>
+                    </button>
+                    {open && (
+                      <div className="space-y-2 p-2">
+                        {avail.length > 0 && (
+                          <div className="grid grid-cols-2 gap-2">{avail.map(renderSizeChip)}</div>
+                        )}
+                        {isCustomGroup && (
+                          <CustomSizeInput busy={customBusy} onAdd={(v) => void addCustomSize(v, true)} />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -946,7 +1077,9 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
             onReject={rejectVersion}
             onRegenerate={regenerateBannerFrame}
             onAddSizes={addSizesToVersion}
-            availableSizes={meta.sizes}
+            availableSizes={allSizes}
+            sizeGroups={sizeGroups}
+            onAddCustomSize={(s) => addCustomSize(s, false)}
             selected={selected}
             onToggleSelect={toggleSelect}
             onToggleVersion={toggleVersion}
@@ -1640,30 +1773,37 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
         onDetected={applyDetected}
       />
 
-      {/* Bulk-paste sizes feedback — auto-fades after 5s, closeable */}
+      {/* Size-rail toast: paste feedback, custom-size results, failed actions.
+          Auto-fades after 5s, closeable */}
       {sizeNotice && (
         <div className="animate-fade-up fixed left-1/2 top-4 z-[200] w-full max-w-md -translate-x-1/2 px-4">
           <div
             className={cn(
               'flex items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg backdrop-blur-md',
-              sizeNotice.unsupported.length
+              sizeNotice.unsupported.length || (sizeNotice.message && sizeNotice.added === 0)
                 ? 'border-amber-400/50 bg-amber-400/10 text-amber-700 dark:text-amber-300'
                 : 'border-primary/40 bg-primary/10 text-primary',
             )}
           >
             <div className="min-w-0 flex-1">
-              {sizeNotice.added > 0 && (
-                <div className="font-medium">
-                  Added {sizeNotice.added} size{sizeNotice.added === 1 ? '' : 's'}.
-                </div>
-              )}
-              {sizeNotice.unsupported.length > 0 && (
-                <div className={sizeNotice.added > 0 ? 'mt-0.5' : 'font-medium'}>
-                  Not supported here: {sizeNotice.unsupported.join(', ')}
-                </div>
-              )}
-              {sizeNotice.added === 0 && sizeNotice.unsupported.length === 0 && (
-                <div>No new sizes found in the pasted text.</div>
+              {sizeNotice.message ? (
+                <div className="font-medium">{sizeNotice.message}</div>
+              ) : (
+                <>
+                  {sizeNotice.added > 0 && (
+                    <div className="font-medium">
+                      Added {sizeNotice.added} size{sizeNotice.added === 1 ? '' : 's'}.
+                    </div>
+                  )}
+                  {sizeNotice.unsupported.length > 0 && (
+                    <div className={sizeNotice.added > 0 ? 'mt-0.5' : 'font-medium'}>
+                      Not supported here: {sizeNotice.unsupported.join(', ')}
+                    </div>
+                  )}
+                  {sizeNotice.added === 0 && sizeNotice.unsupported.length === 0 && (
+                    <div>No new sizes found in the pasted text.</div>
+                  )}
+                </>
               )}
             </div>
             <button
@@ -1677,6 +1817,44 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/** Inline "width x height + Add" row inside the Custom sizes group. */
+function CustomSizeInput({ busy, onAdd }: { busy: boolean; onAdd: (value: string) => void }) {
+  const [value, setValue] = useState('')
+  function submit() {
+    if (!value.trim() || busy) return
+    onAdd(value)
+    setValue('')
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            submit()
+          }
+        }}
+        aria-label="New custom size (width x height)"
+        placeholder="e.g. 500x500"
+        className="h-8 w-full min-w-0 flex-1 rounded-md border border-input bg-secondary px-2.5 text-xs text-foreground transition-colors placeholder:text-muted-foreground hover:border-foreground/25 focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"
+      />
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-8 shrink-0 px-2.5 text-xs"
+        disabled={busy || !value.trim()}
+        onClick={submit}
+        title="Save as a shared custom size"
+      >
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+        Add
+      </Button>
     </div>
   )
 }

@@ -21,6 +21,7 @@ import {
 import type { Banner, RunData } from '../types'
 import { assetUrl, versionZipUrl, zipAllUrl } from '../api'
 import { BannerLibrary, type LibraryItem } from './BannerLibrary'
+import type { SizeGroup } from './sizesApi'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn, formatUserName } from '@/lib/utils'
@@ -172,6 +173,8 @@ export function OutputPane({
   onRegenerate,
   onAddSizes,
   availableSizes,
+  sizeGroups,
+  onAddCustomSize,
   selected,
   onToggleSelect,
   onToggleVersion,
@@ -188,10 +191,14 @@ export function OutputPane({
   onApprove?: (runId: string, concept: string) => void
   onReject?: (runId: string, concept: string) => void
   onRegenerate?: (runId: string, label: string, promptOverride?: string) => void
-  /** Add more sizes to an approved version → recompose off its master. Owner-only. */
+  /** Add more sizes to a version → recompose off its master. Owner-only. */
   onAddSizes?: (runId: string, concept: string, sizes: string[]) => void
-  /** Every size the app can generate (from meta) — the add-sizes picker offers these. */
+  /** Every size the app can generate — the add-sizes picker offers these. */
   availableSizes?: string[]
+  /** Shared size groups — the add-sizes picker mirrors the dashboard's rail. */
+  sizeGroups?: SizeGroup[]
+  /** Save a new custom size (shared); resolves to the normalized size or null. */
+  onAddCustomSize?: (size: string) => Promise<string | null>
   // Selection is owned by the parent (BannerBuilder) so the central console can
   // swap to a selection console; the gallery just renders the checkboxes.
   selected: Set<string>
@@ -487,6 +494,8 @@ export function OutputPane({
         onRegenerate={libRegen ?? undefined}
         onAddSizes={libAddSizes ?? undefined}
         availableSizes={availableSizes}
+        sizeGroups={sizeGroups}
+        onAddCustomSize={onAddCustomSize}
         existingSizes={libExistingSizes}
       />
     </div>
@@ -551,32 +560,27 @@ function OverviewBar({
   // Pre-render phases (queued/classifying/art-direction) finish no frames for a
   // while — show an animated indeterminate bar so it reads as "working", not 0%.
   const preRender = running && ready === 0
-  const failed = runs.some((r) => r.status === 'failed')
-  const awaiting = runs.some((r) => r.status === 'awaiting_approval')
+  // The status is shown ONLY while something is generating (with the current
+  // stage). Idle labels like "Awaiting your approval" / "All banners ready"
+  // were noise — run errors surface in the alert box below instead.
   const label = running
     ? activeCount > 1
       ? `Generating ${activeCount} batches…`
       : statusLabel(activeRuns[0].status)
-    : awaiting
-      ? 'Awaiting your approval'
-      : failed
-        ? 'Some runs failed'
-        : 'All banners ready'
+    : ''
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card px-5 py-3">
-      <span
-        role="status"
-        aria-live="polite"
-        className="flex shrink-0 items-center gap-2 font-display text-sm font-semibold"
-      >
-        {running ? (
+      {running && (
+        <span
+          role="status"
+          aria-live="polite"
+          className="flex shrink-0 items-center gap-2 font-display text-sm font-semibold"
+        >
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
-        ) : (
-          <span className={cn('h-2.5 w-2.5 rounded-full', failed ? 'bg-destructive' : awaiting ? 'bg-amber-500' : 'bg-emerald-500 ring-4 ring-emerald-500/20')} />
-        )}
-        {label}
-      </span>
+          {label}
+        </span>
+      )}
 
       {running && (
         <div className="hidden h-1.5 max-w-[240px] flex-1 overflow-hidden rounded-full bg-secondary sm:block">
@@ -893,23 +897,10 @@ function ConceptGroupBlock({
         {g.title && <span className="text-sm text-muted-foreground">{g.title}</span>}
         {/* Requested time + author intentionally omitted here — both are already
             shown once on the Generation header, so repeating them per version is
-            redundant. */}
-        {g.approvalStatus && (
-          <span
-            className={cn(
-              'inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold',
-              g.approvalStatus === 'awaiting' && 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-              g.approvalStatus === 'approved' && 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-              g.approvalStatus === 'rejected' && 'bg-destructive/15 text-destructive',
-            )}
-          >
-            {g.approvalStatus === 'awaiting'
-              ? 'Awaiting approval'
-              : g.approvalStatus === 'approved'
-                ? 'Approved'
-                : 'Rejected — MVP only'}
-          </span>
-        )}
+            redundant. Approval-state pills ("Awaiting approval" / "Approved" /
+            "Rejected") were removed on request: status text only appears while
+            something is generating. The Approve/Reject buttons below still show
+            whenever a decision is actually needed. */}
         <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
           {g.running && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           <span>

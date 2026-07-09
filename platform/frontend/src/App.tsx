@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { HardDrive, HelpCircle, RefreshCw, Tag } from 'lucide-react'
+import { HardDrive, HelpCircle, RefreshCw, Ruler, Settings, Tag } from 'lucide-react'
 import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
@@ -14,6 +14,7 @@ import { ThemeToggle } from './components/ThemeToggle'
 import { InstallButton } from './components/InstallButton'
 import { VersionBadge } from './components/VersionBadge'
 import { BrandsSettings } from './admin/BrandsSettings'
+import { SizesSettings } from './admin/SizesSettings'
 import { DiskManager } from './admin/DiskManager'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -174,6 +175,7 @@ function Workspace() {
   const { user } = useAuth()
   const [page, setPage] = useState<Page>('banner')
   const [view, setView] = useState<'tool' | 'settings'>('tool')
+  const [settingsTab, setSettingsTab] = useState<'brands' | 'sizes'>('brands')
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -237,10 +239,11 @@ function Workspace() {
               variant={view === 'settings' ? 'secondary' : 'ghost'}
               size="sm"
               className="font-display"
+              title="Admin settings — brands, sizes & bundles"
               onClick={() => setView((v) => (v === 'settings' ? 'tool' : 'settings'))}
             >
-              <Tag className="h-4 w-4" />
-              <span className="hidden sm:inline">Brands</span>
+              <Settings className="h-4 w-4" />
+              <span className="hidden sm:inline">Settings</span>
             </Button>
           )}
           <span className="hidden sm:inline-flex">
@@ -265,8 +268,16 @@ function Workspace() {
       <main className="min-h-0 flex-1 overflow-hidden">
         {view === 'settings' ? (
           <div className="h-full overflow-y-auto">
-            <div className="p-5">
-              <BrandsSettings />
+            <div className="space-y-4 p-5">
+              <nav className="flex items-center gap-1">
+                <Tab active={settingsTab === 'brands'} onClick={() => setSettingsTab('brands')}>
+                  <Tag className="h-4 w-4" /> Brands
+                </Tab>
+                <Tab active={settingsTab === 'sizes'} onClick={() => setSettingsTab('sizes')}>
+                  <Ruler className="h-4 w-4" /> Sizes &amp; bundles
+                </Tab>
+              </nav>
+              {settingsTab === 'brands' ? <BrandsSettings /> : <SizesSettings />}
             </div>
           </div>
         ) : page === 'disk' && isAdmin ? (
