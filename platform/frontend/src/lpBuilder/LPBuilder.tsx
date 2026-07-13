@@ -16,13 +16,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-
-/** Inline-SVG brand logos become data URIs for <img>. */
-function logoUri(svg: string | null | undefined): string {
-  const raw = svg || ''
-  if (!raw) return ''
-  return raw.trim().startsWith('<svg') ? 'data:image/svg+xml;utf8,' + encodeURIComponent(raw) : raw
-}
+import { brandLogoUri, useIsDark } from '@/lib/brandLogo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, formatUserName } from '@/lib/utils'
@@ -148,8 +142,9 @@ function Dashboard({
   const [query, setQuery] = useState('')
   const [langPickFor, setLangPickFor] = useState<ProjectSummary | null>(null)
   const [brands, setBrands] = useState<Brand[]>([])
-  /** null = folders home · brand id = inside that brand's folder · '' = "Other". */
+  /** null = folders home; brand id = inside that brand's folder; '' = "Other". */
   const [folder, setFolder] = useState<string | null>(null)
+  const dark = useIsDark()
 
   useEffect(() => {
     listBrands().then(setBrands).catch(() => {})
@@ -208,7 +203,7 @@ function Dashboard({
             {folder !== null ? (
               <div className="flex items-center gap-2.5">
                 {folderBrand?.logo_svg && (
-                  <img src={logoUri(folderBrand.logo_svg)} alt="" className="h-7 max-w-32 object-contain" />
+                  <img src={brandLogoUri(folderBrand.logo_svg, dark)} alt="" className="h-7 max-w-32 object-contain" />
                 )}
                 <h1 className="truncate font-display text-2xl font-bold tracking-tight">
                   {folderBrand?.name ?? 'Other'}
@@ -273,7 +268,7 @@ function Dashboard({
               >
                 <div className="flex h-24 items-center justify-center gap-3 bg-gradient-to-br from-primary/10 via-secondary to-secondary">
                   {f.brand?.logo_svg ? (
-                    <img src={logoUri(f.brand.logo_svg)} alt="" className="h-9 max-w-40 object-contain" />
+                    <img src={brandLogoUri(f.brand.logo_svg, dark)} alt="" className="h-9 max-w-40 object-contain" />
                   ) : (
                     <FolderOpen className="h-8 w-8 text-primary/50" />
                   )}

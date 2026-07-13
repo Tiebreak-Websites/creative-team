@@ -24,6 +24,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { brandLogoUri, useIsDark } from '@/lib/brandLogo'
 import { cn } from '@/lib/utils'
 import { listBrands, type Brand } from '../bannerBuilder/brandsApi'
 import { listCampaigns, listJobs, type CampaignInfo } from '../lpMaterials/api'
@@ -69,12 +70,6 @@ const FLAG_CC: Record<string, string> = {
 }
 const flagUrl = (code: string) =>
   FLAG_CC[code] ? `https://flagcdn.com/w40/${FLAG_CC[code]}.png` : ''
-
-function brandLogoUri(b?: Brand | null): string {
-  const raw = b?.logo_svg || ''
-  if (!raw) return ''
-  return raw.trim().startsWith('<svg') ? 'data:image/svg+xml;utf8,' + encodeURIComponent(raw) : raw
-}
 
 /** Compact popover picker used for brand + language in the top bar. */
 function TopPicker({
@@ -150,6 +145,7 @@ export function Builder({
   const [exporting, setExporting] = useState(false)
   const [brandOpen, setBrandOpen] = useState(false)
   const [langOpen, setLangOpen] = useState(false)
+  const dark = useIsDark()
   const [srcdoc, setSrcdoc] = useState('')
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
@@ -505,7 +501,10 @@ export function Builder({
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       {/* ------------------------------- top bar ------------------------------- */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card/80 px-3 py-2 backdrop-blur">
+      {/* relative z-40: backdrop-blur makes this bar a stacking context, so
+          without a raised z-index the picker dropdowns paint UNDER the canvas
+          (same trap as the v1.46.1 header dropdown). */}
+      <div className="relative z-40 flex shrink-0 items-center gap-2 border-b border-border bg-card/80 px-3 py-2 backdrop-blur">
         <Button variant="ghost" size="icon" onClick={onBack} title="Back to landing pages" aria-label="Back">
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -521,8 +520,8 @@ export function Builder({
           setOpen={setBrandOpen}
           title={`Brand: ${brands.find((b) => b.id === project.brand_id)?.name ?? 'none'} — click to switch`}
           trigger={
-            brandLogoUri(brands.find((b) => b.id === project.brand_id)) ? (
-              <img src={brandLogoUri(brands.find((b) => b.id === project.brand_id))} alt="" className="h-5 max-w-24 object-contain" />
+            brandLogoUri(brands.find((b) => b.id === project.brand_id)?.logo_svg, dark) ? (
+              <img src={brandLogoUri(brands.find((b) => b.id === project.brand_id)?.logo_svg, dark)} alt="" className="h-5 max-w-24 object-contain" />
             ) : (
               <span className="text-xs font-medium text-muted-foreground">
                 {brands.find((b) => b.id === project.brand_id)?.name ?? 'Brand'}
@@ -543,8 +542,8 @@ export function Builder({
                 (b?.id ?? '') === project.brand_id && 'bg-primary/10 font-semibold',
               )}
             >
-              {b && brandLogoUri(b) ? (
-                <img src={brandLogoUri(b)} alt="" className="h-4 w-14 shrink-0 object-contain object-left" />
+              {b && brandLogoUri(b.logo_svg, dark) ? (
+                <img src={brandLogoUri(b.logo_svg, dark)} alt="" className="h-4 w-14 shrink-0 object-contain object-left" />
               ) : (
                 <span className="inline-block h-4 w-14 shrink-0 rounded bg-secondary" />
               )}
@@ -602,7 +601,8 @@ export function Builder({
           ))}
         </select>
 
-        <span className="mx-1 inline-flex items-center rounded-lg border border-border bg-secondary p-0.5">
+        {/* Right cluster — device sizes + undo/redo stay pinned to the far right. */}
+        <span className="ml-auto inline-flex items-center rounded-lg border border-border bg-secondary p-0.5">
           {(['desktop', 'tablet', 'mobile'] as Device[]).map((d) => {
             const Icon = d === 'desktop' ? Monitor : d === 'tablet' ? Tablet : Smartphone
             return (
@@ -631,7 +631,7 @@ export function Builder({
           <Redo2 className="h-4 w-4" />
         </Button>
 
-        <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
           {saving === 'saving' ? (
             <><Loader2 className="h-3 w-3 animate-spin" /> Saving…</>
           ) : saving === 'saved' ? (
@@ -828,6 +828,7 @@ function AddTab({
   }, [sections])
   // Template groups are BRAND groups: a category matching a brand id gets the
   // brand's logo (from Settings ▸ Brands) as its header.
+  const dark = useIsDark()
   const brandFor = (cat: string) =>
     brands.find((b) => b.id.toLowerCase() === cat.toLowerCase() || b.name.toLowerCase() === cat.toLowerCase())
   return (
@@ -838,8 +839,8 @@ function AddTab({
         <div key={cat}>
           {brand ? (
             <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-2 py-1.5">
-              {brandLogoUri(brand) ? (
-                <img src={brandLogoUri(brand)} alt="" className="h-4 max-w-20 object-contain object-left" />
+              {brandLogoUri(brand.logo_svg, dark) ? (
+                <img src={brandLogoUri(brand.logo_svg, dark)} alt="" className="h-4 max-w-20 object-contain object-left" />
               ) : null}
               <span className="truncate text-[11px] font-semibold">{brand.name}</span>
               <span className="ml-auto text-[9px] uppercase tracking-wide text-muted-foreground">template</span>

@@ -3,6 +3,7 @@ import { AlertCircle, Check, Loader2, Pencil, Plus, RefreshCw, Trash2, Upload, X
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
+import { brandLogoUri, useIsDark } from '@/lib/brandLogo'
 import { cn } from '@/lib/utils'
 import {
   createBrand,
@@ -479,11 +480,9 @@ function BrandCard({
 
 /** Preview a brand logo — handles a data: URI (raster) or inline SVG markup. */
 function LogoPreview({ svg, className }: { svg: string | null; className?: string }) {
-  const src = !svg
-    ? null
-    : svg.trim().startsWith('data:')
-      ? svg
-      : `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+  // Dark letter fills swap to white in dark mode so wordmarks stay readable.
+  const dark = useIsDark()
+  const src = svg ? brandLogoUri(svg, dark) || null : null
   return (
     <div
       className={cn(
