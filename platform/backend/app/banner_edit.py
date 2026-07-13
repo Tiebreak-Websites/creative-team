@@ -534,10 +534,12 @@ def build_edits_router() -> APIRouter:
             reg["current_text"] = str(r.get("current_text") or "").strip()[:_MAX_TEXT]
             reg["hints"] = str(r.get("hints") or "").strip()[:200]
             regions.append(reg)
+        # ONE candidate by default — the user generates more only when the
+        # first isn't right (the UI keeps earlier candidates around to compare).
         try:
-            candidates = int(payload.get("candidates") or 2)
+            candidates = int(payload.get("candidates") or 1)
         except (TypeError, ValueError):
-            candidates = 2
+            candidates = 1
         candidates = max(1, min(_MAX_CANDIDATES, candidates))
         quality = payload.get("quality") if payload.get("quality") in ("low", "medium", "high") else "high"
         typography = str(payload.get("typography") or "").strip()[:400]

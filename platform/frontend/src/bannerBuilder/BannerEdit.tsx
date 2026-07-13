@@ -71,10 +71,22 @@ const newRegionId = () => `rg${++regionUid}`
 
 const CARD_W = 240
 
-/** The whole edit session, cached at module level so switching to another
- * tool/page never loses in-flight work (the backend job keeps running and the
- * UI reattaches on return). ONLY the explicit Close (or attaching a new
- * source) clears it. A full browser reload starts fresh. */
+/** A candidate from an EARLIER generation kept around for comparison — the
+ * user generates ONE candidate at a time and simply generates more when it
+ * isn't right; nothing is thrown away until accept or Close. */
+interface PastCand {
+  job_id: string
+  index: number
+  url: string
+  qa_ok: boolean | null
+  qa_read: string
+}
+
+/** The whole edit session, cached at module level AND mirrored to
+ * localStorage — so switching to another tool/page or even a full reload
+ * never loses in-flight work (the backend job keeps running and the UI
+ * reattaches). ONLY the explicit Close X (or attaching a new source)
+ * clears it. */
 interface EditSession {
   src: SourceState | null
   regions: Region[]
@@ -84,11 +96,48 @@ interface EditSession {
   quality: 'low' | 'medium' | 'high'
   extraSizes: string[]
   job: EditJob | null
-  viewCandidate: number | null
+  viewing: PastCand | null
+  past: PastCand[]
   accepted: RunData | null
   recomposeNote: string
 }
 let SESSION: EditSession | null = null
+
+const SESSION_KEY = 'tb.bannerEdit.session.v1'
+
+function loadStoredSession(): EditSession | null {
+  try {
+    const raw = window.localStorage.getItem(SESSION_KEY)
+    if (!raw) return null
+    const s = JSON.parse(raw) as EditSession
+    if (!s || typeof s !== 'object' || !s.src) return null
+    // New region ids must never collide with restored ones.
+    for (const r of s.regions ?? []) {
+      const m = /^rg(\d+)$/.exec(r.id)
+      if (m) regionUid = Math.max(regionUid, parseInt(m[1], 10))
+    }
+    return {
+      ...s,
+      regions: s.regions ?? [],
+      cardPos: s.cardPos ?? {},
+      blocks: s.blocks ?? [],
+      extraSizes: s.extraSizes ?? [],
+      past: s.past ?? [],
+      viewing: s.viewing ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
+function storeSession(s: EditSession | null) {
+  try {
+    if (!s || !s.src) window.localStorage.removeItem(SESSION_KEY)
+    else window.localStorage.setItem(SESSION_KEY, JSON.stringify(s))
+  } catch {
+    /* quota/private mode — the in-memory cache still covers navigation */
+  }
+}
 
 /**
  * Banner **Edit** workspace — canvas v2. The banner floats center-left; every
@@ -98,6 +147,9 @@ let SESSION: EditSession | null = null
  * its place (pick sizes → its own Generate starts the recompose).
  */
 export function BannerEdit() {
+  // Hydrate once from localStorage — a full reload (or browser restart)
+  // reattaches the exact same edit, not just in-app navigation.
+  if (SESSION === null) SESSION = loadStoredSession()
   // Every session-worthy piece of state initializes from the module cache, so
   // navigating away and back reattaches the exact same edit.
   const [src, setSrc] = useState<SourceState | null>(() => SESSION?.src ?? null)
@@ -112,7 +164,8 @@ export function BannerEdit() {
   const [sizesOpen, setSizesOpen] = useState(false)
   const [starting, setStarting] = useState(false)
   const [job, setJob] = useState<EditJob | null>(() => SESSION?.job ?? null)
-  const [viewCandidate, setViewCandidate] = useState<number | null>(() => SESSION?.viewCandidate ?? null)
+  const [viewing, setViewing] = useState<PastCand | null>(() => SESSION?.viewing ?? null)
+  const [past, setPast] = useState<PastCand[]>(() => SESSION?.past ?? [])
   const [showOriginal, setShowOriginal] = useState(false)
   const [accepted, setAccepted] = useState<RunData | null>(() => SESSION?.accepted ?? null)
   const [accepting, setAccepting] = useState(false)
@@ -123,14 +176,15 @@ export function BannerEdit() {
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // Keep the cache in sync — cheap object write per relevant change.
+  // Keep the cache (and its localStorage mirror) in sync per relevant change.
   useEffect(() => {
     SESSION = {
       src, regions, cardPos, blocks, typography, quality, extraSizes,
-      job, viewCandidate, accepted, recomposeNote,
+      job, viewing, past, accepted, recomposeNote,
     }
+    storeSession(SESSION)
   }, [src, regions, cardPos, blocks, typography, quality, extraSizes,
-      job, viewCandidate, accepted, recomposeNote])
+      job, viewing, past, accepted, recomposeNote])
 
   // A job restored from the cache may be stale (it kept running while we were
   // away) — refetch it once on mount. A 404 means the server restarted and the
@@ -171,14 +225,21 @@ export function BannerEdit() {
     }
   }, [job])
 
+  // Auto-preview the newest ready candidate of the CURRENT job.
   useEffect(() => {
-    if (!job || viewCandidate !== null) return
-    const first = job.candidates.find((c) => c?.ready)
-    if (first) setViewCandidate(first.index)
-  }, [job, viewCandidate])
+    if (!job) return
+    const first = job.candidates.find((c) => c?.ready && c.url)
+    if (!first) return
+    setViewing((v) =>
+      v && v.job_id === job.job_id
+        ? v
+        : { job_id: job.job_id, index: first.index, url: first.url!, qa_ok: first.qa_ok, qa_read: first.qa_read },
+    )
+  }, [job])
 
   function resetForSource(next: SourceState | null) {
     SESSION = null // the ONLY place edit work is deliberately dropped
+    storeSession(null)
     setSrc(next)
     setRegions([])
     setCardPos({})
@@ -186,7 +247,8 @@ export function BannerEdit() {
     setBlocks([])
     setTypography('')
     setJob(null)
-    setViewCandidate(null)
+    setViewing(null)
+    setPast([])
     setAccepted(null)
     setRecomposing(false)
     setRecomposeNote('')
@@ -198,7 +260,7 @@ export function BannerEdit() {
   /** True when leaving now would lose work — gates the Exit button. */
   const dirty =
     regions.some((r) => r.next.trim() || r.mode === 'remove') ||
-    (!!job && !accepted)
+    ((!!job || past.length > 0) && !accepted)
   function exitEdit() {
     if (dirty && !window.confirm('Discard this edit?')) return
     resetForSource(null)
@@ -322,8 +384,21 @@ export function BannerEdit() {
     if (!src || starting || readyRegions.length === 0) return
     setStarting(true)
     setError(null)
+    // Earlier candidates are KEPT for comparison — one candidate per press,
+    // press again for more.
+    if (job) {
+      const harvested: PastCand[] = job.candidates
+        .filter((c): c is NonNullable<typeof c> => !!c?.ready && !!c.url)
+        .map((c) => ({ job_id: job.job_id, index: c.index, url: c.url!, qa_ok: c.qa_ok, qa_read: c.qa_read }))
+      if (harvested.length) {
+        setPast((prev) => [
+          ...harvested.filter((h) => !prev.some((p) => p.job_id === h.job_id && p.index === h.index)),
+          ...prev,
+        ])
+      }
+    }
     setJob(null)
-    setViewCandidate(null)
+    setViewing(null)
     setAccepted(null)
     setRecomposeNote('')
     setActiveRegion(null)
@@ -353,12 +428,12 @@ export function BannerEdit() {
     }
   }
 
-  async function accept(index: number) {
-    if (!job || accepting) return
+  async function accept(jobId: string, index: number) {
+    if (accepting) return
     setAccepting(true)
     setError(null)
     try {
-      const run = await acceptEdit(job.job_id, index, {
+      const run = await acceptEdit(jobId, index, {
         title:
           readyRegions.find((r) => r.mode === 'replace')?.next.trim() || src?.title,
         editedFrom: src?.editedFrom,
@@ -436,12 +511,7 @@ export function BannerEdit() {
     }
   }
 
-  const currentCandidate =
-    job && viewCandidate !== null
-      ? job.candidates.find((c) => c?.ready && c.index === viewCandidate) ?? null
-      : null
-  const stageUrl =
-    showOriginal || !currentCandidate ? src?.url ?? '' : currentCandidate.url ?? src?.url ?? ''
+  const stageUrl = showOriginal || !viewing ? src?.url ?? '' : viewing.url
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden bg-background">
@@ -492,7 +562,7 @@ export function BannerEdit() {
 
           <EditCanvas
             url={stageUrl}
-            regions={currentCandidate && !showOriginal ? [] : regions}
+            regions={viewing && !showOriginal ? [] : regions}
             cardPos={cardPos}
             setCardPos={setCardPos}
             activeRegion={activeRegion}
@@ -500,66 +570,46 @@ export function BannerEdit() {
             onAddRegion={addRegion}
             onPatchRegion={patchRegion}
             onRemoveRegion={removeRegion}
-            disabled={!!currentCandidate && !showOriginal}
-            shiftForColumn={(!!job && !accepted) || (!!accepted && !!recomposeNote)}
+            disabled={!!viewing && !showOriginal}
+            shiftForColumn={((!!job || past.length > 0) && !accepted) || (!!accepted && !!recomposeNote)}
           />
 
           {/* -------- candidates: vertical column on the RIGHT -------- */}
-          {job && !accepted && (
+          {(job || past.length > 0) && !accepted && (
             <div className="absolute bottom-28 right-6 top-6 z-30 flex w-56 animate-fade-up flex-col gap-3">
               {/* status on top */}
               <div className="shrink-0 rounded-xl border border-border bg-card/95 px-3 py-2 text-center shadow backdrop-blur">
-                {job.status === 'running' ? (
+                {job?.status === 'running' ? (
                   <span className="inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                    Generating candidates…
+                    Generating…
                   </span>
-                ) : job.status === 'failed' ? (
+                ) : job?.status === 'failed' ? (
                   <span className="text-xs font-medium text-destructive">
                     Generation failed{job.error ? `: ${job.error}` : ''}
                   </span>
                 ) : (
-                  <span className="text-xs font-medium text-foreground">Pick the best one</span>
+                  <span className="text-xs font-medium text-foreground">
+                    Use it — or Generate again for another take
+                  </span>
                 )}
               </div>
 
               <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
-                {job.candidates.map((c, i) =>
+                {(job?.candidates ?? []).map((c, i) =>
                   c?.ready && c.url ? (
-                    <div
-                      key={i}
-                      className={cn(
-                        'overflow-hidden rounded-xl border bg-card shadow-md transition-all',
-                        viewCandidate === c.index
-                          ? 'border-primary ring-2 ring-primary/40'
-                          : 'border-border hover:border-foreground/25',
-                      )}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setViewCandidate(c.index)}
-                        className="block w-full"
-                        title="Preview this candidate on the canvas"
-                      >
-                        <img src={c.url} alt={`Candidate ${i + 1}`} className="max-h-36 w-full object-contain" />
-                      </button>
-                      <div className="space-y-1.5 border-t border-border p-2">
-                        <QaBadge qaOk={c.qa_ok} qaRead={c.qa_read} />
-                        <Button
-                          size="sm"
-                          className="h-7 w-full text-xs"
-                          disabled={accepting}
-                          onClick={() => void accept(c.index)}
-                        >
-                          {accepting ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Check className="h-3.5 w-3.5" />
-                          )}
-                          Use this
-                        </Button>
-                      </div>
-                    </div>
+                    <CandidateTile
+                      key={`${job!.job_id}:${c.index}`}
+                      url={c.url}
+                      qaOk={c.qa_ok}
+                      qaRead={c.qa_read}
+                      selected={viewing?.job_id === job!.job_id && viewing?.index === c.index}
+                      accepting={accepting}
+                      onPreview={() =>
+                        setViewing({ job_id: job!.job_id, index: c.index, url: c.url!, qa_ok: c.qa_ok, qa_read: c.qa_read })
+                      }
+                      onAccept={() => void accept(job!.job_id, c.index)}
+                    />
                   ) : (
                     <div
                       key={i}
@@ -573,16 +623,39 @@ export function BannerEdit() {
                       ) : (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                          <span className="text-[11px] text-muted-foreground">Candidate {i + 1}…</span>
+                          <span className="text-[11px] text-muted-foreground">New candidate…</span>
                         </>
                       )}
                     </div>
                   ),
                 )}
+
+                {/* Earlier takes stay comparable + acceptable until Close. */}
+                {past.length > 0 && (
+                  <>
+                    {job && (
+                      <div className="pt-1 text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Earlier takes
+                      </div>
+                    )}
+                    {past.map((p) => (
+                      <CandidateTile
+                        key={`${p.job_id}:${p.index}`}
+                        url={p.url}
+                        qaOk={p.qa_ok}
+                        qaRead={p.qa_read}
+                        selected={viewing?.job_id === p.job_id && viewing?.index === p.index}
+                        accepting={accepting}
+                        onPreview={() => setViewing(p)}
+                        onAccept={() => void accept(p.job_id, p.index)}
+                      />
+                    ))}
+                  </>
+                )}
               </div>
 
               {/* compare at the bottom */}
-              {currentCandidate && (
+              {viewing && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -803,7 +876,7 @@ export function BannerEdit() {
                   ) : (
                     <Sparkles className="h-5 w-5" />
                   )}
-                  Generate
+                  {job?.status === 'done' || past.length > 0 ? 'Generate more' : 'Generate'}
                 </Button>
               </div>
             )}
@@ -867,6 +940,45 @@ function ConsoleAction({
 }
 
 const Divider = () => <span aria-hidden className="h-6 w-px shrink-0 bg-border" />
+
+/** One candidate in the right column — current or from an earlier take. */
+function CandidateTile({
+  url,
+  qaOk,
+  qaRead,
+  selected,
+  accepting,
+  onPreview,
+  onAccept,
+}: {
+  url: string
+  qaOk: boolean | null
+  qaRead: string
+  selected: boolean
+  accepting: boolean
+  onPreview: () => void
+  onAccept: () => void
+}) {
+  return (
+    <div
+      className={cn(
+        'overflow-hidden rounded-xl border bg-card shadow-md transition-all',
+        selected ? 'border-primary ring-2 ring-primary/40' : 'border-border hover:border-foreground/25',
+      )}
+    >
+      <button type="button" onClick={onPreview} className="block w-full" title="Preview this candidate on the canvas">
+        <img src={url} alt="Candidate" className="max-h-36 w-full object-contain" />
+      </button>
+      <div className="space-y-1.5 border-t border-border p-2">
+        <QaBadge qaOk={qaOk} qaRead={qaRead} />
+        <Button size="sm" className="h-7 w-full text-xs" disabled={accepting} onClick={onAccept}>
+          {accepting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+          Use this
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 function QaBadge({ qaOk, qaRead }: { qaOk: boolean | null; qaRead: string }) {
   if (qaOk === true) {
@@ -1454,7 +1566,7 @@ function GalleryPickModal({
         role="dialog"
         aria-modal="true"
         aria-label="Pick a banner to edit"
-        className="relative z-10 flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl animate-fade-up"
+        className="relative z-10 flex h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl animate-fade-up"
       >
         <div className="flex items-center gap-2.5 border-b border-border px-5 py-3.5">
           <ImagePlus className="h-4 w-4 text-primary" />
@@ -1527,7 +1639,7 @@ function GalleryPickModal({
                       <div className="mb-1.5 text-[11px] font-semibold text-muted-foreground">
                         Version {v.n}
                       </div>
-                      <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2.5">
+                      <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
                         {v.items.map((it) => (
                           <button
                             key={it.label}

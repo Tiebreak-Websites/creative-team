@@ -55,21 +55,27 @@ def _encode(img: "Image.Image") -> bytes:
 
 
 def needs_outpaint(png_bytes: bytes, width: int, height: int) -> bool:
-    """True when fit_export would blur-pad the sides: a PORTRAIT target that is
-    "wider" than the generated source, whose cover-crop would slice the
-    headline/CTA. These targets deserve a REAL background extension
-    (outpaint.outpaint_export) — the blur-pad here is the fallback."""
+    """True when a cover-crop would slice the image VERTICALLY — the target is
+    relatively "wider" than the generated source, so the top/bottom (headline,
+    faces, the CTA button) would be cut. Covers the 4:5 portrait family AND
+    moderate landscape slots (1200x628, 1920x1080 from a 3:2 render). These
+    targets deserve a REAL background extension (outpaint.outpaint_export);
+    the side blur-pad here is the fallback. Extreme display slots (728x90 …,
+    aspect ≥ 2.2) keep the cover-crop — their prompts are written for it and
+    outpainting ~80% of a canvas reads worse than a crop."""
     sw, sh = Image.open(io.BytesIO(png_bytes)).size
-    return height > width and (width / height) > (sw / sh) + 0.02
+    ar = width / height
+    return ar > (sw / sh) + 0.02 and ar < 2.2
 
 
 def fit_export(png_bytes: bytes, width: int, height: int) -> bytes:
     """Reshape to exact width x height, choosing cover-crop vs blur-pad per target.
 
-    A PORTRAIT target whose cover-crop would slice the top+bottom (the target is
-    "wider" than the generated source aspect) keeps its FULL height via blur-pad —
-    so the headline and the bottom CTA are never cropped. Everything else uses the
-    exact cover-crop.
+    A target whose cover-crop would slice the top+bottom (the target is "wider"
+    than the generated source aspect — 4:5 portrait AND moderate landscape like
+    1200x628) keeps its FULL height via blur-pad — so faces, the headline and
+    the bottom CTA are never cropped. Everything else (and extreme display
+    slots) uses the exact cover-crop.
     """
     src = Image.open(io.BytesIO(png_bytes)).convert("RGB")
     if needs_outpaint(png_bytes, width, height):
