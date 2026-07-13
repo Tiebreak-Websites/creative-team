@@ -210,14 +210,20 @@ function Dashboard({
           )}
           <div className="min-w-0">
             {folder !== null ? (
-              <div className="flex items-center gap-2.5">
-                {folderBrand?.logo_svg && (
-                  <img src={brandLogoSrc(folderBrand, dark)} alt="" className="h-7 max-w-32 object-contain" />
-                )}
+              /* The logo IS the folder title — the name text only appears for
+                 folders without a logo (Other / logo-less brands). */
+              folderBrand?.logo_svg ? (
+                <img
+                  src={brandLogoSrc(folderBrand, dark)}
+                  alt={folderBrand.name}
+                  title={folderBrand.name}
+                  className="h-9 max-w-48 object-contain object-left"
+                />
+              ) : (
                 <h1 className="truncate font-display text-2xl font-bold tracking-tight">
                   {folderBrand?.name ?? 'Other'}
                 </h1>
-              </div>
+              )
             ) : (
               <h1 className="font-display text-2xl font-bold tracking-tight">Landing pages</h1>
             )}
