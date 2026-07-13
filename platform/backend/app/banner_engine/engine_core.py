@@ -37,7 +37,10 @@ OPENAI_SIZE_MAP = {
     "1080x1080": "1024x1024",
     "1200x628":  "1536x1024",
     "1920x1080": "1536x1024",
-    "1200x960":  "1536x1024",
+    # 1.25:1 renders at 1:1 (NOT 3:2): the render must never be WIDER than the
+    # target, or the export cover-crops the SIDES and slices edge text. From a
+    # 1:1 render the mismatch is outpainted into the side margins instead.
+    "1200x960":  "1024x1024",
     "1080x1920": "1024x1536",
     "1080x1350": "1024x1536",
     "960x1200":  "1024x1536",

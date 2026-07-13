@@ -82,7 +82,17 @@ def ensure_size(size: str):
     aspect = w / h
     if aspect > _MAX_ASPECT or aspect < 1 / _MAX_ASPECT:
         return False, "the aspect ratio can be at most 10:1"
-    gen = min(_GEN_CHOICES, key=lambda g: abs(math.log(aspect / g[1])))[0]
+    # The render must never be WIDER than the target: a wider render gets
+    # cover-cropped at the SIDES, slicing edge text (the 1200x960 defect) —
+    # while a NARROWER render is outpainted into painted side margins instead.
+    # So pick the LARGEST render aspect that still fits under the target; only
+    # targets narrower than every choice (skyscrapers etc.) fall back to the
+    # nearest aspect and keep the intended center-crop.
+    fitting = [g for g in _GEN_CHOICES if g[1] <= aspect * 1.02]
+    if fitting:
+        gen = max(fitting, key=lambda g: g[1])[0]
+    else:
+        gen = min(_GEN_CHOICES, key=lambda g: abs(math.log(aspect / g[1])))[0]
     base = min(_BASE_CHOICES, key=lambda b: abs(math.log(aspect / _ratio(b))))
     OPENAI_SIZE_MAP.setdefault(size, gen)
     LAYOUT_BASE.setdefault(size, LAYOUT_BASE[base])
