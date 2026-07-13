@@ -13,6 +13,7 @@ import {
   Ruler,
   ScanText,
   Sparkles,
+  SpellCheck,
   Trash2,
   Type,
   Upload,
@@ -33,6 +34,7 @@ import {
   createEdit,
   detectText,
   getEditJob,
+  spellcheckTexts,
   uploadEditSource,
   type DetectedBlock,
   type EditJob,
@@ -173,6 +175,9 @@ export function BannerEdit() {
   const [recomposeNote, setRecomposeNote] = useState(() => SESSION?.recomposeNote ?? '')
   const [recomposeRun, setRecomposeRun] = useState<RunData | null>(null)
   const [galleryOpen, setGalleryOpen] = useState(false)
+  const [spellIssues, setSpellIssues] = useState<
+    { id: string; typed: string; suggestion: string }[] | null
+  >(null)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -254,6 +259,7 @@ export function BannerEdit() {
     setRecomposeNote('')
     setRecomposeRun(null)
     setExtraSizes([])
+    setSpellIssues(null)
     setError(null)
   }
 
@@ -380,10 +386,51 @@ export function BannerEdit() {
     return { ...r, x, y, w, h }
   }
 
+  /** Texts elsewhere on the banner (detected blocks no region touches) — the
+   * whole banner is regenerated, so these are spelled out to the model and
+   * read back by QA so they survive verbatim. */
+  function keepTexts(regionList: Region[]): string[] {
+    const covered = (b: DetectedBlock) =>
+      regionList.some((r) => {
+        const ix = Math.max(0, Math.min(r.x + r.w, b.x_pct + b.w_pct) - Math.max(r.x, b.x_pct))
+        const iy = Math.max(0, Math.min(r.y + r.h, b.y_pct + b.h_pct) - Math.max(r.y, b.y_pct))
+        return ix * iy > 0.3 * (b.w_pct * b.h_pct)
+      })
+    const out: string[] = []
+    for (const b of blocks) {
+      const t = b.text.trim()
+      if (t && !covered(b) && !out.includes(t)) out.push(t)
+    }
+    return out.slice(0, 6)
+  }
+
+  /** Typo guard: cheap spellcheck of the typed replacements BEFORE spending a
+   * generation. Non-blocking — suggestions can be applied or ignored. */
   async function generate() {
     if (!src || starting || readyRegions.length === 0) return
     setStarting(true)
     setError(null)
+    const typed = readyRegions.filter((r) => r.mode === 'replace').map((r) => r.next.trim())
+    const suggestions = typed.length ? await spellcheckTexts(typed) : []
+    const issues = readyRegions
+      .filter((r) => r.mode === 'replace')
+      .flatMap((r) => {
+        const s = suggestions.find((x) => x.text === r.next.trim())
+        return s ? [{ id: r.id, typed: s.text, suggestion: s.suggestion }] : []
+      })
+    if (issues.length) {
+      setSpellIssues(issues)
+      setStarting(false)
+      return
+    }
+    await startGeneration(regions)
+  }
+
+  async function startGeneration(regionList: Region[]) {
+    if (!src) return
+    setStarting(true)
+    setError(null)
+    setSpellIssues(null)
     // Earlier candidates are KEPT for comparison — one candidate per press,
     // press again for more.
     if (job) {
@@ -402,8 +449,9 @@ export function BannerEdit() {
     setAccepted(null)
     setRecomposeNote('')
     setActiveRegion(null)
-    const snapped = readyRegions.map(snapToBlocks)
-    setRegions((prev) => prev.map((r) => snapped.find((s) => s.id === r.id) ?? r))
+    const ready = regionList.filter((r) => r.mode === 'remove' || r.next.trim())
+    const snapped = ready.map(snapToBlocks)
+    setRegions(regionList.map((r) => snapped.find((s) => s.id === r.id) ?? r))
     try {
       const j = await createEdit({
         source: src.source,
@@ -419,6 +467,7 @@ export function BannerEdit() {
         candidates: 1,
         quality,
         typography: typography || undefined,
+        keep_texts: keepTexts(snapped),
       })
       setJob(j)
     } catch (e) {
@@ -882,6 +931,71 @@ export function BannerEdit() {
             )}
           </div>
 
+          {/* Typo guard — never blocks: fix with one click or generate as typed. */}
+          {spellIssues && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center p-6">
+              <button
+                type="button"
+                aria-hidden
+                tabIndex={-1}
+                onClick={() => setSpellIssues(null)}
+                className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm animate-fade-in"
+              />
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Possible typos"
+                className="relative z-10 w-full max-w-md animate-scale-in rounded-2xl border border-border bg-card p-5 shadow-2xl"
+              >
+                <div className="mb-3 flex items-start gap-2.5">
+                  <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                    <SpellCheck className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <h3 className="font-display text-base font-bold tracking-tight">Possible typo{spellIssues.length > 1 ? 's' : ''}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Caught before spending a generation — fix it, or keep exactly what you typed.
+                    </p>
+                  </div>
+                </div>
+                <ul className="space-y-2">
+                  {spellIssues.map((i) => (
+                    <li key={i.id} className="rounded-xl border border-border bg-secondary/40 px-3 py-2 text-sm">
+                      <span className="text-muted-foreground line-through decoration-destructive/60">{i.typed}</span>
+                      <span className="mx-2 text-muted-foreground">→</span>
+                      <span className="font-semibold">{i.suggestion}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setSpellIssues(null)} title="Go back and edit the text yourself">
+                    Back
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void startGeneration(regions)}
+                    title="It's intentional — generate exactly what was typed"
+                  >
+                    Generate as typed
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      const map = new Map(spellIssues.map((i) => [i.id, i.suggestion]))
+                      const next = regions.map((r) => (map.has(r.id) ? { ...r, next: map.get(r.id)! } : r))
+                      setRegions(next)
+                      void startGeneration(next)
+                    }}
+                    title="Apply the suggested spelling and generate"
+                  >
+                    <Check className="h-3.5 w-3.5" /> Fix &amp; generate
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {sizesOpen && (
             <div className="absolute inset-0 z-50">
               <AddSizesModal
@@ -1039,7 +1153,8 @@ function EmptyDropzone({
         <h3 className="font-display text-lg font-bold tracking-tight">Fix a banner’s text</h3>
         <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
           Drag &amp; drop a banner here — or upload / pick one from the gallery. Mark the wrong
-          text, replace it or remove it; everything else stays pixel-identical.
+          text, replace it or remove it; the banner is regenerated with your correction — same
+          scene, same layout, same person.
         </p>
         <div className="mt-6 flex justify-center gap-2">
           <Button onClick={onUpload}>
@@ -1434,6 +1549,7 @@ function EditCanvas({
                   value={r.next}
                   onChange={(e) => onPatchRegion(r.id, { next: e.target.value })}
                   rows={2}
+                  spellCheck
                   placeholder="New text — exactly as it should read"
                   aria-label={`Region ${i + 1} new text`}
                   className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs font-medium text-foreground transition-colors placeholder:font-normal placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20"

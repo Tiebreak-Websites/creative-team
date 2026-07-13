@@ -85,7 +85,7 @@ export async function detectText(
   return r.json()
 }
 
-/** Start a correction job (masked edit, N candidates). */
+/** Start a correction job (whole-image regeneration, N candidates). */
 export async function createEdit(payload: {
   source: EditSource
   regions: EditRegionInput[]
@@ -93,6 +93,8 @@ export async function createEdit(payload: {
   typography?: string
   /** Image model quality for the correction (default high). */
   quality?: 'low' | 'medium' | 'high'
+  /** Other texts on the banner that must survive the regeneration verbatim. */
+  keep_texts?: string[]
 }): Promise<EditJob> {
   const r = await fetch(EDITS_URL, {
     method: 'POST',
@@ -102,6 +104,25 @@ export async function createEdit(payload: {
   })
   if (!r.ok) return fail(r, 'Could not start the correction')
   return r.json()
+}
+
+/** Typo guard: obvious-misspelling suggestions for typed replacement texts.
+ * Fail-soft: any error returns no suggestions (never blocks a generation). */
+export async function spellcheckTexts(
+  texts: string[],
+): Promise<{ text: string; suggestion: string }[]> {
+  try {
+    const r = await fetch(`${EDITS_URL}/spellcheck`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ texts }),
+    })
+    if (!r.ok) return []
+    return (await r.json()).suggestions ?? []
+  } catch {
+    return []
+  }
 }
 
 export async function getEditJob(jobId: string): Promise<EditJob> {

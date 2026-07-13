@@ -1,16 +1,22 @@
 """Banner Edit — text correction on an already-generated banner.
 
 The user attaches a banner (from the gallery or an upload), marks the text
-region(s) to fix, and types the replacement text. The correction is a MASKED
-OpenAI images/edits call — and the preservation contract is enforced in code:
-after the model returns, ONLY the masked regions are composited back onto the
-original PNG (Pillow), so every pixel outside the marked regions is the
-original, guaranteed — never the raw model output.
+region(s) to fix, and types the replacement text. The correction is a
+WHOLE-IMAGE regeneration (images/edits with the original as input, NO mask):
+the model recreates the entire banner — same scene, person, layout, colors —
+applying ONLY the requested text changes. Regenerating the whole canvas keeps
+every element coherent (no mask seams, no half-repainted buttons); the trade
+is that fine details may drift slightly between takes, which is why the UI
+keeps every take side-by-side until one is accepted. Both the corrections AND
+the texts that must stay are spelled out in the prompt (the model reproduces
+listed strings far more reliably than text it has to read off pixels), and a
+vision QA pass reads the result back to badge each candidate.
 
 Flow (all routes mounted under /api/tools/banner-builder):
   POST /edits/source            upload a source image           -> {id, width, height}
   GET  /edits/source/{id}.png   serve an uploaded source
   POST /edits/detect            vision pass: text blocks + typography of the source
+  POST /edits/spellcheck        typo guard: suggest fixes for typed replacement text
   POST /edits                   start a correction job (N candidates)   -> 202 job
   GET  /edits/{job_id}          poll the job (candidates fill in as they finish)
   GET  /edits/{job_id}/files/{name}.png   serve source / candidate images
@@ -142,6 +148,62 @@ _DETECT_SCHEMA = {
     },
 }
 
+_SPELL_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "required": ["suggestions"],
+    "properties": {
+        "suggestions": {
+            "type": "array",
+            "description": "ONLY the inputs that contain an obvious misspelling.",
+            "items": {
+                "type": "object", "additionalProperties": False,
+                "required": ["text", "suggestion"],
+                "properties": {
+                    "text": {"type": "string", "description": "the input string, verbatim"},
+                    "suggestion": {"type": "string",
+                                   "description": "the corrected string (same case/punctuation style)"},
+                },
+            },
+        },
+    },
+}
+
+
+def _spell_json(api_key: str, texts: List[str], timeout: int = 45) -> dict:
+    """Text-only GPT call: flag obvious misspellings in ad copy. Raises on failure
+    (the caller fails soft — the typo guard must never block a generation)."""
+    payload = json.dumps({
+        "model": _VISION_MODEL,
+        "reasoning": {"effort": "low"},
+        "input": [
+            {"role": "system", "content": (
+                "You are a spellchecker for advertising copy, any language. The user "
+                "sends a JSON array of strings. For each string, decide whether it "
+                "contains an OBVIOUS misspelling of a common word (like 'oputinity' "
+                "for 'opportunity' or 'verry' for 'very'). If so, emit a suggestion: "
+                "'text' is the input string COPIED CHARACTER-FOR-CHARACTER, and "
+                "'suggestion' is that string corrected — fix ONLY the misspelled "
+                "words, preserve everything else (case, punctuation, spacing, "
+                "emoji). NEVER flag brand names, product names, invented or stylized "
+                "words, abbreviations, or correctly-spelled text in any language. "
+                "When in doubt, do not flag. Emit nothing for strings that need no "
+                "fix.")},
+            {"role": "user", "content": json.dumps(texts, ensure_ascii=False)},
+        ],
+        "text": {"format": {"type": "json_schema", "name": "spell_suggestions",
+                            "strict": True, "schema": _SPELL_SCHEMA}},
+        "max_output_tokens": 1500,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        OPENAI_RESPONSES_URL, data=payload, method="POST",
+        headers={"Authorization": f"Bearer {api_key}",
+                 "Content-Type": "application/json; charset=utf-8"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        body = resp.read().decode("utf-8")
+    return json.loads(_extract_output_text(body))
+
+
 _QA_SCHEMA = {
     "type": "object", "additionalProperties": False,
     "required": ["results"],
@@ -197,110 +259,61 @@ def _resolve_source(src: dict) -> tuple[Path, str]:
 # ---------------------------------------------------------------------------
 # The correction job
 # ---------------------------------------------------------------------------
-def _edit_instruction(regions: List[dict], typography: str) -> str:
+def _where(r: dict) -> str:
+    """Human position words for a region ('the upper left', 'the bottom center')
+    — thirds grid off the region's center. The model follows these far better
+    than raw percentages."""
+    cx = r["x_pct"] + r["w_pct"] / 2.0
+    cy = r["y_pct"] + r["h_pct"] / 2.0
+    v = "top" if cy < 33 else "middle" if cy < 66 else "bottom"
+    h = "left" if cx < 33 else "center" if cx < 66 else "right"
+    return f"the {v} {h}" if (v, h) != ("middle", "center") else "the center"
+
+
+def _edit_instruction(regions: List[dict], typography: str,
+                      keep_texts: List[str]) -> str:
+    """Whole-image reproduction prompt: recreate the attached banner exactly,
+    applying only the listed text changes. Unchanged texts are SPELLED OUT too
+    — the model reproduces listed strings far more reliably than text it has
+    to read off the pixels."""
     lines = [
-        "This is a finished advertising banner. The old text inside the transparent "
-        "(masked) regions has ALREADY BEEN ERASED — the blur there is only a "
-        "placeholder. Repaint each masked region as instructed below.",
+        "The attached image is a finished advertising banner. Recreate THIS EXACT "
+        "banner as a faithful 1:1 reproduction: identical composition and layout, "
+        "the SAME person (same face, expression, pose, hair, clothing), the same "
+        "background and scene, the same colors, lighting, graphic elements, logos, "
+        "icons and button shapes. Apply ONLY the following text changes:",
     ]
     for i, r in enumerate(regions, 1):
         cur = (r.get("current_text") or "").strip()
-        was = f" (it previously read “{cur}”)" if cur else ""
         hint = (r.get("hints") or "").strip()
         hint = f" {hint}." if hint else ""
-        where = f"around {round(r['x_pct'])}%,{round(r['y_pct'])}% of the frame"
+        where = _where(r)
         if r.get("mode") == "remove":
+            what = f"the text “{cur}”" if cur else "the marked text"
             lines.append(
-                f"Masked region {i} ({where}): the text{was} is REMOVED for good. "
-                "Reconstruct ONLY the clean background there, seamlessly continuing the "
-                f"surrounding design — render NO text in this region.{hint}"
+                f"{i}. In {where}: {what} is REMOVED for good — nothing replaces it; "
+                f"the background simply continues there.{hint}"
             )
         else:
+            was = f" that previously read “{cur}”" if cur else ""
             lines.append(
-                f"Masked region {i} ({where}): "
-                f"render EXACTLY this text{was}: “{r['new_text']}”.{hint}"
+                f"{i}. In {where}: the text{was} now reads EXACTLY: “{r['new_text']}” — "
+                f"keep the same font style, weight, color, case and alignment it had.{hint}"
             )
+    if keep_texts:
+        lines.append(
+            "Every OTHER text on the banner stays exactly as it is — reproduce these "
+            "verbatim, letter-perfect:\n"
+            + "\n".join(f"- “{t}”" for t in keep_texts)
+        )
     typo = f" Typography notes: {typography}." if typography else ""
     lines.append(
-        "The SECOND attached image is the ORIGINAL banner before erasing — copy its "
-        "typography for each replacement (font style, weight, size, color, case, "
-        "effects and alignment of the text that used to sit there), but take the "
-        f"WORDING only from the instructions above, never from that image.{typo}"
-    )
-    lines.append(
-        "Every replacement must fit ENTIRELY inside its masked region with a clear "
-        "margin on all sides — scale the text down if needed; letters must never "
-        "touch or cross the region edge. Perfect spelling exactly as given, including "
-        "punctuation and diacritics. Change nothing outside the masked regions; add "
-        "no other text, no logos, no watermarks."
+        "Perfect spelling exactly as given, including punctuation and diacritics. "
+        "If a replacement is longer or shorter than the original, adjust its size or "
+        "line breaks naturally without changing the overall layout. Add no new text, "
+        f"no extra logos, no watermarks.{typo}"
     )
     return "\n".join(lines)
-
-
-# Padding around each marked region before masking/erasing: replacement text is
-# rarely the same length as the original, so the model needs breathing room —
-# and the erase must swallow the old text entirely (its anti-aliased fringes
-# included) so nothing ghosts through or clips at the box edge.
-def _pad_region(r: dict, width: int, height: int) -> dict:
-    rx = width * r["x_pct"] / 100.0
-    ry = height * r["y_pct"] / 100.0
-    rw = width * r["w_pct"] / 100.0
-    rh = height * r["h_pct"] / 100.0
-    pad_x = max(16.0, rh * 0.5)
-    pad_y = max(12.0, rh * 0.35)
-    x0 = max(0.0, rx - pad_x)
-    y0 = max(0.0, ry - pad_y)
-    x1 = min(float(width), rx + rw + pad_x)
-    y1 = min(float(height), ry + rh + pad_y)
-    return {"x_pct": x0 / width * 100.0, "y_pct": y0 / height * 100.0,
-            "w_pct": (x1 - x0) / width * 100.0, "h_pct": (y1 - y0) / height * 100.0}
-
-
-def _erase_regions(img, regions: List[dict]):
-    """Blur-erase the marked regions in the image the MODEL sees, so the old
-    text simply is not there to be reproduced (the main ghosting fix). The blur
-    radius scales with the largest region so text strokes fully dissolve; the
-    model then reconstructs the background and paints the new text over it."""
-    from PIL import ImageFilter
-    w, h = img.size
-    max_rh = max((h * r["h_pct"] / 100.0 for r in regions), default=40.0)
-    blurred = img.filter(ImageFilter.GaussianBlur(max(24.0, max_rh * 0.6)))
-    out = img.copy()
-    for r in regions:
-        x = int(w * r["x_pct"] / 100.0)
-        y = int(h * r["y_pct"] / 100.0)
-        ww = max(1, int(w * r["w_pct"] / 100.0))
-        hh = max(1, int(h * r["h_pct"] / 100.0))
-        box = (x, y, min(x + ww, w), min(y + hh, h))
-        out.paste(blurred.crop(box), box)
-    return out
-
-
-def _build_mask(width: int, height: int, regions: List[dict]):
-    """Opaque canvas with fully-transparent rectangles where edits are allowed
-    (the images/edits mask contract: transparent = editable)."""
-    from PIL import Image, ImageDraw
-    mask = Image.new("RGBA", (width, height), (0, 0, 0, 255))
-    draw = ImageDraw.Draw(mask)
-    for r in regions:
-        x = int(width * r["x_pct"] / 100.0)
-        y = int(height * r["y_pct"] / 100.0)
-        w = max(1, int(width * r["w_pct"] / 100.0))
-        h = max(1, int(height * r["h_pct"] / 100.0))
-        draw.rectangle([x, y, min(x + w, width - 1), min(y + h, height - 1)],
-                       fill=(0, 0, 0, 0))
-    return mask
-
-
-def _composite_preserving(original, model_out, mask):
-    """Paste the model's output back onto the ORIGINAL, but only inside the
-    masked regions (feathered ~3px so the seam blends). Everything outside the
-    regions stays the original pixels — the preservation guarantee."""
-    from PIL import ImageFilter
-    editable = mask.getchannel("A").point(lambda v: 255 - v)  # 255 where editable
-    editable = editable.filter(ImageFilter.GaussianBlur(3))
-    from PIL import Image
-    return Image.composite(model_out, original, editable)
 
 
 def _qa_candidate(api_key: str, png_bytes: bytes, present: List[str],
@@ -339,38 +352,34 @@ def _qa_candidate(api_key: str, png_bytes: bytes, present: List[str],
 
 
 def _run_candidate(job: dict, index: int) -> None:
-    """Generate ONE candidate: masked edit -> resize back -> composite -> QA."""
+    """Generate ONE candidate: whole-image reproduction with the text changes
+    (no mask — the model recreates the entire banner) -> resize back -> QA."""
     from PIL import Image
     d: Path = job["dir"]
     try:
-        # The style reference (the original, text intact) rides along as a second
-        # image[] so the model can match typography even though the first image
-        # has the old text erased.
-        style_ref = d / "style_ref.png"
         with _EDIT_SEM:
             out_bytes = engine.generate_png(
                 api_key=job["api_key"], prompt=job["prompt"], mode="edit",
                 openai_size=job["gen_size"], model="gpt-image-2",
                 quality=job.get("quality") or "high",
                 master_png_path=str(d / "source_gen.png"),
-                mask_png_path=str(d / "mask_gen.png"),
-                extra_image_paths=[str(style_ref)] if style_ref.is_file() else None,
                 timeout=settings.OPENAI_IMAGE_TIMEOUT,
                 max_retries=settings.OPENAI_IMAGE_MAX_RETRIES,
             )
         with Image.open(d / "source.png") as original:
-            original = original.convert("RGBA")
-            with Image.open(io.BytesIO(out_bytes)) as out:
-                out = out.convert("RGBA").resize(original.size, Image.LANCZOS)
-            with Image.open(d / "mask.png") as mask:
-                comp = _composite_preserving(original, out, mask)
-        buf = io.BytesIO()
-        comp.save(buf, format="PNG")
+            size = original.size
+        with Image.open(io.BytesIO(out_bytes)) as out:
+            out = out.convert("RGBA").resize(size, Image.LANCZOS)
+            buf = io.BytesIO()
+            out.save(buf, format="PNG")
         comp_bytes = buf.getvalue()
         (d / f"cand_{index}.png").write_bytes(comp_bytes)
+        # QA reads back the replacements AND the texts that must stay — whole-image
+        # regeneration means every string on the banner is at stake.
         qa = _qa_candidate(
             job["api_key"], comp_bytes,
-            [r["new_text"] for r in job["regions"] if r.get("mode") != "remove"],
+            [r["new_text"] for r in job["regions"] if r.get("mode") != "remove"]
+            + list(job.get("keep_texts") or []),
             [r["current_text"] for r in job["regions"]
              if r.get("mode") == "remove" and r.get("current_text")],
         )
@@ -496,9 +505,33 @@ def build_edits_router() -> APIRouter:
                 continue
         return {"blocks": blocks, "typography": str(data.get("typography") or "")[:400]}
 
+    @router.post("/edits/spellcheck")
+    def spellcheck(payload: dict = Body(default={}), _user: dict = Depends(require_user)):
+        """Typo guard: flag obvious misspellings in the typed replacement texts
+        BEFORE a generation is spent. Non-blocking by design — brand names and
+        stylized words are never flagged, and any failure returns no suggestions."""
+        api_key = get_secret("OPENAI_API_KEY")
+        texts = [str(t).strip()[:_MAX_TEXT]
+                 for t in (payload.get("texts") or []) if str(t).strip()][:8]
+        if not api_key or not texts:
+            return {"suggestions": []}
+        try:
+            data = _spell_json(api_key, texts)
+        except Exception as e:  # noqa: BLE001 — the guard must never block
+            log.warning("banner-edit spellcheck failed: %s", e)
+            return {"suggestions": []}
+        out = []
+        for s in (data.get("suggestions") or [])[:8]:
+            text = str((s or {}).get("text") or "")
+            sugg = str((s or {}).get("suggestion") or "").strip()[:_MAX_TEXT]
+            # Only echo suggestions that map to an actual input and change it.
+            if sugg and text in texts and sugg != text:
+                out.append({"text": text, "suggestion": sugg})
+        return {"suggestions": out}
+
     @router.post("/edits", status_code=202)
     def create_edit(payload: dict = Body(default={}), user: dict = Depends(require_user)):
-        """Start a text-correction job: masked edit of the source with N candidates."""
+        """Start a text-correction job: whole-image regeneration with N candidates."""
         api_key = get_secret("OPENAI_API_KEY")
         if not api_key:
             return JSONResponse(status_code=424, content={"missing_secrets": [_OPENAI_SECRET]})
@@ -543,6 +576,10 @@ def build_edits_router() -> APIRouter:
         candidates = max(1, min(_MAX_CANDIDATES, candidates))
         quality = payload.get("quality") if payload.get("quality") in ("low", "medium", "high") else "high"
         typography = str(payload.get("typography") or "").strip()[:400]
+        # Texts elsewhere on the banner that must survive the whole-image
+        # regeneration — spelled out in the prompt AND read back by QA.
+        keep_texts = [str(t).strip()[:_MAX_TEXT]
+                      for t in (payload.get("keep_texts") or []) if str(t).strip()][:8]
 
         from PIL import Image
         job_id = uuid.uuid4().hex
@@ -558,26 +595,17 @@ def build_edits_router() -> APIRouter:
                 raise HTTPException(status_code=422, detail=f"unsupported image size: {why}")
             gen_size = engine.OPENAI_SIZE_MAP[size]
             gw, gh = (int(x) for x in gen_size.split("x"))
-            # Mask + erase use PADDED regions (breathing room for length changes);
-            # the instruction keeps the user's original coordinates for reference.
-            padded = [_pad_region(r, w, h) for r in regions]
-            mask = _build_mask(w, h, padded)
-            mask.save(job_dir / "mask.png")
-            # The model sees the source with the old text ERASED (blur fill) —
-            # nothing to ghost — plus the untouched original as a style reference.
-            prefilled = _erase_regions(im, padded)
-            prefilled.save(job_dir / "prefilled.png")
-            prefilled.resize((gw, gh), Image.LANCZOS).save(job_dir / "source_gen.png")
-            im.resize((gw, gh), Image.LANCZOS).save(job_dir / "style_ref.png")
-            mask.resize((gw, gh), Image.NEAREST).save(job_dir / "mask_gen.png")
+            # The model regenerates the WHOLE banner from the original (no mask).
+            im.resize((gw, gh), Image.LANCZOS).save(job_dir / "source_gen.png")
 
         job = {
             "id": job_id, "status": "running", "error": None,
             "created_by": user_key, "created_at": runner._now(),
             "dir": job_dir, "width": w, "height": h,
             "regions": regions, "candidates": candidates,
+            "keep_texts": keep_texts,
             "results": [None] * candidates,
-            "prompt": _edit_instruction(regions, typography),
+            "prompt": _edit_instruction(regions, typography, keep_texts),
             "gen_size": gen_size, "api_key": api_key, "quality": quality,
             "source_title": title,
         }

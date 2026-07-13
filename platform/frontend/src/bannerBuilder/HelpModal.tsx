@@ -35,7 +35,7 @@ const TITLES: Record<HelpTool, { title: string; description: string }> = {
   },
   edit: {
     title: 'How Banner Edit works',
-    description: 'Fix a finished banner — replace or remove text; everything else stays pixel-identical.',
+    description: 'Fix a finished banner — replace or remove text; the whole banner is regenerated with the same scene and layout.',
   },
   'lp-builder': {
     title: 'LP Builder',
@@ -194,13 +194,16 @@ function EditHelp() {
             Or press <b>Auto-detect</b> to mark every text block at once.
           </StepCard>
           <StepCard n={3} icon={<Sparkles className="h-4 w-4" />} title="Generate & pick">
-            Type the correction and press <b>Generate</b>. Two candidates appear on the right — pick the best
-            one and it lands in the gallery.
+            Type the correction and press <b>Generate</b> — one candidate appears on the right. Not right?
+            Press <b>Generate more</b>; earlier takes stay for comparison. Pick the best one and it lands in
+            the gallery.
           </StepCard>
         </div>
         <Note>
-          The promise: <b>only the marked regions change</b>. Every pixel outside your boxes stays exactly as
-          the original — guaranteed by the tool, not by luck.
+          How it works: the <b>whole banner is regenerated</b> with your corrections applied — same scene,
+          person, layout and colors, no seams or half-repainted buttons. Because it is a fresh render, tiny
+          details can vary between takes — that&rsquo;s why every take is kept side-by-side until you accept one.
+          Obvious typos in your text are caught <b>before</b> a generation is spent.
         </Note>
       </Section>
 
