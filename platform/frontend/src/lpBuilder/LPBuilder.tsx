@@ -142,13 +142,22 @@ function Dashboard({
   const [query, setQuery] = useState('')
   const [langPickFor, setLangPickFor] = useState<ProjectSummary | null>(null)
   const [brands, setBrands] = useState<Brand[]>([])
+  const [campaigns, setCampaigns] = useState<CampaignInfo[]>([])
   /** null = folders home; brand id = inside that brand's folder; '' = "Other". */
   const [folder, setFolder] = useState<string | null>(null)
   const dark = useIsDark()
 
   useEffect(() => {
     listBrands().then(setBrands).catch(() => {})
+    listCampaigns().then(setCampaigns).catch(() => {})
   }, [])
+
+  /** Card cover: the page's own hero image, else the attached campaign's hero. */
+  const coverFor = (p: ProjectSummary): string | null =>
+    p.cover_url ||
+    (p.campaign_id
+      ? campaigns.find((c) => c.campaign_id === p.campaign_id)?.hero_url ?? null
+      : null)
 
   const brandIds = useMemo(() => new Set(brands.map((b) => b.id)), [brands])
 
@@ -313,9 +322,18 @@ function Dashboard({
                 style={{ animationDelay: `${Math.min(i * 45, 450)}ms` }}
               >
                 <button type="button" onClick={() => onOpen(p.id)} className="block w-full text-left" title="Open in the builder">
-                  <div className="flex h-28 items-center justify-center bg-gradient-to-br from-primary/15 via-secondary to-secondary">
-                    <Layout className="h-8 w-8 text-primary/50" />
-                  </div>
+                  {coverFor(p) ? (
+                    <img
+                      src={coverFor(p)!}
+                      alt=""
+                      loading="lazy"
+                      className="h-28 w-full bg-secondary object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-28 items-center justify-center bg-gradient-to-br from-primary/15 via-secondary to-secondary">
+                      <Layout className="h-8 w-8 text-primary/50" />
+                    </div>
+                  )}
                   <div className="p-3.5">
                     <p className="truncate font-display text-sm font-semibold">{p.name}</p>
                     <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">

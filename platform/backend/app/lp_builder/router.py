@@ -210,6 +210,21 @@ def build_lp_builder_router() -> APIRouter:
         return {"languages": core.languages()}
 
     # ---- projects ------------------------------------------------------------
+    def _cover_url(p: dict):
+        """The page's own hero-ish image (first placed image, hero/creative
+        slots preferred) — the dashboard card cover."""
+        preferred = ("creative", "hero", "photo", "image")
+        for inst in p.get("sections") or []:
+            images = inst.get("images") or {}
+            for key in preferred:
+                v = images.get(key)
+                if v and not str(v).startswith("token:"):
+                    return export.serve_url_for(str(v))
+            for v in images.values():
+                if v and not str(v).startswith("token:"):
+                    return export.serve_url_for(str(v))
+        return None
+
     @router.get("/projects")
     def list_projects(_user: dict = Depends(require_user)):
         with core.lock():
@@ -217,7 +232,8 @@ def build_lp_builder_router() -> APIRouter:
         return {"projects": [{k: p.get(k) for k in
                               ("id", "name", "brand_id", "language", "campaign_id",
                                "created_by", "created_at", "updated_at")}
-                             | {"sections": len(p.get("sections") or [])} for p in ps]}
+                             | {"sections": len(p.get("sections") or []),
+                                "cover_url": _cover_url(p)} for p in ps]}
 
     @router.post("/projects", status_code=201)
     def create_project(payload: dict = Body(default={}), user: dict = Depends(require_user)):

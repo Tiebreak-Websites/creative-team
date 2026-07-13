@@ -80,6 +80,8 @@ export interface ProjectSummary {
   created_at: string
   updated_at: string
   sections: number
+  /** The page's own hero-ish image (first placed image) — the card cover. */
+  cover_url?: string | null
 }
 
 async function fail(r: Response, fallback: string): Promise<never> {
