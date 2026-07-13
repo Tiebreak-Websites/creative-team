@@ -2,19 +2,27 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
+  ArrowLeft,
   Copy,
   Download,
   FilePlus2,
+  FolderOpen,
   Globe,
   Languages,
   Layout,
-  LayoutTemplate,
   Loader2,
   Search,
   Settings2,
   Trash2,
   X,
 } from 'lucide-react'
+
+/** Inline-SVG brand logos become data URIs for <img>. */
+function logoUri(svg: string | null | undefined): string {
+  const raw = svg || ''
+  if (!raw) return ''
+  return raw.trim().startsWith('<svg') ? 'data:image/svg+xml;utf8,' + encodeURIComponent(raw) : raw
+}
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, formatUserName } from '@/lib/utils'
@@ -139,26 +147,82 @@ function Dashboard({
   const [creating, setCreating] = useState(false)
   const [query, setQuery] = useState('')
   const [langPickFor, setLangPickFor] = useState<ProjectSummary | null>(null)
+  const [brands, setBrands] = useState<Brand[]>([])
+  /** null = folders home · brand id = inside that brand's folder · '' = "Other". */
+  const [folder, setFolder] = useState<string | null>(null)
+
+  useEffect(() => {
+    listBrands().then(setBrands).catch(() => {})
+  }, [])
+
+  const brandIds = useMemo(() => new Set(brands.map((b) => b.id)), [brands])
+
+  // One folder per brand from the store (new brands appear automatically),
+  // plus "Other" for pages whose brand is empty or no longer exists.
+  const folders = useMemo(() => {
+    const ps = projects ?? []
+    const out = brands.map((b) => {
+      const inFolder = ps.filter((p) => p.brand_id === b.id)
+      return {
+        id: b.id, name: b.name, brand: b, count: inFolder.length,
+        latest: inFolder.reduce((a, p) => (p.updated_at > a ? p.updated_at : a), ''),
+      }
+    })
+    const other = ps.filter((p) => !p.brand_id || !brandIds.has(p.brand_id))
+    if (other.length) {
+      out.push({
+        id: '', name: 'Other', brand: null as unknown as Brand, count: other.length,
+        latest: other.reduce((a, p) => (p.updated_at > a ? p.updated_at : a), ''),
+      })
+    }
+    return out
+  }, [brands, projects, brandIds])
+
+  const folderBrand = folder ? brands.find((b) => b.id === folder) ?? null : null
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!projects) return []
-    if (!q) return projects
-    return projects.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.language.includes(q) || p.brand_id.includes(q),
-    )
-  }, [projects, query])
+    if (!projects || folder === null) return []
+    let list = folder === ''
+      ? projects.filter((p) => !p.brand_id || !brandIds.has(p.brand_id))
+      : projects.filter((p) => p.brand_id === folder)
+    if (q) {
+      list = list.filter((p) => p.name.toLowerCase().includes(q) || p.language.includes(q))
+    }
+    return list
+  }, [projects, query, folder, brandIds])
 
   const langsInUse = useMemo(() => new Set((projects ?? []).map((p) => p.language)).size, [projects])
 
   return (
     <div className="mx-auto h-full max-w-6xl overflow-y-auto px-6 py-8">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-fade-up">
-        <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight">Landing pages</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Build from brand templates, edit at every width, export a ready-to-host website.
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          {folder !== null && (
+            <Button variant="ghost" size="icon" onClick={() => { setFolder(null); setQuery('') }}
+                    title="Back to brand folders" aria-label="Back to brand folders">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <div className="min-w-0">
+            {folder !== null ? (
+              <div className="flex items-center gap-2.5">
+                {folderBrand?.logo_svg && (
+                  <img src={logoUri(folderBrand.logo_svg)} alt="" className="h-7 max-w-32 object-contain" />
+                )}
+                <h1 className="truncate font-display text-2xl font-bold tracking-tight">
+                  {folderBrand?.name ?? 'Other'}
+                </h1>
+              </div>
+            ) : (
+              <h1 className="font-display text-2xl font-bold tracking-tight">Landing pages</h1>
+            )}
+            <p className="mt-1 text-sm text-muted-foreground">
+              {folder !== null
+                ? `Landing pages in the ${folderBrand?.name ?? 'Other'} folder.`
+                : 'One folder per brand — pick a folder to see its landing pages.'}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {isAdmin && (
@@ -175,8 +239,8 @@ function Dashboard({
       <div className="mb-5 grid grid-cols-3 gap-3">
         {[
           { label: 'Landing pages', value: projects?.length ?? '—', icon: Layout },
+          { label: 'Brand folders', value: folders.length || '—', icon: FolderOpen },
           { label: 'Languages in use', value: projects ? langsInUse : '—', icon: Languages },
-          { label: 'Template sections', value: '12+', icon: LayoutTemplate },
         ].map((s, i) => (
           <div
             key={s.label}
@@ -190,6 +254,45 @@ function Dashboard({
         ))}
       </div>
 
+      {folder === null ? (
+        /* ------------------------- brand FOLDERS home ------------------------- */
+        projects === null ? (
+          <div className="flex items-center gap-2 p-8 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {folders.map((f, i) => (
+              <button
+                key={f.id || 'other'}
+                type="button"
+                onClick={() => setFolder(f.id)}
+                className="group animate-fade-up overflow-hidden rounded-2xl border border-border bg-card text-left shadow-sm transition-all hover:-translate-y-1 hover:border-primary/40 hover:shadow-md"
+                style={{ animationDelay: `${Math.min(i * 60, 360)}ms` }}
+                title={`Open the ${f.name} folder`}
+              >
+                <div className="flex h-24 items-center justify-center gap-3 bg-gradient-to-br from-primary/10 via-secondary to-secondary">
+                  {f.brand?.logo_svg ? (
+                    <img src={logoUri(f.brand.logo_svg)} alt="" className="h-9 max-w-40 object-contain" />
+                  ) : (
+                    <FolderOpen className="h-8 w-8 text-primary/50" />
+                  )}
+                </div>
+                <div className="flex items-center gap-2 p-3.5">
+                  <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
+                  <span className="truncate font-display text-sm font-semibold">{f.name}</span>
+                  <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+                    {f.count} page{f.count === 1 ? '' : 's'}
+                    {f.latest &&
+                      ` · ${new Date(f.latest).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )
+      ) : (
+      <>
       <div className="relative mb-4 animate-fade-up" style={{ animationDelay: '240ms' }}>
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search landing pages…" className="pl-9" />
@@ -201,7 +304,7 @@ function Dashboard({
         </div>
       ) : visible.length === 0 ? (
         <p className="p-10 text-center text-sm text-muted-foreground">
-          {projects.length === 0 ? 'No landing pages yet — create the first one.' : 'Nothing matches your search.'}
+          {query ? 'Nothing matches your search.' : 'This folder is empty — create its first landing page.'}
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -263,10 +366,13 @@ function Dashboard({
           })}
         </div>
       )}
+      </>
+      )}
 
       {creating && (
         <NewLpModal
           languages={languages}
+          presetBrandId={folder || undefined}
           onClose={() => setCreating(false)}
           onCreated={(id) => {
             setCreating(false)
@@ -346,17 +452,20 @@ function ModalShell({ label, children, onClose }: { label: string; children: Rea
 
 function NewLpModal({
   languages,
+  presetBrandId,
   onClose,
   onCreated,
   onError,
 }: {
   languages: Language[]
+  /** Pre-selected brand when creating from inside a brand folder. */
+  presetBrandId?: string
   onClose: () => void
   onCreated: (id: string) => void
   onError: (m: string) => void
 }) {
   const [name, setName] = useState('')
-  const [brandId, setBrandId] = useState('')
+  const [brandId, setBrandId] = useState(presetBrandId ?? '')
   const [language, setLanguage] = useState('en')
   const [campaignId, setCampaignId] = useState('')
   const [brands, setBrands] = useState<Brand[]>([])
