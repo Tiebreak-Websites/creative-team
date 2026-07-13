@@ -50,6 +50,15 @@ DEFAULT_LANGS = [
     {"code": "th", "label": "Thai"},
     {"code": "ja", "label": "Japanese"},
     {"code": "sv", "label": "Swedish"},
+    {"code": "pt", "label": "Portuguese"},
+    {"code": "es", "label": "Spanish"},
+    {"code": "vi", "label": "Vietnamese"},
+    {"code": "it", "label": "Italian"},
+    {"code": "pl", "label": "Polish"},
+    {"code": "fr", "label": "French"},
+    {"code": "de", "label": "German"},
+    {"code": "ar", "label": "Arabic"},
+    {"code": "zh", "label": "Chinese"},
 ]
 
 # Default (unbranded) design tokens — a brand pick overwrites these per project.
@@ -176,9 +185,10 @@ def new_asset_id() -> str:
 # Startup: seed built-ins, then rehydrate disk state over them
 # ---------------------------------------------------------------------------
 def rehydrate() -> None:
-    from . import builtin_sections
+    from . import builtin_sections, braintrade_sections
     with _LOCK:
-        for s in builtin_sections.BUILTIN_SECTIONS:
+        for s in (builtin_sections.BUILTIN_SECTIONS
+                  + braintrade_sections.BRAINTRADE_SECTIONS):
             s = dict(s)
             s["built_in"] = True
             s.setdefault("enabled", True)
@@ -209,6 +219,10 @@ def rehydrate() -> None:
         try:
             _LANGS = json.loads(LANGS_PATH.read_text(encoding="utf-8"))
             assert isinstance(_LANGS, list) and _LANGS
+            # New default languages (e.g. shipped with new template materials)
+            # join a persisted list rather than being shadowed by it.
+            have = {l.get("code") for l in _LANGS}
+            _LANGS.extend(dict(x) for x in DEFAULT_LANGS if x["code"] not in have)
         except Exception:  # noqa: BLE001
             _LANGS = [dict(x) for x in DEFAULT_LANGS]
     if n_sec or n_proj:

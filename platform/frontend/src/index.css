@@ -155,3 +155,15 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Native <select> dropdowns must follow the theme - without this the opened
+   option list renders white-on-white in dark mode (OS default painting). */
+select {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  color-scheme: light dark;
+}
+select option {
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+}

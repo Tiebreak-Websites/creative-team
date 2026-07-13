@@ -84,7 +84,12 @@ EDITOR_RUNTIME = """<style id="lp-editor-css">
 [data-lp-text]:hover,[data-lp-rich]:hover,[data-lp-img]:hover,[data-lp-link]:hover{outline:1.5px dashed rgba(37,99,235,.75);outline-offset:2px}
 .lp-ed-selected{outline:2px solid #2563EB !important;outline-offset:2px}
 section[data-iid].lp-ed-selected{outline-offset:-2px}
+.lp-ed-droptarget{outline:3px solid #16A34A !important;outline-offset:-3px}
 #lp-drop-line{position:absolute;left:0;right:0;height:4px;background:#2563EB;border-radius:2px;display:none;z-index:9999;pointer-events:none;box-shadow:0 0 0 3px rgba(37,99,235,.25)}
+#lp-sec-toolbar{position:absolute;display:none;z-index:9998;gap:2px;background:#101623;border-radius:10px;padding:3px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+#lp-sec-toolbar button{border:0;background:transparent;color:#E7ECF5;width:28px;height:28px;border-radius:7px;cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center}
+#lp-sec-toolbar button:hover{background:#2563EB}
+#lp-sec-toolbar button.lp-del:hover{background:#DC2626}
 [contenteditable]{outline:2px solid #F59E0B !important;outline-offset:2px}
 </style>
 <script>
@@ -100,16 +105,38 @@ section[data-iid].lp-ed-selected{outline-offset:-2px}
   }
   function fieldOf(el){ var f = fieldsOf(el); return f.length ? f[0] : null; }
   var selected = null;
-  function clearSel(){ document.querySelectorAll('.lp-ed-selected').forEach(function(n){n.classList.remove('lp-ed-selected')}); selected=null; }
+  // floating section toolbar (move up/down, duplicate, delete) — Figma-style
+  var tb = document.createElement('div'); tb.id = 'lp-sec-toolbar';
+  tb.innerHTML = '<button data-a="up" title="Move section up">\\u2191</button>'
+    + '<button data-a="down" title="Move section down">\\u2193</button>'
+    + '<button data-a="duplicate" title="Duplicate section">\\u29C9</button>'
+    + '<button class="lp-del" data-a="delete" title="Delete section">\\u2715</button>';
+  document.body.appendChild(tb);
+  tb.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b || !tb._iid) return;
+    e.preventDefault(); e.stopPropagation();
+    post({type:'sectionAction', action: b.getAttribute('data-a'), iid: tb._iid});
+  });
+  function placeToolbar(sec){
+    if (!sec) { tb.style.display='none'; tb._iid=null; return; }
+    var r = sec.getBoundingClientRect();
+    tb.style.display='flex'; tb._iid = sec.getAttribute('data-iid');
+    tb.style.top = Math.max(6, r.top + window.scrollY + 8) + 'px';
+    tb.style.left = Math.max(6, r.right - 140) + 'px';
+  }
+  function clearSel(){ document.querySelectorAll('.lp-ed-selected').forEach(function(n){n.classList.remove('lp-ed-selected')}); selected=null; placeToolbar(null); }
   function select(el){
     clearSel(); if (!el) { post({type:'select', iid:null}); return; }
     el.classList.add('lp-ed-selected'); selected = el;
     var sec = el.closest('section[data-iid]');
+    placeToolbar(sec);
     var fs = el.matches(SEL) ? fieldsOf(el) : [];
     post({type:'select', iid: sec ? sec.getAttribute('data-iid') : null,
           fields: fs, tag: el.tagName.toLowerCase()});
   }
+  window.addEventListener('scroll', function(){ if (selected) placeToolbar(selected.closest('section[data-iid]')); });
   document.addEventListener('click', function(e){
+    if (e.target.closest('#lp-sec-toolbar')) return; // toolbar handles itself
     if (e.target.closest('[contenteditable]')) return;
     e.preventDefault();
     var el = e.target.closest(SEL) || e.target.closest('section[data-iid]');
@@ -127,7 +154,8 @@ section[data-iid].lp-ed-selected{outline-offset:-2px}
     el.addEventListener('blur', function(){ el.removeAttribute('contenteditable'); send(); }, {once:true});
   }, true);
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape') { document.activeElement && document.activeElement.blur && document.activeElement.blur(); select(null); } });
-  // section drop-insert (drag originates in the builder's Add tab)
+  // drag & drop: sections from the Add tab (insertion line) and ASSETS from
+  // the Assets tab (highlight the image slot under the cursor).
   var line = document.createElement('div'); line.id = 'lp-drop-line'; document.body.appendChild(line);
   function insertionAt(y){
     var secs = Array.prototype.slice.call(document.querySelectorAll('section[data-iid]'));
@@ -136,10 +164,37 @@ section[data-iid].lp-ed-selected{outline-offset:-2px}
     var last = secs[secs.length-1];
     return {index: secs.length, y: last ? last.getBoundingClientRect().bottom + window.scrollY : 8};
   }
+  function isAssetDrag(e){
+    var t = e.dataTransfer && e.dataTransfer.types;
+    return !!t && Array.prototype.indexOf.call(t, 'text/lp-asset') !== -1;
+  }
+  function clearDropTarget(){ document.querySelectorAll('.lp-ed-droptarget').forEach(function(n){n.classList.remove('lp-ed-droptarget')}); }
+  function imgAt(e){
+    var el = document.elementFromPoint(e.clientX, e.clientY);
+    return el ? el.closest('[data-lp-img]') : null;
+  }
   document.addEventListener('dragover', function(e){ e.preventDefault();
+    if (isAssetDrag(e)) {
+      line.style.display='none';
+      clearDropTarget();
+      var img = imgAt(e);
+      if (img) img.classList.add('lp-ed-droptarget');
+      return;
+    }
     var at = insertionAt(e.clientY); line.style.top = at.y + 'px'; line.style.display='block'; });
-  document.addEventListener('dragleave', function(e){ if (!e.relatedTarget) line.style.display='none'; });
+  document.addEventListener('dragleave', function(e){ if (!e.relatedTarget) { line.style.display='none'; clearDropTarget(); } });
   document.addEventListener('drop', function(e){ e.preventDefault(); line.style.display='none';
+    if (isAssetDrag(e)) {
+      var url = e.dataTransfer.getData('text/lp-asset');
+      var img = imgAt(e);
+      clearDropTarget();
+      if (url && img) {
+        var sec = img.closest('section[data-iid]');
+        post({type:'dropImage', iid: sec ? sec.getAttribute('data-iid') : null,
+              key: img.getAttribute('data-lp-img'), url: url});
+      }
+      return;
+    }
     post({type:'drop', index: insertionAt(e.clientY).index}); });
   // scroll preservation across re-renders
   var st; window.addEventListener('scroll', function(){ clearTimeout(st); st = setTimeout(function(){ post({type:'scroll', y: window.scrollY}); }, 120); });
@@ -326,7 +381,8 @@ def tokens_css(tokens: dict) -> str:
 
 
 _GOOGLE_FONTS = ("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800"
-                 "&family=Space+Grotesk:wght@500;700&family=Noto+Sans+JP:wght@400;700"
+                 "&family=Space+Grotesk:wght@500;700&family=Urbanist:wght@400;500;600;700"
+                 "&family=Noto+Sans+JP:wght@400;700"
                  "&family=Noto+Sans+Thai:wght@400;700&display=swap")
 
 

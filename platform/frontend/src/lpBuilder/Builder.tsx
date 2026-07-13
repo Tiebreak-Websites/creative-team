@@ -54,8 +54,8 @@ let iidCounter = 0
 const newIid = () => `i${Date.now().toString(36)}${(++iidCounter).toString(36)}`
 
 const CATEGORY_LABEL: Record<string, string> = {
-  hero: 'Hero', content: 'Content', 'social-proof': 'Social proof',
-  conversion: 'Conversion', legal: 'Legal & footer',
+  braintrade: 'BrainTrade template', hero: 'Hero', content: 'Content',
+  'social-proof': 'Social proof', conversion: 'Conversion', legal: 'Legal & footer',
 }
 
 export function Builder({
@@ -255,6 +255,26 @@ export function Builder({
         const key = dragKeyRef.current
         dragKeyRef.current = null
         if (key) addSection(key, m.index)
+      } else if (m.type === 'dropImage') {
+        if (m.iid && m.key && m.url) void assignImageTo(m.iid, m.key, m.url)
+      } else if (m.type === 'sectionAction') {
+        const iid = String(m.iid || '')
+        if (!iid) return
+        if (m.action === 'delete') {
+          if (window.confirm('Remove this section?')) removeSection(iid)
+        } else if (m.action === 'duplicate') {
+          duplicateSection(iid)
+        } else if (m.action === 'up' || m.action === 'down') {
+          mutate((p) => {
+            const i = p.sections.findIndex((s) => s.iid === iid)
+            const j = m.action === 'up' ? i - 1 : i + 1
+            if (i >= 0 && j >= 0 && j < p.sections.length) {
+              const [s] = p.sections.splice(i, 1)
+              p.sections.splice(j, 0, s)
+            }
+            return p
+          })
+        }
       } else if (m.type === 'scroll') {
         lastScrollRef.current = m.y || 0
       }
@@ -339,20 +359,25 @@ export function Builder({
       return p
     })
   }
-  async function assignImage(url: string) {
-    const sel = selection
-    const imgField = sel?.fields.find((f) => f.kind === 'img')
-    if (!sel || !imgField || !project) return
+  /** Assign an image URL into a specific slot — imports sibling-tool images
+   * into the LP asset store first so exports can bundle them. */
+  async function assignImageTo(iid: string, key: string, url: string) {
     try {
       const local = url.startsWith('/api/tools/lp-builder/') ? { url } : await importLpAsset(url)
       mutate((p) => {
-        const inst = p.sections.find((s) => s.iid === sel.iid)
-        if (inst) inst.images[imgField.key] = local.url
+        const inst = p.sections.find((s) => s.iid === iid)
+        if (inst) inst.images[key] = local.url
         return p
       })
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     }
+  }
+  async function assignImage(url: string) {
+    const sel = selection
+    const imgField = sel?.fields.find((f) => f.kind === 'img')
+    if (!sel || !imgField) return
+    await assignImageTo(sel.iid, imgField.key, url)
   }
   async function uploadAndAssign(files: FileList | null) {
     const f = files?.[0]
@@ -655,6 +680,7 @@ function AddTab({
                 draggable
                 onDragStart={(e) => {
                   onDragKey(s.key)
+                  e.dataTransfer.setData('text/lp-section', s.key)
                   e.dataTransfer.effectAllowed = 'copy'
                 }}
                 className="group flex cursor-grab items-center gap-2 rounded-xl border border-border bg-card px-2.5 py-2 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/50 active:cursor-grabbing"
@@ -797,9 +823,8 @@ function AssetsTab({
         <Upload className="h-4 w-4" /> Upload image
       </Button>
       <p className="px-1 text-[10px] leading-snug text-muted-foreground">
-        {imgSelected
-          ? 'Click an image below to place it into the selected slot.'
-          : 'Select an image slot on the page first, then click an asset to assign it.'}
+        <b>Drag an image onto any image slot</b> on the page
+        {imgSelected ? ' — or click it to fill the selected slot.' : ' (slots highlight green while dragging).'}
       </p>
       {assets.length === 0 ? (
         <p className="p-2 text-center text-xs text-muted-foreground">
@@ -811,16 +836,20 @@ function AssetsTab({
             <button
               key={`${a.url}:${i}`}
               type="button"
-              onClick={() => onAssign(a.url)}
-              disabled={!imgSelected}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('text/lp-asset', a.url)
+                e.dataTransfer.effectAllowed = 'copy'
+              }}
+              onClick={() => imgSelected && onAssign(a.url)}
               className={cn(
-                'overflow-hidden rounded-lg border border-border bg-card text-left shadow-sm transition-all',
-                imgSelected ? 'hover:-translate-y-0.5 hover:border-primary/50' : 'opacity-60',
+                'cursor-grab overflow-hidden rounded-lg border border-border bg-card text-left shadow-sm transition-all',
+                'hover:-translate-y-0.5 hover:border-primary/50 active:cursor-grabbing',
               )}
-              title={imgSelected ? `Place "${a.label}"` : 'Select an image slot first'}
+              title={`Drag "${a.label}" onto an image slot${imgSelected ? ' — or click to fill the selected one' : ''}`}
             >
               <span className="block aspect-square bg-muted/40">
-                <img src={a.url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                <img src={a.url} alt="" loading="lazy" className="pointer-events-none h-full w-full object-cover" />
               </span>
               <span className="block truncate px-1.5 py-1 text-[10px] text-muted-foreground">{a.label}</span>
             </button>
