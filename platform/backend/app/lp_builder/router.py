@@ -319,6 +319,20 @@ def build_lp_builder_router() -> APIRouter:
         out = export.compose_page(project, smap, mode=mode, resolve_img=export.serve_url_for)
         return {"html": out["html"]}
 
+    # ---- runtime scripts -------------------------------------------------------
+    # Served as EXTERNAL same-origin files because the app's production CSP is
+    # script-src 'self' — inline <script> inside the canvas iframe (which
+    # inherits that CSP via srcdoc) would silently never run.
+    @router.get("/editor.js")
+    def editor_js(_user: dict = Depends(require_user)):
+        return Response(content=export.EDITOR_JS, media_type="application/javascript",
+                        headers={"Cache-Control": "no-store"})
+
+    @router.get("/page.js")
+    def page_js(_user: dict = Depends(require_user)):
+        return Response(content=export.SCRIPT_JS, media_type="application/javascript",
+                        headers={"Cache-Control": "no-store"})
+
     # ---- assets ---------------------------------------------------------------
     @router.post("/assets")
     async def upload_asset(file: UploadFile = File(...), _user: dict = Depends(require_user)):

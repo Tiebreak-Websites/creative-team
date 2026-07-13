@@ -79,7 +79,13 @@ SCRIPT_JS = """// Internovus Creative Builder - LP runtime (dependency-free)
 
 # Injected ONLY in mode="editor": selection, hover outlines, inline text
 # editing and the drop indicator. Talks to the builder via postMessage.
-EDITOR_RUNTIME = """<style id="lp-editor-css">
+# The JS half is served as an EXTERNAL same-origin script
+# (GET /api/tools/lp-builder/editor.js) — the app's production CSP is
+# script-src 'self' (no 'unsafe-inline'), and a srcdoc iframe INHERITS the
+# parent CSP, so an inline <script> here silently never runs on prod (the
+# exact "canvas doesn't react to clicks" failure). Inline <style> is fine
+# (style-src keeps 'unsafe-inline').
+EDITOR_CSS = """<style id="lp-editor-css">
 [data-lp-text],[data-lp-rich],[data-lp-img],[data-lp-link]{cursor:pointer}
 [data-lp-text]:hover,[data-lp-rich]:hover,[data-lp-img]:hover,[data-lp-link]:hover{outline:1.5px dashed rgba(37,99,235,.75);outline-offset:2px}
 .lp-ed-selected{outline:2px solid #2563EB !important;outline-offset:2px}
@@ -91,9 +97,9 @@ section[data-iid].lp-ed-selected{outline-offset:-2px}
 #lp-sec-toolbar button:hover{background:#2563EB}
 #lp-sec-toolbar button.lp-del:hover{background:#DC2626}
 [contenteditable]{outline:2px solid #F59E0B !important;outline-offset:2px}
-</style>
-<script>
-(function(){
+</style>"""
+
+EDITOR_JS = """(function(){
   var P = window.parent;
   function post(m){ try { P.postMessage(Object.assign({lp:1}, m), '*'); } catch(e){} }
   var ATTRS = ['data-lp-text','data-lp-rich','data-lp-img','data-lp-link'];
@@ -209,7 +215,7 @@ section[data-iid].lp-ed-selected{outline-offset:-2px}
   });
   post({type:'ready'});
 })();
-</script>"""
+"""
 
 PLACEHOLDER_IMG = ("data:image/svg+xml," + "%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E"
                    "%3Crect width='100%25' height='100%25' fill='%23E5E9F2'/%3E"
@@ -422,10 +428,16 @@ def compose_page(project: dict, sections_map: Dict[str, dict], mode: str,
     desc = _esc(project.get("meta_description") or "")
     style_or_link = (f'<link rel="stylesheet" href="{css_href}">' if css_href
                      else f"<style>{css}</style>")
+    # NO inline <script> anywhere the builder renders this document: the app's
+    # production CSP (script-src 'self') is inherited by srcdoc iframes and
+    # silently kills inline JS. In-app canvas/preview reference same-origin
+    # endpoints instead; the ZIP export references its bundled script.js file.
     script_tag = ""
     if js:
-        script_tag = f'<script src="{js_href}"></script>' if js_href else f"<script>{js}</script>"
-    runtime = EDITOR_RUNTIME if mode == "editor" else ""
+        script_tag = (f'<script src="{js_href}"></script>' if js_href
+                      else '<script src="/api/tools/lp-builder/page.js" defer></script>')
+    runtime = (EDITOR_CSS + '\n<script src="/api/tools/lp-builder/editor.js" defer></script>'
+               if mode == "editor" else "")
     html_doc = f"""<!doctype html>
 <html lang="{_esc(lang)}">
 <head>
