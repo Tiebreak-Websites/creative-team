@@ -38,8 +38,8 @@ const TITLES: Record<HelpTool, { title: string; description: string }> = {
     description: 'Fix a finished banner — replace or remove text; the whole banner is regenerated with the same scene and layout.',
   },
   'lp-builder': {
-    title: 'LP Builder',
-    description: 'Landing-page generation is on its way.',
+    title: 'How the LP Builder works',
+    description: 'Assemble a landing page from brand templates, edit at every width, export a ready-to-host website.',
   },
   materials: {
     title: 'How LP Materials works',
@@ -238,16 +238,53 @@ function EditHelp() {
 }
 
 // ---------------------------------------------------------------------------
-// LP Builder (placeholder)
+// LP Builder
 // ---------------------------------------------------------------------------
 function LpBuilderHelp() {
   return (
-    <div className="space-y-4">
-      <Note>
-        <b>LP Builder is in progress.</b> It will generate full landing pages. Until it ships, use{' '}
-        <b>LP Materials</b> (the tab next to it) to produce the page’s creative assets — customer photos,
-        section-card images and advertorial visuals — organized per campaign.
-      </Note>
+    <div className="space-y-7">
+      <Section title="The 3 steps">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <StepCard n={1} icon={<ImagePlus className="h-4 w-4" />} title="Create a page">
+            Pick a brand and a language (attach an LP Materials campaign to get its images in the Assets
+            tab). The page starts empty — drag sections in from the <b>Add</b> tab.
+          </StepCard>
+          <StepCard n={2} icon={<MousePointerSquareDashed className="h-4 w-4" />} title="Edit everything">
+            Click any element for its properties; <b>double-click text to type directly</b> on the page.
+            Switch the device toggle (1920 / 1199 / 375) to set per-width overrides — hide a section on
+            mobile, shrink a headline, swap an image.
+          </StepCard>
+          <StepCard n={3} icon={<Sparkles className="h-4 w-4" />} title="Export the website">
+            Preview shows exactly the final page. <b>Export</b> downloads a ZIP — index.html, styles.css,
+            a tiny script.js and all images — ready to host anywhere, works offline.
+          </StepCard>
+        </div>
+        <Note>
+          Sections come from the <b>template library</b> (admins manage it under Templates): every text
+          exists per language, images can be pre-attached, and the whole page re-themes when you switch
+          brand. The signup form posts to the <b>form action URL</b> in page settings.
+        </Note>
+      </Section>
+      <Section title="Good to know">
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <Feature icon={<ScanText className="h-4 w-4" />} title="Per-device overrides">
+            While viewing tablet or mobile, edits apply to that width only — a dot marks overridden
+            properties, and one click resets back to desktop.
+          </Feature>
+          <Feature icon={<Ruler className="h-4 w-4" />} title="Duplicate to language">
+            On the dashboard, duplicate a page into another language — same layout and images, texts
+            switch to that language’s template defaults.
+          </Feature>
+          <Feature icon={<Type className="h-4 w-4" />} title="Repeatable items">
+            FAQ questions, benefit cards, steps and reviews have +/− steppers in the section’s
+            properties — add or remove items without touching code.
+          </Feature>
+          <Feature icon={<MousePointerSquareDashed className="h-4 w-4" />} title="Undo & autosave">
+            Ctrl+Z / Ctrl+Shift+Z for undo/redo; every change auto-saves — the dashboard always has the
+            latest version.
+          </Feature>
+        </div>
+      </Section>
     </div>
   )
 }

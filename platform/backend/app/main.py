@@ -127,6 +127,11 @@ def create_app() -> FastAPI:
     # workspace + store, same session gate as everything else.
     app.include_router(build_lp_materials_router(),
                        prefix="/api/tools/lp-materials", dependencies=protected)
+    # LP Builder — section-based landing-page builder (templates, projects,
+    # composition + ZIP export). Same session gate.
+    from .lp_builder import build_lp_builder_router
+    app.include_router(build_lp_builder_router(),
+                       prefix="/api/tools/lp-builder", dependencies=protected)
 
     # Restore persisted banner runs from the durable disk (PLATFORM_ARTIFACT_DIR)
     # so the gallery survives restarts/redeploys. Run in a BACKGROUND thread so a
@@ -140,6 +145,11 @@ def create_app() -> FastAPI:
                           name="bb-rehydrate").start()
         _threading.Thread(target=_lp_materials.rehydrate_jobs, daemon=True,
                           name="lpm-rehydrate").start()
+        # LP Builder rehydrates SYNCHRONOUSLY: it must seed the built-in
+        # section library before the first /sections request, and the disk
+        # scan is a handful of small JSON files.
+        from . import lp_builder as _lp_builder
+        _lp_builder.rehydrate()
     except Exception:  # noqa: BLE001
         pass
 

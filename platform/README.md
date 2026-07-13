@@ -2,8 +2,8 @@
 
 A local-first web dashboard that turns this repo's tools into self-serve online modules. The logo is a **product switcher** between two products, each with its own sub-tools in the header:
 
-- **Banner Builder** — **Generate** (the classic dashboard) and **Edit** (fix a finished banner's text via masked inpainting with a pixel-preservation guarantee, then recompose the corrected banner into more sizes; `app/banner_edit.py` + `frontend/src/bannerBuilder/BannerEdit.tsx`).
-- **Landing Page Builder** — **LP Builder** (in progress) and **LP Materials** (review avatars with name-driven nationality/gender detection, section-card image sets with an optional recurring persona, advertorial visuals; `app/lp_materials.py` + `frontend/src/lpMaterials/`). Generated materials contain no text — a vision QA flags any that sneaks in.
+- **Banner Builder** — **Generate** (the classic dashboard) and **Edit** (fix a finished banner's text: the whole banner is regenerated with the corrections applied — same scene/layout/person — with a typo guard before generating and a vision QA read-back after; `app/banner_edit.py` + `frontend/src/bannerBuilder/BannerEdit.tsx`).
+- **Landing Page Builder** — **LP Builder** (section-based drag-and-drop landing-page builder: brand template library with per-language texts, iframe canvas at 1920/1199/375 with per-breakpoint overrides, inline text editing, LP Materials campaign assets, admin template manager, ZIP export of a ready-to-host html/css/js website; `app/lp_builder/` + `frontend/src/lpBuilder/`) and **LP Materials** (review avatars with name-driven nationality/gender detection, section-card image sets with an optional recurring persona, advertorial visuals; `app/lp_materials.py` + `frontend/src/lpMaterials/`). Generated materials contain no text — a vision QA flags any that sneaks in.
 
 See `docs/feature-product-split-banner-edit-lp-materials.md` for the full feature notes.
 
