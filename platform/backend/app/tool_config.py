@@ -23,11 +23,21 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from .auth import require_admin, require_user
-from .settings import BACKEND_DIR
+from .settings import BACKEND_DIR, settings
 
-# Per-tool config files live here; created on import so the first PUT can write.
-CONFIG_DIR = BACKEND_DIR / "config"
+# Per-tool config files live on the PERSISTENT artifact disk — the backend
+# package dir is ephemeral in the cloud, so admin settings saved there died on
+# every deploy. Legacy files are migrated once (covers local dev).
+CONFIG_DIR = settings.ARTIFACT_ROOT / "config"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+_LEGACY_CONFIG_DIR = BACKEND_DIR / "config"
+if _LEGACY_CONFIG_DIR.is_dir():
+    for _f in _LEGACY_CONFIG_DIR.glob("*.json"):
+        try:
+            if not (CONFIG_DIR / _f.name).exists():
+                (CONFIG_DIR / _f.name).write_text(_f.read_text(encoding="utf-8"), encoding="utf-8")
+        except OSError:
+            pass
 
 
 # --- In-code defaults --------------------------------------------------------

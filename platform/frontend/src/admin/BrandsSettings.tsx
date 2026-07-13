@@ -3,7 +3,7 @@ import { AlertCircle, Check, Loader2, Pencil, Plus, RefreshCw, Trash2, Upload, X
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
-import { brandLogoUri, useIsDark } from '@/lib/brandLogo'
+import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
 import { cn } from '@/lib/utils'
 import {
   createBrand,
@@ -23,6 +23,7 @@ interface BrandDraft {
   name: string
   colors: string[]
   logo_svg: string | null
+  logo_svg_dark: string | null
   font: string
   accent: string | null
   voice: string
@@ -32,6 +33,7 @@ const EMPTY_DRAFT: BrandDraft = {
   name: '',
   colors: [],
   logo_svg: null,
+  logo_svg_dark: null,
   font: '',
   accent: null,
   voice: '',
@@ -130,6 +132,7 @@ export function BrandsSettings() {
                   name: brand.name,
                   colors: brand.colors ?? [],
                   logo_svg: brand.logo_svg ?? null,
+                  logo_svg_dark: brand.logo_svg_dark ?? null,
                   font: brand.font ?? '',
                   accent: brand.accent ?? null,
                   voice: brand.voice ?? '',
@@ -169,9 +172,10 @@ function BrandEditor({
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const darkFileRef = useRef<HTMLInputElement>(null)
   const patch = (p: Partial<BrandDraft>) => setD((cur) => ({ ...cur, ...p }))
 
-  function onLogoFile(file: File | undefined) {
+  function onLogoFile(file: File | undefined, field: 'logo_svg' | 'logo_svg_dark' = 'logo_svg') {
     if (!file) return
     if (file.size > MAX_LOGO_BYTES) {
       setErr('That logo is too large — please use one under ~1.2 MB.')
@@ -179,7 +183,7 @@ function BrandEditor({
     }
     setErr(null)
     const reader = new FileReader()
-    reader.onload = () => patch({ logo_svg: String(reader.result || '') || null })
+    reader.onload = () => patch({ [field]: String(reader.result || '') || null })
     if (file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')) {
       reader.readAsText(file) // inline SVG markup — backend rasterizes it
     } else {
@@ -196,6 +200,7 @@ function BrandEditor({
       name: d.name.trim(),
       colors: d.colors,
       logo_svg: d.logo_svg,
+      logo_svg_dark: d.logo_svg_dark,
       font: d.font.trim() || null,
       accent: d.accent || null,
       voice: d.voice.trim() || null,
@@ -279,7 +284,7 @@ function BrandEditor({
           </div>
         </Field>
 
-        <Field label="Logo" hint="SVG, PNG, JPG or WebP. SVGs are rasterized for the overlay.">
+        <Field label="Logo (light theme)" hint="SVG, PNG, JPG or WebP. SVGs are rasterized for the overlay.">
           <div className="flex items-center gap-3">
             <LogoPreview svg={d.logo_svg} className="h-16 w-16 shrink-0" />
             <div className="flex flex-col gap-1.5">
@@ -301,6 +306,37 @@ function BrandEditor({
                   onClick={() => patch({ logo_svg: null })}
                 >
                   <X className="h-4 w-4" /> Remove logo
+                </Button>
+              )}
+            </div>
+          </div>
+        </Field>
+
+        <Field
+          label="Logo (dark theme, optional)"
+          hint="Shown wherever the app renders the logo on dark surfaces. Without one, dark letters are auto-recolored to white."
+        >
+          <div className="flex items-center gap-3">
+            <LogoPreview svg={d.logo_svg_dark} svgDark={d.logo_svg_dark} className="h-16 w-16 shrink-0 !bg-slate-900" />
+            <div className="flex flex-col gap-1.5">
+              <input
+                ref={darkFileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg"
+                className="hidden"
+                onChange={(e) => onLogoFile(e.target.files?.[0], 'logo_svg_dark')}
+              />
+              <Button size="sm" variant="outline" onClick={() => darkFileRef.current?.click()}>
+                <Upload className="h-4 w-4" /> {d.logo_svg_dark ? 'Replace dark logo' : 'Upload dark logo'}
+              </Button>
+              {d.logo_svg_dark && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => patch({ logo_svg_dark: null })}
+                >
+                  <X className="h-4 w-4" /> Remove dark logo
                 </Button>
               )}
             </div>
@@ -393,7 +429,7 @@ function BrandCard({
   return (
     <div className="rounded-xl border border-border bg-background p-4 shadow-sm">
       <div className="flex items-start gap-4">
-        <LogoPreview svg={brand.logo_svg} className="h-20 w-20 shrink-0" />
+        <LogoPreview svg={brand.logo_svg} svgDark={brand.logo_svg_dark} className="h-20 w-20 shrink-0" />
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -479,10 +515,18 @@ function BrandCard({
 }
 
 /** Preview a brand logo — handles a data: URI (raster) or inline SVG markup. */
-function LogoPreview({ svg, className }: { svg: string | null; className?: string }) {
-  // Dark letter fills swap to white in dark mode so wordmarks stay readable.
+function LogoPreview({
+  svg,
+  svgDark,
+  className,
+}: {
+  svg: string | null
+  /** Explicit dark-theme variant; without it dark letters are recolored. */
+  svgDark?: string | null
+  className?: string
+}) {
   const dark = useIsDark()
-  const src = svg ? brandLogoUri(svg, dark) || null : null
+  const src = brandLogoSrc({ logo_svg: svg, logo_svg_dark: svgDark }, dark) || null
   return (
     <div
       className={cn(

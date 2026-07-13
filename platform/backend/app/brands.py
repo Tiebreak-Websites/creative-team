@@ -41,11 +41,21 @@ from fastapi.responses import Response
 from .auth import require_admin, require_user
 from .settings import BACKEND_DIR
 
-# Reuse the same config dir tool_config writes to, so all editable state lives
-# in one place; created on import so the first POST can write.
-BRANDS_DIR = BACKEND_DIR / "config"
+# Admin-created brands must SURVIVE deploys: the backend package dir is
+# ephemeral in the cloud (each deploy ships a fresh image), so the store lives
+# on the persistent artifact disk. Anything saved at the old ephemeral path is
+# migrated once (covers local dev; on prod the old file died with each deploy).
+from .settings import settings as _settings  # noqa: E402
+
+BRANDS_DIR = _settings.ARTIFACT_ROOT / "config"
 BRANDS_DIR.mkdir(parents=True, exist_ok=True)
 BRANDS_PATH = BRANDS_DIR / "brands.json"
+_LEGACY_BRANDS_PATH = BACKEND_DIR / "config" / "brands.json"
+if _LEGACY_BRANDS_PATH.exists() and not BRANDS_PATH.exists():
+    try:
+        BRANDS_PATH.write_text(_LEGACY_BRANDS_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    except OSError:
+        pass
 
 _HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 _MAX_COLORS = 12
@@ -81,6 +91,8 @@ BUILTIN_BRANDS: List[dict] = [
         ],
         # The ORIGINAL full logo (wordmark + waves); older marks kept as files.
         "logo_svg": _asset("braintrade", "bt-original.svg") or _asset("braintrade", "bt2-l.svg"),
+        # White-lettered variant served wherever the app shows the logo on dark.
+        "logo_svg_dark": _asset("braintrade", "Braintrade_logo_white_text.svg"),
         # Landing-page design tokens the LP Builder reads on brand pick.
         "lp": {"bg": "#FBFBFB", "card": "#FFFFFF"},
         "builtin": True,
@@ -191,6 +203,7 @@ def _public(brand: dict) -> dict:
         "name": brand.get("name", ""),
         "colors": brand.get("colors", []) or [],
         "logo_svg": brand.get("logo_svg"),
+        "logo_svg_dark": brand.get("logo_svg_dark"),
         # Brand-kit hints (all optional) folded into the art direction at run time.
         "font": brand.get("font"),
         "accent": brand.get("accent"),
@@ -231,6 +244,7 @@ def build_brands_router() -> APIRouter:
             "name": name,
             "colors": _clean_colors(payload.get("colors")),
             "logo_svg": _clean_logo(payload.get("logo_svg")),
+            "logo_svg_dark": _clean_logo(payload.get("logo_svg_dark")),
             "font": _clean_text(payload.get("font")),
             "accent": _clean_accent(payload.get("accent")),
             "voice": _clean_text(payload.get("voice"), limit=300),
@@ -248,6 +262,8 @@ def build_brands_router() -> APIRouter:
             b["colors"] = _clean_colors(payload.get("colors"))
         if "logo_svg" in payload:
             b["logo_svg"] = _clean_logo(payload.get("logo_svg"))
+        if "logo_svg_dark" in payload:
+            b["logo_svg_dark"] = _clean_logo(payload.get("logo_svg_dark"))
         if "font" in payload:
             b["font"] = _clean_text(payload.get("font"))
         if "accent" in payload:

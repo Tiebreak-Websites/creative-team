@@ -16,7 +16,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { brandLogoUri, useIsDark } from '@/lib/brandLogo'
+import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, formatUserName } from '@/lib/utils'
@@ -203,7 +203,7 @@ function Dashboard({
             {folder !== null ? (
               <div className="flex items-center gap-2.5">
                 {folderBrand?.logo_svg && (
-                  <img src={brandLogoUri(folderBrand.logo_svg, dark)} alt="" className="h-7 max-w-32 object-contain" />
+                  <img src={brandLogoSrc(folderBrand, dark)} alt="" className="h-7 max-w-32 object-contain" />
                 )}
                 <h1 className="truncate font-display text-2xl font-bold tracking-tight">
                   {folderBrand?.name ?? 'Other'}
@@ -268,7 +268,7 @@ function Dashboard({
               >
                 <div className="flex h-24 items-center justify-center gap-3 bg-gradient-to-br from-primary/10 via-secondary to-secondary">
                   {f.brand?.logo_svg ? (
-                    <img src={brandLogoUri(f.brand.logo_svg, dark)} alt="" className="h-9 max-w-40 object-contain" />
+                    <img src={brandLogoSrc(f.brand, dark)} alt="" className="h-9 max-w-40 object-contain" />
                   ) : (
                     <FolderOpen className="h-8 w-8 text-primary/50" />
                   )}

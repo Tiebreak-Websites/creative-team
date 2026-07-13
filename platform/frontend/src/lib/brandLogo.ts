@@ -29,3 +29,14 @@ export function brandLogoUri(svg?: string | null, dark?: boolean): string {
   if (dark) raw = raw.replace(DARK_LETTER_FILLS, '#FFFFFF')
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(raw)
 }
+
+/** The right logo for the current theme: an explicit dark-theme logo wins;
+ * otherwise the light logo gets its letters recolored as a fallback. */
+export function brandLogoSrc(
+  brand: { logo_svg?: string | null; logo_svg_dark?: string | null } | null | undefined,
+  dark: boolean,
+): string {
+  if (!brand) return ''
+  if (dark && brand.logo_svg_dark) return brandLogoUri(brand.logo_svg_dark, false)
+  return brandLogoUri(brand.logo_svg, dark)
+}

@@ -19,6 +19,9 @@ export interface Brand {
   name: string
   colors: string[]
   logo_svg: string | null
+  /** Optional dark-theme logo variant (white lettering) — shown wherever the
+   * app renders the logo on dark surfaces. */
+  logo_svg_dark?: string | null
   /** Typography hint folded into the art direction (e.g. "Inter / geometric sans"). */
   font?: string | null
   /** Preferred CTA / accent hex hint (the director still ensures contrast). */
@@ -39,6 +42,7 @@ export interface BrandInput {
   name: string
   colors: string[]
   logo_svg: string | null
+  logo_svg_dark?: string | null
   font?: string | null
   accent?: string | null
   voice?: string | null

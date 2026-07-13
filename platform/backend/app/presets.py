@@ -37,9 +37,11 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import Response
 
 from .auth import require_user
-from .settings import BACKEND_DIR
+from .settings import settings
 
-PRESETS_DIR = BACKEND_DIR / "config"
+# Persistent artifact disk — the backend package dir is ephemeral in the cloud
+# (tool_config.py migrates every legacy *.json from the old dir, incl. this).
+PRESETS_DIR = settings.ARTIFACT_ROOT / "config"
 PRESETS_DIR.mkdir(parents=True, exist_ok=True)
 PRESETS_PATH = PRESETS_DIR / "presets.json"
 

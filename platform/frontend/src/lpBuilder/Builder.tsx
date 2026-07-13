@@ -24,7 +24,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { brandLogoUri, useIsDark } from '@/lib/brandLogo'
+import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
 import { cn } from '@/lib/utils'
 import { listBrands, type Brand } from '../bannerBuilder/brandsApi'
 import { listCampaigns, listJobs, type CampaignInfo } from '../lpMaterials/api'
@@ -520,8 +520,8 @@ export function Builder({
           setOpen={setBrandOpen}
           title={`Brand: ${brands.find((b) => b.id === project.brand_id)?.name ?? 'none'} — click to switch`}
           trigger={
-            brandLogoUri(brands.find((b) => b.id === project.brand_id)?.logo_svg, dark) ? (
-              <img src={brandLogoUri(brands.find((b) => b.id === project.brand_id)?.logo_svg, dark)} alt="" className="h-5 max-w-24 object-contain" />
+            brandLogoSrc(brands.find((b) => b.id === project.brand_id), dark) ? (
+              <img src={brandLogoSrc(brands.find((b) => b.id === project.brand_id), dark)} alt="" className="h-5 max-w-24 object-contain" />
             ) : (
               <span className="text-xs font-medium text-muted-foreground">
                 {brands.find((b) => b.id === project.brand_id)?.name ?? 'Brand'}
@@ -542,8 +542,8 @@ export function Builder({
                 (b?.id ?? '') === project.brand_id && 'bg-primary/10 font-semibold',
               )}
             >
-              {b && brandLogoUri(b.logo_svg, dark) ? (
-                <img src={brandLogoUri(b.logo_svg, dark)} alt="" className="h-4 w-14 shrink-0 object-contain object-left" />
+              {b && brandLogoSrc(b, dark) ? (
+                <img src={brandLogoSrc(b, dark)} alt="" className="h-4 w-14 shrink-0 object-contain object-left" />
               ) : (
                 <span className="inline-block h-4 w-14 shrink-0 rounded bg-secondary" />
               )}
@@ -839,8 +839,8 @@ function AddTab({
         <div key={cat}>
           {brand ? (
             <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-2 py-1.5">
-              {brandLogoUri(brand.logo_svg, dark) ? (
-                <img src={brandLogoUri(brand.logo_svg, dark)} alt="" className="h-4 max-w-20 object-contain object-left" />
+              {brandLogoSrc(brand, dark) ? (
+                <img src={brandLogoSrc(brand, dark)} alt="" className="h-4 max-w-20 object-contain object-left" />
               ) : null}
               <span className="truncate text-[11px] font-semibold">{brand.name}</span>
               <span className="ml-auto text-[9px] uppercase tracking-wide text-muted-foreground">template</span>
