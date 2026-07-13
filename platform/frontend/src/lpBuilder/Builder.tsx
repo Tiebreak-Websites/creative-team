@@ -154,6 +154,8 @@ export function Builder({
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+  const canvasLoadedRef = useRef(false)
+  const canvasModeRef = useRef<'editor' | 'preview'>('editor')
   const [scale, setScale] = useState(0.5)
   const structuralRef = useRef(0)
   const [structural, setStructural] = useState(0)
@@ -262,13 +264,28 @@ export function Builder({
   )
 
   // ---- compose the canvas ----------------------------------------------------
+  // First load (and every editor<->preview switch) sets srcdoc — a full
+  // document load. Every edit AFTER that is applied IN PLACE via the runtime's
+  // 'update' morph, so the canvas never reloads, never jumps to the top and
+  // never flashes while you work.
   useEffect(() => {
     if (!project) return
     let alive = true
     const t = window.setTimeout(() => {
-      composePage(project, preview ? 'preview' : 'editor')
+      const mode = preview ? 'preview' : 'editor'
+      composePage(project, mode)
         .then((html) => {
-          if (alive) setSrcdoc(html)
+          if (!alive) return
+          const canMorph =
+            mode === 'editor' && canvasModeRef.current === 'editor' && canvasLoadedRef.current &&
+            !!iframeRef.current?.contentWindow
+          if (canMorph) {
+            iframeRef.current!.contentWindow!.postMessage({ type: 'update', html }, '*')
+          } else {
+            canvasModeRef.current = mode
+            canvasLoadedRef.current = false
+            setSrcdoc(html)
+          }
         })
         .catch((e) => onError(e.message))
     }, 220)
@@ -305,7 +322,14 @@ export function Builder({
       const m = e.data
       if (!m || m.lp !== 1) return
       if (m.type === 'ready') {
+        canvasLoadedRef.current = true
         iframeRef.current?.contentWindow?.postMessage({ type: 'scrollTo', y: lastScrollRef.current }, '*')
+        if (selection) {
+          iframeRef.current?.contentWindow?.postMessage(
+            { type: 'highlight', iid: selection.iid, key: selection.fields[0]?.key ?? null }, '*')
+        }
+      } else if (m.type === 'updated') {
+        // in-place morph finished — restore the selection outline, nothing else
         if (selection) {
           iframeRef.current?.contentWindow?.postMessage(
             { type: 'highlight', iid: selection.iid, key: selection.fields[0]?.key ?? null }, '*')

@@ -40,13 +40,17 @@ img{max-width:100%}
 
 SCRIPT_JS = """// Internovus Creative Builder - LP runtime (dependency-free)
 (function () {
+  // Idempotent bind, re-runnable after the builder morphs the DOM in place.
+  function bind() {
   // FAQ accordion
   document.querySelectorAll('[data-lp-acc]').forEach(function (item) {
+    if (item.__lpAcc) return; item.__lpAcc = true;
     var q = item.querySelector('.faq-q');
     if (q) q.addEventListener('click', function () { item.classList.toggle('open'); });
   });
   // Signup forms
   document.querySelectorAll('form[data-lp-form]').forEach(function (form) {
+    if (form.__lpForm) return; form.__lpForm = true;
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       if (!form.reportValidity()) return;
@@ -74,6 +78,9 @@ SCRIPT_JS = """// Internovus Creative Builder - LP runtime (dependency-free)
         .catch(function () { done(false); });
     });
   });
+  }
+  window.__lpBind = bind;
+  bind();
 })();
 """
 
@@ -210,8 +217,30 @@ EDITOR_JS = """(function(){
     if (m.type === 'highlight') { var el = m.key
         ? document.querySelector('[data-iid="'+m.iid+'"] [data-lp-text="'+m.key+'"],[data-iid="'+m.iid+'"] [data-lp-rich="'+m.key+'"],[data-iid="'+m.iid+'"] [data-lp-img="'+m.key+'"],[data-iid="'+m.iid+'"] [data-lp-link="'+m.key+'"]')
         : document.querySelector('section[data-iid="'+m.iid+'"]');
-      clearSel(); if (el) { el.classList.add('lp-ed-selected'); selected = el; } }
+      clearSel(); if (el) { el.classList.add('lp-ed-selected'); selected = el; placeToolbar(el.closest('section[data-iid]')); } }
     if (m.type === 'deselect') clearSel();
+    // IN-PLACE morph: swap the page content + styles WITHOUT reloading the
+    // document — scroll position, image cache and focus all survive, so the
+    // canvas never jumps to the top while editing.
+    if (m.type === 'update' && m.html) {
+      var doc = new DOMParser().parseFromString(m.html, 'text/html');
+      var ncss = doc.querySelector('#lp-main-css');
+      var ocss = document.querySelector('#lp-main-css');
+      if (ncss && ocss) ocss.textContent = ncss.textContent;
+      selected = null;
+      var frag = document.createDocumentFragment();
+      Array.prototype.slice.call(doc.body.children).forEach(function(n){
+        if (n.tagName === 'SCRIPT' || n.id === 'lp-drop-line' || n.id === 'lp-sec-toolbar') return;
+        frag.appendChild(document.importNode(n, true));
+      });
+      document.body.innerHTML = '';
+      document.body.appendChild(frag);
+      document.body.appendChild(line);
+      document.body.appendChild(tb);
+      tb.style.display = 'none';
+      if (window.__lpBind) { try { window.__lpBind(); } catch(err){} }
+      post({type:'updated'});
+    }
   });
   post({type:'ready'});
 })();
@@ -427,7 +456,7 @@ def compose_page(project: dict, sections_map: Dict[str, dict], mode: str,
     title = _esc(project.get("meta_title") or project.get("name") or "Landing page")
     desc = _esc(project.get("meta_description") or "")
     style_or_link = (f'<link rel="stylesheet" href="{css_href}">' if css_href
-                     else f"<style>{css}</style>")
+                     else f'<style id="lp-main-css">{css}</style>')
     # NO inline <script> anywhere the builder renders this document: the app's
     # production CSP (script-src 'self') is inherited by srcdoc iframes and
     # silently kills inline JS. In-app canvas/preview reference same-origin
