@@ -591,7 +591,7 @@ export function Builder({
         <select
           value={project.campaign_id}
           onChange={(e) => mutate((p) => ({ ...p, campaign_id: e.target.value }), { structural: false })}
-          className="h-8 w-28 shrink rounded-md border border-input bg-transparent px-1.5 text-xs lg:w-36"
+          className="h-8 w-44 min-w-28 max-w-64 flex-1 rounded-md border border-input bg-transparent px-1.5 text-xs"
           aria-label="Campaign"
           title="Attach an LP Materials campaign — its assets appear in the Assets tab"
         >
