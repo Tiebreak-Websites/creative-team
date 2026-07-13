@@ -4,6 +4,7 @@ import {
   Check,
   Copy,
   Download,
+  ExternalLink,
   Eye,
   EyeOff,
   GripVertical,
@@ -54,8 +55,9 @@ let iidCounter = 0
 const newIid = () => `i${Date.now().toString(36)}${(++iidCounter).toString(36)}`
 
 const CATEGORY_LABEL: Record<string, string> = {
-  braintrade: 'BrainTrade template', hero: 'Hero', content: 'Content',
-  'social-proof': 'Social proof', conversion: 'Conversion', legal: 'Legal & footer',
+  braintrade: 'BrainTrade template', elements: 'Elements', hero: 'Hero',
+  content: 'Content', 'social-proof': 'Social proof', conversion: 'Conversion',
+  legal: 'Legal & footer',
 }
 
 // Windows Chromium renders emoji flags as bare letters, so use tiny PNGs
@@ -646,6 +648,20 @@ export function Builder({
           title="Toggle preview (exactly the exported page)"
         >
           <Eye className="h-4 w-4" /> Preview
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            // flush any pending edits, then open the WORKING site in a new tab
+            saveProject(project)
+              .catch(() => {})
+              .finally(() =>
+                window.open(`/api/tools/lp-builder/projects/${project.id}/preview.html`, '_blank'))
+          }}
+          title="Open the working website in a new browser tab"
+        >
+          <ExternalLink className="h-4 w-4" /> Open
         </Button>
         <Button
           size="sm"
@@ -1326,6 +1342,18 @@ function PageSettings({
                  onChange={(e) => set({ tokens: { ...project.tokens, accent: e.target.value } })}
                  className="h-7 w-9 cursor-pointer rounded border border-input p-0.5" aria-label="Accent color" />
           <span className="text-[10px] text-muted-foreground">primary · accent</span>
+        </span>
+      </label>
+      <label className="block">
+        <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Website background · card fill</span>
+        <span className="flex items-center gap-1.5">
+          <input type="color" value={project.tokens.bg ?? '#FFFFFF'}
+                 onChange={(e) => set({ tokens: { ...project.tokens, bg: e.target.value } })}
+                 className="h-7 w-9 cursor-pointer rounded border border-input p-0.5" aria-label="Website background color" />
+          <input type="color" value={project.tokens.card ?? '#FFFFFF'}
+                 onChange={(e) => set({ tokens: { ...project.tokens, card: e.target.value } })}
+                 className="h-7 w-9 cursor-pointer rounded border border-input p-0.5" aria-label="Card fill color" />
+          <span className="text-[10px] text-muted-foreground">background · cards</span>
         </span>
       </label>
       <label className="block">

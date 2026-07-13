@@ -91,7 +91,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         resp.headers["X-Robots-Tag"] = "noindex, nofollow"
-        resp.headers["Content-Security-Policy"] = _CSP
+        # A route may set its own (still restrictive) CSP — e.g. the LP Builder's
+        # browser preview page needs form-action/connect beyond 'self'. Only
+        # stamp the global policy when the route didn't.
+        if "Content-Security-Policy" not in resp.headers:
+            resp.headers["Content-Security-Policy"] = _CSP
         return resp
 
 

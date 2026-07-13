@@ -79,11 +79,26 @@ BUILTIN_BRANDS: List[dict] = [
             {"hex": "#070851", "role": "Background"},
             {"hex": "#F1F5F1", "role": "Warm white"},
         ],
-        "logo_svg": _asset("braintrade", "bt2-l.svg"),
+        # The ORIGINAL full logo (wordmark + waves); older marks kept as files.
+        "logo_svg": _asset("braintrade", "bt-original.svg") or _asset("braintrade", "bt2-l.svg"),
+        # Landing-page design tokens the LP Builder reads on brand pick.
+        "lp": {"bg": "#FBFBFB", "card": "#FFFFFF"},
         "builtin": True,
     },
 ]
 _BUILTIN_IDS = {b["id"] for b in BUILTIN_BRANDS}
+
+
+def _merged_builtin(base: dict, stored: List[dict]) -> dict:
+    """A built-in brand with any admin-saved override applied on top. The
+    override lives in brands.json under the SAME id; `builtin` stays True so
+    the UI badges it and DELETE means 'reset to defaults'."""
+    override = next((b for b in stored if b.get("id") == base["id"]), None)
+    if not override:
+        return base
+    merged = {**base, **{k: v for k, v in override.items() if k != "builtin"}}
+    merged["builtin"] = True
+    return merged
 
 
 # --- Storage ----------------------------------------------------------------
@@ -104,19 +119,22 @@ def _save(brands: List[dict]) -> None:
 
 
 def list_brands() -> List[dict]:
-    """Built-in brands first, then any admin-stored brands (deduped by id)."""
-    stored = [b for b in _load() if b.get("id") not in _BUILTIN_IDS]
-    return [*BUILTIN_BRANDS, *stored]
+    """Built-in brands (with admin overrides applied) first, then stored ones."""
+    stored = _load()
+    builtins = [_merged_builtin(b, stored) for b in BUILTIN_BRANDS]
+    rest = [b for b in stored if b.get("id") not in _BUILTIN_IDS]
+    return [*builtins, *rest]
 
 
 def get_brand(brand_id: str) -> Optional[dict]:
-    """One brand by id (built-in or stored), or None."""
+    """One brand by id (built-in incl. overrides, or stored), or None."""
     if not brand_id:
         return None
+    stored = _load()
     for b in BUILTIN_BRANDS:
         if b.get("id") == brand_id:
-            return b
-    for b in _load():
+            return _merged_builtin(b, stored)
+    for b in stored:
         if b.get("id") == brand_id:
             return b
     return None
@@ -182,6 +200,9 @@ def _public(brand: dict) -> dict:
     # Built-ins may annotate each colour with a human role (CTA / Background / …).
     if brand.get("swatches"):
         out["swatches"] = brand["swatches"]
+    # Landing-page token hints (website background / card fill) for the LP Builder.
+    if brand.get("lp"):
+        out["lp"] = brand["lp"]
     return out
 
 
@@ -219,36 +240,60 @@ def build_brands_router() -> APIRouter:
         _save(brands)
         return {"brand": _public(brand)}
 
+    def _apply_patch(b: dict, payload: dict) -> None:
+        """Partial update: only the keys present in the body change."""
+        if "name" in payload:
+            b["name"] = _validate_name(payload.get("name"))
+        if "colors" in payload:
+            b["colors"] = _clean_colors(payload.get("colors"))
+        if "logo_svg" in payload:
+            b["logo_svg"] = _clean_logo(payload.get("logo_svg"))
+        if "font" in payload:
+            b["font"] = _clean_text(payload.get("font"))
+        if "accent" in payload:
+            b["accent"] = _clean_accent(payload.get("accent"))
+        if "voice" in payload:
+            b["voice"] = _clean_text(payload.get("voice"), limit=300)
+        if "lp" in payload and isinstance(payload.get("lp"), dict):
+            lp = {k: v.strip().upper() for k, v in payload["lp"].items()
+                  if k in ("bg", "card") and isinstance(v, str) and _HEX_RE.match(v.strip())}
+            b["lp"] = lp or None
+
     @router.put("/brands/{brand_id}")
     def update_brand(brand_id: str, payload: dict = Body(default={}),
                      _admin: dict = Depends(require_admin)):
-        if brand_id in _BUILTIN_IDS:
-            raise HTTPException(status_code=403, detail="Built-in brands can't be edited.")
         brands = _load()
+        # Built-ins are editable too: the edit is stored as an OVERRIDE record
+        # under the same id (the code defaults stay as the fallback; deleting
+        # the brand later resets it to those defaults).
+        if brand_id in _BUILTIN_IDS:
+            override = next((b for b in brands if b.get("id") == brand_id), None)
+            if override is None:
+                base = next(b for b in BUILTIN_BRANDS if b["id"] == brand_id)
+                override = {k: v for k, v in base.items() if k != "builtin"}
+                brands.append(override)
+            _apply_patch(override, payload)
+            _save(brands)
+            return {"brand": _public(_merged_builtin(
+                next(b for b in BUILTIN_BRANDS if b["id"] == brand_id), brands))}
         for b in brands:
             if b.get("id") == brand_id:
-                # Partial update: only the keys present in the body change.
-                if "name" in payload:
-                    b["name"] = _validate_name(payload.get("name"))
-                if "colors" in payload:
-                    b["colors"] = _clean_colors(payload.get("colors"))
-                if "logo_svg" in payload:
-                    b["logo_svg"] = _clean_logo(payload.get("logo_svg"))
-                if "font" in payload:
-                    b["font"] = _clean_text(payload.get("font"))
-                if "accent" in payload:
-                    b["accent"] = _clean_accent(payload.get("accent"))
-                if "voice" in payload:
-                    b["voice"] = _clean_text(payload.get("voice"), limit=300)
+                _apply_patch(b, payload)
                 _save(brands)
                 return {"brand": _public(b)}
         raise HTTPException(status_code=404, detail="brand not found")
 
     @router.delete("/brands/{brand_id}", status_code=204)
     def delete_brand(brand_id: str, _admin: dict = Depends(require_admin)):
-        if brand_id in _BUILTIN_IDS:
-            raise HTTPException(status_code=403, detail="Built-in brands can't be deleted.")
         brands = _load()
+        if brand_id in _BUILTIN_IDS:
+            # For a built-in, delete = RESET to the shipped defaults.
+            kept = [b for b in brands if b.get("id") != brand_id]
+            if len(kept) == len(brands):
+                raise HTTPException(status_code=409,
+                                    detail="Built-in brands can't be deleted — and this one has no edits to reset.")
+            _save(kept)
+            return Response(status_code=204)
         kept = [b for b in brands if b.get("id") != brand_id]
         if len(kept) == len(brands):
             raise HTTPException(status_code=404, detail="brand not found")

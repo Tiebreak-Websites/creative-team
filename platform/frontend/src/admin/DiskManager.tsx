@@ -293,12 +293,15 @@ export function DiskManager() {
         </Button>
       </div>
 
-      {/* Storage summary */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* Two columns: a NARROW vertical metrics rail on the left, the banner
+          content on the right (the metrics deliberately give up width). */}
+      <div className="flex items-start gap-5">
+      <div className="sticky top-4 w-52 shrink-0 space-y-3">
         <Stat
           icon={<HardDrive className="h-4 w-4" />}
           label="Disk used"
           value={storage ? `${human(storage.used_bytes)} / ${human(storage.total_bytes)}` : '—'}
+          big
         >
           {storage && storage.total_bytes > 0 && (
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
@@ -310,15 +313,18 @@ export function DiskManager() {
           icon={<HardDrive className="h-4 w-4" />}
           label="Disk free"
           value={storage ? human(storage.free_bytes) : '—'}
+          big
         />
-        <Stat icon={<Layers className="h-4 w-4" />} label="Batches" value={String(rows.length)} />
+        <Stat icon={<Layers className="h-4 w-4" />} label="Batches" value={String(rows.length)} big />
         <Stat
           icon={<ImageIcon className="h-4 w-4" />}
           label="Banners"
           value={`${totalBanners} · ${human(totalBytes)}`}
+          big
         />
       </div>
 
+      <div className="min-w-0 flex-1 space-y-5">
       {/* Notices */}
       {notice && (
         <div className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
@@ -446,6 +452,8 @@ export function DiskManager() {
           ))}
         </div>
       )}
+      </div>
+      </div>
 
       {/* Confirm modal */}
       <Modal
@@ -496,19 +504,23 @@ function Stat({
   label,
   value,
   children,
+  big,
 }: {
   icon: ReactNode
   label: string
   value: string
   children?: ReactNode
+  /** Larger value text for the vertical metrics rail. */
+  big?: boolean
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-3">
+    <div className={cn('rounded-xl border border-border bg-card', big ? 'p-4' : 'p-3')}>
       <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         <span className="text-muted-foreground">{icon}</span>
         {label}
       </div>
-      <div className="mt-1 font-display text-sm font-semibold tabular-nums text-foreground">
+      <div className={cn('mt-1 font-display font-semibold tabular-nums text-foreground',
+                         big ? 'text-lg leading-tight' : 'text-sm')}>
         {value}
       </div>
       {children}

@@ -123,19 +123,16 @@ export function BrandsSettings() {
             <BrandCard
               key={brand.id}
               brand={brand}
-              onEdit={
-                brand.builtin
-                  ? undefined
-                  : () =>
-                      setEditing({
-                        id: brand.id,
-                        name: brand.name,
-                        colors: brand.colors ?? [],
-                        logo_svg: brand.logo_svg ?? null,
-                        font: brand.font ?? '',
-                        accent: brand.accent ?? null,
-                        voice: brand.voice ?? '',
-                      })
+              onEdit={() =>
+                setEditing({
+                  id: brand.id,
+                  name: brand.name,
+                  colors: brand.colors ?? [],
+                  logo_svg: brand.logo_svg ?? null,
+                  font: brand.font ?? '',
+                  accent: brand.accent ?? null,
+                  voice: brand.voice ?? '',
+                })
               }
               onDelete={brand.builtin ? undefined : () => void handleDelete(brand)}
             />

@@ -399,6 +399,27 @@ def build_lp_builder_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="not found")
         return FileResponse(str(p), media_type="image/png")
 
+    # ---- browser preview --------------------------------------------------------
+    @router.get("/projects/{pid}/preview.html")
+    def preview_html(pid: str, _user: dict = Depends(require_user)):
+        """The WORKING website in a real browser tab — same compositor as the
+        canvas/export, served as a normal navigable page. Carries its own CSP:
+        scripts stay same-origin, but the signup form may POST / fetch to the
+        configured external action URL."""
+        p = core.projects().get(pid)
+        if p is None:
+            raise HTTPException(status_code=404, detail="landing page not found")
+        with core.lock():
+            smap = dict(core.sections())
+        out = export.compose_page(p, smap, mode="preview", resolve_img=export.serve_url_for)
+        csp = ("default-src 'self'; img-src 'self' data: blob: https:; "
+               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+               "font-src 'self' https://fonts.gstatic.com data:; "
+               "script-src 'self'; connect-src 'self' https:; form-action 'self' https:; "
+               "frame-ancestors 'none'; base-uri 'self'; object-src 'none'")
+        return Response(content=out["html"], media_type="text/html",
+                        headers={"Content-Security-Policy": csp, "Cache-Control": "no-store"})
+
     # ---- export ----------------------------------------------------------------
     @router.get("/projects/{pid}/export.zip")
     def export_zip(pid: str, _user: dict = Depends(require_user)):

@@ -210,11 +210,14 @@ export async function downloadExportZip(p: Project): Promise<void> {
   URL.revokeObjectURL(a.href)
 }
 
-/** Map a brand from the brands store onto the LP design tokens. */
+/** Map a brand from the brands store onto the LP design tokens. Brands may
+ * carry explicit landing-page hints (`lp.bg` website background, `lp.card`
+ * card fill — e.g. BrainTrade ships #FBFBFB / #FFFFFF). */
 export function brandTokens(brand: {
   colors: string[]
   logo_svg?: string | null
   font?: string | null
+  lp?: { bg?: string; card?: string }
 }): Record<string, string> {
   const [c1, c2, c3] = brand.colors || []
   let logo = brand.logo_svg || ''
@@ -224,8 +227,9 @@ export function brandTokens(brand: {
   return {
     primary: c1 || '#E71E25',
     accent: c2 || '#0A0F2E',
-    bg: '#FFFFFF',
+    bg: brand.lp?.bg || '#FFFFFF',
     surface: c3 || '#F4F6FB',
+    card: brand.lp?.card || '#FFFFFF',
     text: '#0B1220',
     muted: '#5B6472',
     logo,

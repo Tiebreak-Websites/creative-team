@@ -25,10 +25,13 @@ export interface Brand {
   accent?: string | null
   /** Tone of voice folded into the art direction (e.g. "confident, concise"). */
   voice?: string | null
-  /** Built-in brands ship with the app: always present, not editable/deletable. */
+  /** Built-in brands ship with the app: always present; edits are stored as
+   * overrides (deleting a built-in resets it to the shipped defaults). */
   builtin?: boolean
   /** Optional role-annotated palette (built-ins) for the showcase card. */
   swatches?: BrandSwatch[]
+  /** Landing-page token hints (website background / card fill). */
+  lp?: { bg?: string; card?: string }
 }
 
 /** Fields accepted when creating a brand. */

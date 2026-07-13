@@ -423,3 +423,101 @@ BUILTIN_SECTIONS = [
  },
 },
 ]
+
+# ---------------------------------------------------------------------------
+# ELEMENTS — small reusable building blocks (title, text, button, cards, ...).
+# Brand-neutral: everything runs on the design tokens, so they match whatever
+# brand the page uses. Stacked like any section; combine freely.
+# ---------------------------------------------------------------------------
+ELEMENT_SECTIONS = [
+{
+ "key": "el-title", "name": "Title", "category": "elements", "position": 500,
+ "html": """<section class="lp-sec-el-title">
+ <div class="lp-wrap"><h2 class="elt-h" data-lp-text="text">Section title</h2></div>
+</section>""",
+ "css": """.lp-sec-el-title{background:var(--lp-bg);padding:28px 0 10px}
+.lp-sec-el-title .elt-h{color:var(--lp-accent);font-size:2.1rem;font-weight:800;margin:0}
+@media (max-width:575px){.lp-sec-el-title .elt-h{font-size:1.5rem}}""",
+ "texts": {"en": {"text": "Section title"}},
+},
+{
+ "key": "el-subtitle", "name": "Subtitle", "category": "elements", "position": 505,
+ "html": """<section class="lp-sec-el-subtitle">
+ <div class="lp-wrap"><p class="els-p" data-lp-text="text">A short supporting subtitle</p></div>
+</section>""",
+ "css": """.lp-sec-el-subtitle{background:var(--lp-bg);padding:6px 0}
+.lp-sec-el-subtitle .els-p{color:var(--lp-primary);font-size:1.1rem;font-weight:600;margin:0}""",
+ "texts": {"en": {"text": "A short supporting subtitle"}},
+},
+{
+ "key": "el-text", "name": "Text block", "category": "elements", "position": 510,
+ "html": """<section class="lp-sec-el-text">
+ <div class="lp-wrap"><p class="elx-p" data-lp-rich="text">Write anything here - paragraphs split on new lines and keep the page rhythm.</p></div>
+</section>""",
+ "css": """.lp-sec-el-text{background:var(--lp-bg);padding:10px 0}
+.lp-sec-el-text .elx-p{color:var(--lp-muted);line-height:1.7;margin:0;max-width:820px;white-space:pre-line}""",
+ "texts": {"en": {"text": "Write anything here - paragraphs split on new lines and keep the page rhythm."}},
+},
+{
+ "key": "el-button", "name": "Button", "category": "elements", "position": 515,
+ "html": """<section class="lp-sec-el-button">
+ <div class="lp-wrap elb-w"><a class="lp-btn" data-lp-link="href" data-lp-text="label" href="#signup">Call to action</a></div>
+</section>""",
+ "css": """.lp-sec-el-button{background:var(--lp-bg);padding:18px 0}
+.lp-sec-el-button .elb-w{text-align:center}""",
+ "texts": {"en": {"label": "Call to action"}},
+},
+{
+ "key": "el-image", "name": "Image", "category": "elements", "position": 520,
+ "html": """<section class="lp-sec-el-image">
+ <div class="lp-wrap"><img class="eli-img" data-lp-img="image" src="" alt=""></div>
+</section>""",
+ "css": """.lp-sec-el-image{background:var(--lp-bg);padding:18px 0}
+.lp-sec-el-image .eli-img{width:100%;border-radius:16px;display:block;object-fit:cover}""",
+ "texts": {"en": {}},
+},
+{
+ "key": "el-cards", "name": "Cards row", "category": "elements", "position": 525,
+ "html": """<section class="lp-sec-el-cards">
+ <div class="lp-wrap elc-grid">
+  <!--lp-repeat:cards--><div class="elc-card"><h3 class="elc-t" data-lp-text="title">Card title</h3><p class="elc-p" data-lp-rich="text">A short card description that supports the title above.</p></div><!--/lp-repeat:cards-->
+ </div>
+</section>""",
+ "css": """.lp-sec-el-cards{background:var(--lp-bg);padding:22px 0}
+.lp-sec-el-cards .elc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.lp-sec-el-cards .elc-card{background:var(--lp-card);border:1px solid rgba(0,0,0,.07);border-radius:14px;padding:20px}
+.lp-sec-el-cards .elc-t{color:var(--lp-accent);font-size:1.05rem;font-weight:700;margin:0 0 8px}
+.lp-sec-el-cards .elc-p{color:var(--lp-muted);font-size:.93rem;line-height:1.55;margin:0}
+@media (max-width:1199px){.lp-sec-el-cards .elc-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:575px){.lp-sec-el-cards .elc-grid{grid-template-columns:1fr}}""",
+ "texts": {"en": {"cards.0.title": "Card title", "cards.0.text": "A short card description that supports the title above.",
+                  "cards.1.title": "Second card", "cards.1.text": "Every card is editable - add or remove cards from the panel.",
+                  "cards.2.title": "Third card", "cards.2.text": "Cards fill with the brand card color automatically."}},
+},
+{
+ "key": "el-logo", "name": "Brand logo", "category": "elements", "position": 530,
+ "html": """<section class="lp-sec-el-logo">
+ <div class="lp-wrap ell-w"><img class="ell-img" data-lp-img="logo" src="" alt=""></div>
+</section>""",
+ "css": """.lp-sec-el-logo{background:var(--lp-bg);padding:18px 0}
+.lp-sec-el-logo .ell-w{display:flex;justify-content:center}
+.lp-sec-el-logo .ell-img{height:40px;object-fit:contain}""",
+ "texts": {"en": {}},
+ "assets": {"logo": "token:logo"},
+},
+{
+ "key": "el-spacer", "name": "Spacer", "category": "elements", "position": 535,
+ "html": """<section class="lp-sec-el-spacer"><div class="lp-wrap"></div></section>""",
+ "css": """.lp-sec-el-spacer{background:var(--lp-bg);padding:32px 0}""",
+ "texts": {"en": {}},
+},
+{
+ "key": "el-divider", "name": "Divider", "category": "elements", "position": 540,
+ "html": """<section class="lp-sec-el-divider"><div class="lp-wrap"><hr class="eld-hr"></div></section>""",
+ "css": """.lp-sec-el-divider{background:var(--lp-bg);padding:14px 0}
+.lp-sec-el-divider .eld-hr{border:0;border-top:1px solid rgba(0,0,0,.12);margin:0}""",
+ "texts": {"en": {}},
+},
+]
+
+BUILTIN_SECTIONS = BUILTIN_SECTIONS + ELEMENT_SECTIONS
