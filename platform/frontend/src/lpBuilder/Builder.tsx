@@ -511,7 +511,7 @@ export function Builder({
         <Input
           value={project.name}
           onChange={(e) => mutate((p) => ({ ...p, name: e.target.value }), { structural: false })}
-          className="h-8 w-36 min-w-0 font-display text-sm font-semibold lg:w-48"
+          className="h-8 w-56 min-w-32 max-w-md flex-1 font-display text-sm font-semibold"
           aria-label="Landing page name"
         />
         {/* Brand — shows the LOGO from the brands store (Settings ▸ Brands). */}
