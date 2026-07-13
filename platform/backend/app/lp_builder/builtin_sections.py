@@ -18,7 +18,7 @@ _COMMON_NOTE = "Shared layout helpers (.lp-wrap, .lp-btn) live in export.BASE_CS
 BUILTIN_SECTIONS = [
 # ---------------------------------------------------------------- 1. hero-image
 {
- "key": "hero-image", "name": "Hero — image", "category": "hero", "position": 10,
+ "key": "hero-image", "enabled": False, "name": "Hero — image", "category": "hero", "position": 10,
  "html": """<section class="lp-sec-hero-image">
  <div class="lp-wrap hi-grid">
   <div class="hi-copy">
@@ -51,7 +51,7 @@ BUILTIN_SECTIONS = [
 },
 # ----------------------------------------------------------------- 2. hero-form
 {
- "key": "hero-form", "name": "Hero — signup form", "category": "hero", "position": 20,
+ "key": "hero-form", "enabled": False, "name": "Hero — signup form", "category": "hero", "position": 20,
  "html": """<section class="lp-sec-hero-form">
  <div class="lp-wrap hf-grid">
   <div class="hf-copy">
@@ -115,7 +115,7 @@ BUILTIN_SECTIONS = [
 },
 # ------------------------------------------------------------------ 3. stats-bar
 {
- "key": "stats-bar", "name": "Stats bar", "category": "content", "position": 30,
+ "key": "stats-bar", "enabled": False, "name": "Stats bar", "category": "content", "position": 30,
  "html": """<section class="lp-sec-stats-bar">
  <div class="lp-wrap sb-row">
   <!--lp-repeat:stats--><div class="sb-item"><p class="sb-value" data-lp-text="value">24/7</p><p class="sb-label" data-lp-text="label">Market monitoring</p></div><!--/lp-repeat:stats-->
@@ -132,7 +132,7 @@ BUILTIN_SECTIONS = [
 },
 # -------------------------------------------------------------- 4. benefits-grid
 {
- "key": "benefits-grid", "name": "Benefits grid", "category": "content", "position": 40,
+ "key": "benefits-grid", "enabled": False, "name": "Benefits grid", "category": "content", "position": 40,
  "html": """<section class="lp-sec-benefits-grid">
  <div class="lp-wrap">
   <h2 class="bg-title" data-lp-text="title">Why people choose us</h2>
@@ -160,7 +160,7 @@ BUILTIN_SECTIONS = [
 },
 # --------------------------------------------------------------- 5. how-it-works
 {
- "key": "how-it-works", "name": "How it works", "category": "content", "position": 50,
+ "key": "how-it-works", "enabled": False, "name": "How it works", "category": "content", "position": 50,
  "html": """<section class="lp-sec-how-it-works">
  <div class="lp-wrap">
   <h2 class="hw-title" data-lp-text="title">How it works</h2>
@@ -186,7 +186,7 @@ BUILTIN_SECTIONS = [
 },
 # ------------------------------------------------------------- 6. image-text-split
 {
- "key": "image-text", "name": "Image + text split", "category": "content", "position": 60,
+ "key": "image-text", "enabled": False, "name": "Image + text split", "category": "content", "position": 60,
  "html": """<section class="lp-sec-image-text">
  <div class="lp-wrap it-grid">
   <div class="it-media"><img data-lp-img="image" src="" alt=""></div>
@@ -210,7 +210,7 @@ BUILTIN_SECTIONS = [
 },
 # ---------------------------------------------------------------- 7. advertorial
 {
- "key": "advertorial", "name": "Advertorial block", "category": "content", "position": 70,
+ "key": "advertorial", "enabled": False, "name": "Advertorial block", "category": "content", "position": 70,
  "html": """<section class="lp-sec-advertorial">
  <div class="lp-wrap adv-wrap">
   <p class="adv-kicker" data-lp-text="kicker">SPECIAL REPORT</p>
@@ -236,7 +236,7 @@ BUILTIN_SECTIONS = [
 },
 # --------------------------------------------------------------- 8. testimonials
 {
- "key": "testimonials", "name": "Testimonials", "category": "social-proof", "position": 80,
+ "key": "testimonials", "enabled": False, "name": "Testimonials", "category": "social-proof", "position": 80,
  "html": """<section class="lp-sec-testimonials">
  <div class="lp-wrap">
   <h2 class="ts-title" data-lp-text="title">What our members say</h2>
@@ -263,7 +263,7 @@ BUILTIN_SECTIONS = [
 },
 # ---------------------------------------------------------------- 9. cards-strip
 {
- "key": "cards-strip", "name": "Section cards strip", "category": "social-proof", "position": 90,
+ "key": "cards-strip", "enabled": False, "name": "Section cards strip", "category": "social-proof", "position": 90,
  "html": """<section class="lp-sec-cards-strip">
  <div class="lp-wrap">
   <h2 class="cs-title" data-lp-text="title">Inside the platform</h2>
@@ -286,7 +286,7 @@ BUILTIN_SECTIONS = [
 },
 # ------------------------------------------------------------------ 10. faq
 {
- "key": "faq", "name": "FAQ accordion", "category": "conversion", "position": 100,
+ "key": "faq", "enabled": False, "name": "FAQ accordion", "category": "conversion", "position": 100,
  "html": """<section class="lp-sec-faq">
  <div class="lp-wrap faq-wrap">
   <h2 class="faq-title" data-lp-text="title">Frequently asked questions</h2>
@@ -336,7 +336,7 @@ BUILTIN_SECTIONS = [
 },
 # ---------------------------------------------------------------- 11. cta-banner
 {
- "key": "cta-banner", "name": "CTA banner", "category": "conversion", "position": 110,
+ "key": "cta-banner", "enabled": False, "name": "CTA banner", "category": "conversion", "position": 110,
  "html": """<section class="lp-sec-cta-banner">
  <div class="lp-wrap cb-inner">
   <h2 class="cb-title" data-lp-text="title">Ready to see it for yourself?</h2>
@@ -354,7 +354,7 @@ BUILTIN_SECTIONS = [
 },
 # ------------------------------------------------------------ 12. form-legal-footer
 {
- "key": "form-footer", "name": "Signup + legal + footer", "category": "legal", "position": 120,
+ "key": "form-footer", "enabled": False, "name": "Signup + legal + footer", "category": "legal", "position": 120,
  "html": """<section class="lp-sec-form-footer" id="signup">
  <div class="lp-wrap">
   <form class="ff-card" data-lp-form>

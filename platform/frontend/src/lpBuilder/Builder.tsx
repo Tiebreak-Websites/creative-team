@@ -58,6 +58,71 @@ const CATEGORY_LABEL: Record<string, string> = {
   'social-proof': 'Social proof', conversion: 'Conversion', legal: 'Legal & footer',
 }
 
+// Windows Chromium renders emoji flags as bare letters, so use tiny PNGs
+// (flagcdn is allowed by the CSP img-src https: whitelist; on failure the
+// picker falls back to the language code).
+const FLAG_CC: Record<string, string> = {
+  en: 'gb', ms: 'my', th: 'th', ja: 'jp', sv: 'se', pt: 'br', es: 'es',
+  vi: 'vn', it: 'it', pl: 'pl', fr: 'fr', de: 'de', ar: 'sa', zh: 'cn',
+}
+const flagUrl = (code: string) =>
+  FLAG_CC[code] ? `https://flagcdn.com/w40/${FLAG_CC[code]}.png` : ''
+
+function brandLogoUri(b?: Brand | null): string {
+  const raw = b?.logo_svg || ''
+  if (!raw) return ''
+  return raw.trim().startsWith('<svg') ? 'data:image/svg+xml;utf8,' + encodeURIComponent(raw) : raw
+}
+
+/** Compact popover picker used for brand + language in the top bar. */
+function TopPicker({
+  trigger,
+  title,
+  children,
+  open,
+  setOpen,
+}: {
+  trigger: React.ReactNode
+  title: string
+  children: React.ReactNode
+  open: boolean
+  setOpen: (v: boolean) => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open, setOpen])
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        title={title}
+        aria-label={title}
+        aria-expanded={open}
+        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2 transition-colors hover:border-foreground/25"
+      >
+        {trigger}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-9 z-[60] max-h-72 w-52 animate-pop-in overflow-y-auto rounded-xl border border-border bg-card p-1 shadow-xl">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function Builder({
   projectId,
   sections,
@@ -81,6 +146,8 @@ export function Builder({
   const [assets, setAssets] = useState<{ url: string; label: string }[]>([])
   const [saving, setSaving] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [exporting, setExporting] = useState(false)
+  const [brandOpen, setBrandOpen] = useState(false)
+  const [langOpen, setLangOpen] = useState(false)
   const [srcdoc, setSrcdoc] = useState('')
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
@@ -419,37 +486,87 @@ export function Builder({
         <Input
           value={project.name}
           onChange={(e) => mutate((p) => ({ ...p, name: e.target.value }), { structural: false })}
-          className="h-8 w-52 font-display text-sm font-semibold"
+          className="h-8 w-36 min-w-0 font-display text-sm font-semibold lg:w-48"
           aria-label="Landing page name"
         />
-        <select
-          value={project.brand_id}
-          onChange={(e) => {
-            const b = brands.find((x) => x.id === e.target.value)
-            mutate((p) => ({ ...p, brand_id: e.target.value, tokens: b ? brandTokens(b) : p.tokens }))
-          }}
-          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-          aria-label="Brand"
+        {/* Brand — shows the LOGO from the brands store (Settings ▸ Brands). */}
+        <TopPicker
+          open={brandOpen}
+          setOpen={setBrandOpen}
+          title={`Brand: ${brands.find((b) => b.id === project.brand_id)?.name ?? 'none'} — click to switch`}
+          trigger={
+            brandLogoUri(brands.find((b) => b.id === project.brand_id)) ? (
+              <img src={brandLogoUri(brands.find((b) => b.id === project.brand_id))} alt="" className="h-5 max-w-24 object-contain" />
+            ) : (
+              <span className="text-xs font-medium text-muted-foreground">
+                {brands.find((b) => b.id === project.brand_id)?.name ?? 'Brand'}
+              </span>
+            )
+          }
         >
-          <option value="">No brand</option>
-          {brands.map((b) => (
-            <option key={b.id} value={b.id}>{b.name}</option>
+          {[null, ...brands].map((b) => (
+            <button
+              key={b?.id ?? 'none'}
+              type="button"
+              onClick={() => {
+                mutate((p) => ({ ...p, brand_id: b?.id ?? '', tokens: b ? brandTokens(b) : p.tokens }))
+                setBrandOpen(false)
+              }}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                (b?.id ?? '') === project.brand_id && 'bg-primary/10 font-semibold',
+              )}
+            >
+              {b && brandLogoUri(b) ? (
+                <img src={brandLogoUri(b)} alt="" className="h-4 w-14 shrink-0 object-contain object-left" />
+              ) : (
+                <span className="inline-block h-4 w-14 shrink-0 rounded bg-secondary" />
+              )}
+              <span className="truncate">{b?.name ?? 'No brand'}</span>
+            </button>
           ))}
-        </select>
-        <select
-          value={project.language}
-          onChange={(e) => mutate((p) => ({ ...p, language: e.target.value }))}
-          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
-          aria-label="Language"
+        </TopPicker>
+        {/* Language — flag + code, compact. */}
+        <TopPicker
+          open={langOpen}
+          setOpen={setLangOpen}
+          title={`Language: ${languages.find((l) => l.code === project.language)?.label ?? project.language} — click to switch`}
+          trigger={
+            <>
+              {flagUrl(project.language) && (
+                <img src={flagUrl(project.language)} alt="" className="h-3.5 w-5 rounded-[2px] object-cover" />
+              )}
+              <span className="text-xs font-bold uppercase">{project.language}</span>
+            </>
+          }
         >
           {languages.map((l) => (
-            <option key={l.code} value={l.code}>{l.label}</option>
+            <button
+              key={l.code}
+              type="button"
+              onClick={() => {
+                mutate((p) => ({ ...p, language: l.code }))
+                setLangOpen(false)
+              }}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                l.code === project.language && 'bg-primary/10 font-semibold',
+              )}
+            >
+              {flagUrl(l.code) ? (
+                <img src={flagUrl(l.code)} alt="" className="h-3.5 w-5 shrink-0 rounded-[2px] object-cover" />
+              ) : (
+                <span className="w-5 shrink-0 text-center text-[9px] font-bold uppercase">{l.code}</span>
+              )}
+              <span className="truncate">{l.label}</span>
+              <span className="ml-auto text-[9px] uppercase text-muted-foreground">{l.code}</span>
+            </button>
           ))}
-        </select>
+        </TopPicker>
         <select
           value={project.campaign_id}
           onChange={(e) => mutate((p) => ({ ...p, campaign_id: e.target.value }), { structural: false })}
-          className="h-8 max-w-40 rounded-md border border-input bg-transparent px-2 text-xs"
+          className="h-8 w-28 shrink rounded-md border border-input bg-transparent px-1.5 text-xs lg:w-36"
           aria-label="Campaign"
           title="Attach an LP Materials campaign — its assets appear in the Assets tab"
         >
@@ -549,6 +666,7 @@ export function Builder({
               {leftTab === 'add' && (
                 <AddTab
                   sections={sections}
+                  brands={brands}
                   onDragKey={(k) => (dragKeyRef.current = k)}
                   onAppend={(k) => addSection(k)}
                 />
@@ -651,10 +769,12 @@ export function Builder({
 // ---------------------------------------------------------------------------
 function AddTab({
   sections,
+  brands,
   onDragKey,
   onAppend,
 }: {
   sections: SectionDef[]
+  brands: Brand[]
   onDragKey: (k: string) => void
   onAppend: (k: string) => void
 }) {
@@ -666,13 +786,29 @@ function AddTab({
     }
     return [...by.entries()]
   }, [sections])
+  // Template groups are BRAND groups: a category matching a brand id gets the
+  // brand's logo (from Settings ▸ Brands) as its header.
+  const brandFor = (cat: string) =>
+    brands.find((b) => b.id.toLowerCase() === cat.toLowerCase() || b.name.toLowerCase() === cat.toLowerCase())
   return (
     <div className="space-y-4">
-      {cats.map(([cat, list]) => (
+      {cats.map(([cat, list]) => {
+        const brand = brandFor(cat)
+        return (
         <div key={cat}>
-          <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            {CATEGORY_LABEL[cat] ?? cat}
-          </p>
+          {brand ? (
+            <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-2 py-1.5">
+              {brandLogoUri(brand) ? (
+                <img src={brandLogoUri(brand)} alt="" className="h-4 max-w-20 object-contain object-left" />
+              ) : null}
+              <span className="truncate text-[11px] font-semibold">{brand.name}</span>
+              <span className="ml-auto text-[9px] uppercase tracking-wide text-muted-foreground">template</span>
+            </div>
+          ) : (
+            <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {CATEGORY_LABEL[cat] ?? cat}
+            </p>
+          )}
           <div className="space-y-1.5">
             {list.map((s) => (
               <div
@@ -701,7 +837,8 @@ function AddTab({
             ))}
           </div>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
