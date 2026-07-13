@@ -28,7 +28,7 @@ from typing import Dict, List, Optional
 from . import brands as brands_store
 from . import creative_director, engine, references as references_store
 from .banner_engine import intent as intent_engine
-from .banner_engine import logo_overlay, reshape
+from .banner_engine import logo_overlay, outpaint, reshape
 from .models import RunRequest
 from .settings import settings
 
@@ -708,13 +708,29 @@ def _gen_one_frame(run: Run, frame: dict):
             return
 
     # Export EVERY banner at its EXACT requested pixel size. The image API only
-    # emits 1024/1536-class sizes, so reshape to the precise box. fit_export picks
-    # cover-crop for most sizes, but for the 4:5 portrait family (960x1200,
-    # 1080x1350, …) it fits the FULL image and blur-pads the sides instead — so the
-    # headline and the bottom CTA are never sliced by a top/bottom crop.
+    # emits 1024/1536-class sizes, so reshape to the precise box. Most sizes get
+    # a cover-crop, but the 4:5 portrait family (960x1200, 1080x1350, 1200x1500,
+    # …) is wider than the 2:3 render and a crop would slice the headline/CTA —
+    # those get their side margins OUTPAINTED (a second masked edits call that
+    # continues the background for real; the render itself is pixel-composited
+    # back untouched). If the outpaint fails for any reason, fall back to the
+    # old blur-pad so the export always completes.
     try:
         _w, _h = (int(x) for x in frame["size"].split("x"))
-        png = reshape.fit_export(png, _w, _h)
+        reshaped = None
+        if reshape.needs_outpaint(png, _w, _h):
+            try:
+                with _OPENAI_SEM:
+                    reshaped = outpaint.outpaint_export(
+                        api_key=run.api_key, png_bytes=png, width=_w, height=_h,
+                        model=run.model, quality=run.quality,
+                        timeout=settings.OPENAI_IMAGE_TIMEOUT,
+                        max_retries=settings.OPENAI_IMAGE_MAX_RETRIES,
+                    )
+            except Exception as e:  # noqa: BLE001 — blur-pad fallback below
+                log.warning("outpaint failed for %s (%s: %s) - falling back to blur-pad",
+                            frame["size"], type(e).__name__, e)
+        png = reshaped or reshape.fit_export(png, _w, _h)
     except Exception:  # noqa: BLE001 — never drop a frame over reshaping
         pass
 
@@ -1524,8 +1540,14 @@ def _persist(run: Run) -> None:
     restart/redeploy. A write failure must never affect the run.
     """
     try:
+        payload = run_to_dict(run)
+        # Persist the ENGINE concepts too (hook_phrase, creative_brief, cta, …) —
+        # they never leave the server via the API, but without them a rehydrated
+        # run cannot build a recompose prompt, so "Add sizes" on any pre-restart
+        # run failed with "concept.hook_phrase is required".
+        payload["engine_concepts"] = run.concepts
         (run.dir / "run.json").write_text(
-            json.dumps(run_to_dict(run), ensure_ascii=False), encoding="utf-8"
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
         )
     except Exception:  # noqa: BLE001
         log.warning("banner-builder: could not persist run.json for %s", run.id)
@@ -1633,6 +1655,13 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
             size_briefs.setdefault(ck, {})[size] = b.get("brief", "")
         if size not in sizes:
             sizes.append(size)
+    # Newer run.json files carry the full ENGINE concepts (hook_phrase,
+    # creative_brief, …) — restore them so a rehydrated run can still build
+    # recompose prompts ("Add sizes" after a restart). Older files fall back to
+    # the title-only stubs built above.
+    for ck, c in (d.get("engine_concepts") or {}).items():
+        if isinstance(c, dict) and c.get("title"):
+            concepts[ck] = c
     now = _now()
     return Run(
         id=d["run_id"], status=d.get("status", "completed"),

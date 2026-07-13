@@ -54,6 +54,15 @@ def _encode(img: "Image.Image") -> bytes:
     return buf.getvalue()
 
 
+def needs_outpaint(png_bytes: bytes, width: int, height: int) -> bool:
+    """True when fit_export would blur-pad the sides: a PORTRAIT target that is
+    "wider" than the generated source, whose cover-crop would slice the
+    headline/CTA. These targets deserve a REAL background extension
+    (outpaint.outpaint_export) — the blur-pad here is the fallback."""
+    sw, sh = Image.open(io.BytesIO(png_bytes)).size
+    return height > width and (width / height) > (sw / sh) + 0.02
+
+
 def fit_export(png_bytes: bytes, width: int, height: int) -> bytes:
     """Reshape to exact width x height, choosing cover-crop vs blur-pad per target.
 
@@ -63,9 +72,7 @@ def fit_export(png_bytes: bytes, width: int, height: int) -> bytes:
     exact cover-crop.
     """
     src = Image.open(io.BytesIO(png_bytes)).convert("RGB")
-    sw, sh = src.size
-    would_vertical_crop = (width / height) > (sw / sh) + 0.02
-    if height > width and would_vertical_crop:
+    if needs_outpaint(png_bytes, width, height):
         return _encode(_blur_pad(src, width, height))
     return _encode(_cover(src, width, height))
 
