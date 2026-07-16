@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import io
+import json
+import logging
 import re
 from typing import List
 
@@ -11,9 +13,33 @@ from fastapi.responses import FileResponse, Response
 from ..auth import require_admin, require_user
 from . import core, export
 
+log = logging.getLogger("lp_builder")
+
 _MAX_SECTIONS_PER_PAGE = 30
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 _UPLOAD_MIME = {"image/png", "image/jpeg", "image/webp"}
+
+# Google-fonts catalog cache + a curated offline fallback so the font picker
+# always has something sensible to offer.
+_FONTS_CACHE: dict = {"at": 0.0, "list": None}
+_FALLBACK_FONTS: List[tuple] = [
+    ("Inter", "sans-serif"), ("Roboto", "sans-serif"), ("Open Sans", "sans-serif"),
+    ("Poppins", "sans-serif"), ("Montserrat", "sans-serif"), ("Lato", "sans-serif"),
+    ("Urbanist", "sans-serif"), ("Nunito", "sans-serif"), ("Raleway", "sans-serif"),
+    ("Work Sans", "sans-serif"), ("Rubik", "sans-serif"), ("Manrope", "sans-serif"),
+    ("DM Sans", "sans-serif"), ("Plus Jakarta Sans", "sans-serif"), ("Outfit", "sans-serif"),
+    ("Figtree", "sans-serif"), ("Sora", "sans-serif"), ("Space Grotesk", "sans-serif"),
+    ("Barlow", "sans-serif"), ("Kanit", "sans-serif"), ("Mulish", "sans-serif"),
+    ("Karla", "sans-serif"), ("Josefin Sans", "sans-serif"), ("Exo 2", "sans-serif"),
+    ("Playfair Display", "serif"), ("Merriweather", "serif"), ("Lora", "serif"),
+    ("PT Serif", "serif"), ("Libre Baskerville", "serif"), ("Cormorant Garamond", "serif"),
+    ("Crimson Text", "serif"), ("Source Serif 4", "serif"), ("Bitter", "serif"),
+    ("Oswald", "display"), ("Bebas Neue", "display"), ("Anton", "display"),
+    ("Archivo Black", "display"), ("Righteous", "display"), ("Abril Fatface", "display"),
+    ("Caveat", "handwriting"), ("Pacifico", "handwriting"), ("Dancing Script", "handwriting"),
+    ("JetBrains Mono", "monospace"), ("Fira Code", "monospace"), ("IBM Plex Mono", "monospace"),
+    ("Noto Sans", "sans-serif"), ("Noto Sans Thai", "sans-serif"), ("Noto Sans JP", "sans-serif"),
+]
 
 
 def _enforce_owner(p: dict, user: dict) -> None:
@@ -32,7 +58,7 @@ def _clean_project_patch(payload: dict, p: dict) -> None:
     """Apply a whitelisted full-document update (the autosave PUT)."""
     if "name" in payload:
         p["name"] = _clean_str(payload.get("name"), 120) or p["name"]
-    for k in ("brand_id", "language", "campaign_id", "fonts", "meta_title", "meta_description"):
+    for k in ("brand_id", "language", "campaign_id", "fonts", "font_family", "meta_title", "meta_description"):
         if k in payload:
             p[k] = _clean_str(payload.get(k), 400) or ("" if k != "fonts" else "system")
     if p.get("fonts") not in ("system", "google"):
@@ -261,6 +287,7 @@ def build_lp_builder_router() -> APIRouter:
             "campaign_id": _clean_str(payload.get("campaign_id"), 64),
             "sections": [], "tokens": dict(payload.get("tokens") or {}),
             "form": {"action_url": "", "success_url": ""}, "fonts": "system",
+            "font_family": "",
             "meta_title": "", "meta_description": "",
             "seo": {"og_title": "", "og_description": "", "og_image": "",
                     "favicon": "", "canonical": "", "robots_index": True},
@@ -329,6 +356,32 @@ def build_lp_builder_router() -> APIRouter:
         return Response(status_code=204)
 
     # ---- composition (canvas + preview share the ONE compositor) -------------
+    @router.get("/fonts")
+    def google_fonts(_user: dict = Depends(require_user)):
+        """The Google Fonts catalog for the page-font picker: [{family, category}].
+
+        Fetched from Google's public metadata endpoint (no API key) and cached
+        for a day; a curated built-in list keeps the picker working offline.
+        """
+        import time as _time
+        import urllib.request as _rq
+        now = _time.time()
+        if _FONTS_CACHE["list"] and now - _FONTS_CACHE["at"] < 86400:
+            return {"fonts": _FONTS_CACHE["list"]}
+        try:
+            req = _rq.Request("https://fonts.google.com/metadata/fonts",
+                              headers={"User-Agent": "Mozilla/5.0"})
+            raw = _rq.urlopen(req, timeout=10).read().decode("utf-8", "replace")
+            data = json.loads(raw.lstrip(")]}'\n"))  # strip the XSSI prefix
+            fonts = [{"family": f["family"], "category": (f.get("category") or "").lower()}
+                     for f in data.get("familyMetadataList", []) if f.get("family")]
+            if len(fonts) > 100:
+                _FONTS_CACHE.update(at=now, list=fonts)
+                return {"fonts": fonts}
+        except Exception as e:  # noqa: BLE001 — offline/blocked: serve the fallback
+            log.warning("lp-builder: google fonts catalog fetch failed: %s", e)
+        return {"fonts": [{"family": f, "category": c} for f, c in _FALLBACK_FONTS]}
+
     @router.post("/compose")
     def compose(payload: dict = Body(default={}), _user: dict = Depends(require_user)):
         project = payload.get("project")
@@ -345,7 +398,10 @@ def build_lp_builder_router() -> APIRouter:
             if err:
                 raise HTTPException(status_code=422, detail=err)
             smap[str(draft["key"])] = draft
-        out = export.compose_page(project, smap, mode=mode, resolve_img=export.serve_url_for)
+        # hide_scrollbars: the in-app canvas is a Figma-style surface (pan +
+        # zoom, no scrollbars); real exports keep native scrolling.
+        out = export.compose_page(project, smap, mode=mode, resolve_img=export.serve_url_for,
+                                  hide_scrollbars=True)
         return {"html": out["html"]}
 
     # ---- runtime scripts -------------------------------------------------------

@@ -74,6 +74,9 @@ export interface Project {
   tokens: Record<string, string>
   form: { action_url: string; success_url: string }
   fonts: 'system' | 'google'
+  /** Google font applied to the WHOLE page ('' = template/system default).
+   *  Optional on projects created before the font picker existed. */
+  font_family?: string
   meta_title: string
   meta_description: string
   /** Optional on projects created before the SEO tab existed. */
@@ -112,6 +115,18 @@ export async function listSections(all = false): Promise<{ sections: SectionDef[
   const r = await fetch(`${LPB}/sections${all ? '?all=1' : ''}`, { credentials: 'include' })
   if (!r.ok) return fail(r, 'Failed to load the section library')
   return r.json()
+}
+
+export interface GoogleFont {
+  family: string
+  category: string
+}
+
+/** The Google Fonts catalog for the page-font picker (server-cached). */
+export async function listGoogleFonts(): Promise<GoogleFont[]> {
+  const r = await fetch(`${LPB}/fonts`, { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Failed to load the font catalog')
+  return (await r.json()).fonts ?? []
 }
 
 export async function createSection(payload: {

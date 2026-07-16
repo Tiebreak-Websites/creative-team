@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils'
 import { listBrands, type Brand } from '../bannerBuilder/brandsApi'
 import { createAdvertorial, getJob, listCampaigns, listJobs, type CampaignInfo, type MaterialJob } from '../lpMaterials/api'
 import { CampaignPicker } from '../lpMaterials/CampaignPicker'
+import { FontPicker } from './FontPicker'
 import {
   brandTokens,
   composePage,
@@ -162,7 +163,11 @@ export function Builder({
   const [canRedo, setCanRedo] = useState(false)
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
-  const canvasRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLDivElement | null>(null)
+  // The canvas div does not exist until the project loads (loading early
+  // return) — effects that attach listeners/observers to it key off this
+  // STATE so they re-run when the node actually appears.
+  const [canvasEl, setCanvasEl] = useState<HTMLDivElement | null>(null)
   const canvasLoadedRef = useRef(false)
   const canvasModeRef = useRef<'editor' | 'preview'>('editor')
   const [scale, setScale] = useState(0.5)
@@ -405,7 +410,7 @@ export function Builder({
   }, [scale])
   useEffect(() => {
     if (zoomMode !== 'fit') return
-    const el = canvasRef.current
+    const el = canvasEl
     if (!el) return
     const measure = () => {
       const w = el.clientWidth - 40
@@ -419,7 +424,7 @@ export function Builder({
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [device, preview, zoomMode])
+  }, [device, preview, zoomMode, canvasEl])
 
   /**
    * Zoom to `next`, keeping a focus point visually still. `cx` is the focus in
@@ -481,24 +486,90 @@ export function Builder({
     },
     [zoomTo],
   )
-  useEffect(() => {
+  // Figma-style middle-mouse panning. One shared pan in SCREEN pixels:
+  // horizontal moves the outer scroller, vertical moves the page's own scroll
+  // (which lives INSIDE the iframe — the outer pane never scrolls vertically).
+  // Positions are tracked in screenX/Y so panning the container under the
+  // cursor doesn't feed back into the deltas.
+  const panPosRef = useRef<{ x: number; y: number } | null>(null)
+  const panScreen = useCallback((dx: number, dy: number) => {
     const el = canvasRef.current
+    if (el) el.scrollLeft -= dx
+    const se = iframeRef.current?.contentDocument?.scrollingElement
+    // behavior:'instant' — LPs ship scroll-behavior:smooth, which would turn
+    // every pan tick into an eased animation that never keeps up with the hand.
+    if (se) se.scrollTo({ top: se.scrollTop - dy / scaleRef.current, behavior: 'instant' as ScrollBehavior })
+  }, [])
+  useEffect(() => {
+    const el = canvasEl
     if (!el) return
-    const h = (e: WheelEvent) => wheelZoom(e)
-    el.addEventListener('wheel', h, { passive: false })
-    return () => el.removeEventListener('wheel', h)
-  }, [wheelZoom])
+    const wheel = (e: WheelEvent) => wheelZoom(e)
+    const down = (e: PointerEvent) => {
+      if (e.button !== 1) return
+      e.preventDefault()
+      panPosRef.current = { x: e.screenX, y: e.screenY }
+      try {
+        el.setPointerCapture(e.pointerId)
+      } catch {
+        /* untrusted/synthetic pointer — capture is best-effort */
+      }
+      el.style.cursor = 'grabbing'
+    }
+    const move = (e: PointerEvent) => {
+      const p = panPosRef.current
+      if (!p) return
+      panScreen(e.screenX - p.x, e.screenY - p.y)
+      panPosRef.current = { x: e.screenX, y: e.screenY }
+    }
+    const up = () => {
+      panPosRef.current = null
+      el.style.cursor = ''
+    }
+    el.addEventListener('wheel', wheel, { passive: false })
+    el.addEventListener('pointerdown', down)
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+    el.addEventListener('pointercancel', up)
+    return () => {
+      el.removeEventListener('wheel', wheel)
+      el.removeEventListener('pointerdown', down)
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      el.removeEventListener('pointercancel', up)
+    }
+  }, [wheelZoom, panScreen, canvasEl])
   const attachIframeWheel = useCallback(() => {
     const frame = iframeRef.current
     const doc = frame?.contentDocument
     if (!frame || !doc) return
-    const h = (e: WheelEvent) =>
+    const wheel = (e: WheelEvent) =>
       wheelZoom(e, (x, y) => {
         const s = scaleRef.current
         return { cx: frame.getBoundingClientRect().left + x * s, innerY: y }
       })
-    doc.addEventListener('wheel', h, { passive: false })
-  }, [wheelZoom])
+    // Middle-drag pan from INSIDE the page too — the iframe swallows pointer
+    // events, so it forwards deltas to the shared pan. preventDefault kills
+    // the browser's middle-click autoscroll.
+    const down = (e: PointerEvent) => {
+      if (e.button !== 1) return
+      e.preventDefault()
+      panPosRef.current = { x: e.screenX, y: e.screenY }
+    }
+    const move = (e: PointerEvent) => {
+      const p = panPosRef.current
+      if (!p) return
+      panScreen(e.screenX - p.x, e.screenY - p.y)
+      panPosRef.current = { x: e.screenX, y: e.screenY }
+    }
+    const up = () => {
+      panPosRef.current = null
+    }
+    doc.addEventListener('wheel', wheel, { passive: false })
+    doc.addEventListener('pointerdown', down)
+    doc.addEventListener('pointermove', move)
+    doc.addEventListener('pointerup', up)
+    doc.addEventListener('pointercancel', up)
+  }, [wheelZoom, panScreen])
 
   // Close the zoom menu on outside click / Escape.
   useEffect(() => {
@@ -899,7 +970,13 @@ export function Builder({
 
         {/* canvas */}
         <div className="relative min-w-0 flex-1">
-          <div ref={canvasRef} className="h-full w-full overflow-auto bg-secondary/40 p-5">
+          <div
+            ref={(el) => {
+              canvasRef.current = el
+              setCanvasEl(el)
+            }}
+            className="no-scrollbar h-full w-full overflow-auto bg-secondary/40 p-5"
+          >
             <div ref={zoomBoxRef} className="mx-auto" style={{ width: DEVICE_WIDTH[device] * scale, height: `calc(100% - 4px)` }}>
               <div
                 style={{
@@ -2453,18 +2530,16 @@ function PageSettings({
           className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:border-primary focus-visible:outline-none"
         />
       </label>
-      <label className="block">
-        <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Fonts in the export</span>
-        <select
-          value={project.fonts}
-          onChange={(e) => set({ fonts: e.target.value as Project['fonts'] })}
-          className="h-7 w-full rounded-md border border-input bg-background px-1.5 text-xs"
-          aria-label="Fonts strategy"
-        >
-          <option value="system">System fonts (offline, fastest)</option>
-          <option value="google">Google Fonts link (all scripts, needs internet)</option>
-        </select>
-      </label>
+      <div className="block">
+        <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">
+          Page font — applied everywhere on the page
+        </span>
+        <FontPicker
+          fontFamily={project.font_family ?? ''}
+          fonts={project.fonts}
+          onChange={(v) => set(v)}
+        />
+      </div>
       <p className="rounded-lg border border-dashed border-border bg-secondary/40 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
         Click any element on the page to edit it — double-click text to type directly. Use the device
         toggle to set per-width overrides. Titles, descriptions and social previews live in the <b>SEO</b> tab.
