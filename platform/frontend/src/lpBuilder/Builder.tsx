@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   ArrowLeft,
   Check,
   ChevronDown,
@@ -1278,8 +1281,8 @@ function AddTab({
           title="Switch category"
           className="flex w-full items-center gap-1.5 px-2.5 py-2 text-left"
         >
-          <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Showing</span>
-          <span className="min-w-0 flex-1 truncate text-xs font-semibold">{open ? catLabel(open) : '—'}</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Showing</span>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold">{open ? catLabel(open) : '—'}</span>
           <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform', switcher && 'rotate-180')} />
         </button>
         {switcher && (
@@ -1323,7 +1326,7 @@ function AddTab({
               {brand && brandLogoSrc(brand, dark) ? (
                 <img src={brandLogoSrc(brand, dark)} alt="" className="h-4 max-w-20 object-contain object-left" />
               ) : null}
-              <span className="min-w-0 flex-1 truncate text-[11px] font-semibold">
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold">
                 {brand ? brand.name : (CATEGORY_LABEL[cat] ?? cat)}
               </span>
               {brand && <span className="text-[9px] uppercase tracking-wide text-muted-foreground">template</span>}
@@ -1346,7 +1349,7 @@ function AddTab({
                     title={`${s.name} — drag onto the page, or use ＋ to append`}
                   >
                     <SectionThumb def={s} project={project} />
-                    <span className="block truncate border-t border-border px-2 py-1.5 text-[10px] font-medium">
+                    <span className="block truncate border-t border-border px-2 py-1.5 text-xs font-medium">
                       {s.name}
                     </span>
                     <button
@@ -1454,8 +1457,8 @@ function LayersTab({
             : 'text-muted-foreground hover:bg-accent hover:text-foreground',
         )}
       >
-        <Icon className="h-3 w-3 shrink-0 opacity-70" />
-        <span className="min-w-0 flex-1 truncate text-[11px]">{label || field.key}</span>
+        <Icon className="h-3.5 w-3.5 shrink-0 opacity-70" />
+        <span className="min-w-0 flex-1 truncate text-xs">{label || field.key}</span>
       </button>
     )
   }
@@ -1510,7 +1513,7 @@ function LayersTab({
               <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-secondary font-display text-[9px] font-bold">
                 {i + 1}
               </span>
-              <span className={cn('min-w-0 flex-1 truncate text-xs', hidden && 'text-muted-foreground line-through')}>
+              <span className={cn('min-w-0 flex-1 truncate text-sm', hidden && 'text-muted-foreground line-through')}>
                 {def?.name ?? inst.template_key}
               </span>
               <button
@@ -1567,10 +1570,10 @@ function LayersTab({
                         aria-expanded={gOpen}
                         className="flex w-full items-center gap-1.5 rounded-lg py-1 pl-3.5 pr-2 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                       >
-                        <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', gOpen && 'rotate-90')} />
-                        <Rows3 className="h-3 w-3 shrink-0 opacity-70" />
-                        <span className="min-w-0 flex-1 truncate text-[11px] capitalize">{r.key}</span>
-                        <span className="rounded-full bg-secondary px-1.5 text-[9px] font-semibold tabular-nums">{count}</span>
+                        <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 transition-transform', gOpen && 'rotate-90')} />
+                        <Rows3 className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                        <span className="min-w-0 flex-1 truncate text-xs capitalize">{r.key}</span>
+                        <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums">{count}</span>
                       </button>
                       {gOpen &&
                         firstField &&
@@ -1640,7 +1643,7 @@ function AssetsTab({
               <span className="block aspect-square bg-muted/40">
                 <img src={a.url} alt="" loading="lazy" className="pointer-events-none h-full w-full object-cover" />
               </span>
-              <span className="block truncate px-1.5 py-1 text-[10px] text-muted-foreground">{a.label}</span>
+              <span className="block truncate px-1.5 py-1 text-xs text-muted-foreground">{a.label}</span>
             </button>
           ))}
         </div>
@@ -2022,14 +2025,14 @@ function PropertiesPanel({
         <input
           type="color"
           value={/^#[0-9a-fA-F]{6}$/.test(prop(name)) ? prop(name) : '#000000'}
-          onChange={(e) => onProp(field, name, e.target.value)}
+          onChange={(e) => onProp(field, name, e.target.value.toUpperCase())}
           className="h-7 w-9 cursor-pointer rounded border border-input bg-background p-0.5"
           aria-label={label}
         />
         <input
-          value={prop(name)}
-          onChange={(e) => onProp(field, name, e.target.value || null)}
-          placeholder="inherit"
+          value={hexDisplay(prop(name))}
+          onChange={(e) => onProp(field, name, normalizeHexInput(e.target.value))}
+          placeholder="#RRGGBB"
           className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:border-primary focus-visible:outline-none"
         />
       </span>
@@ -2075,42 +2078,87 @@ function PropertiesPanel({
               aria-label="Element text"
             />
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <P label="Font size" name="fontSize" placeholder="56px" />
-            <label className="block">
-              <span className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">Weight{bucket !== 'base' && bp.fontWeight !== undefined && <Dot />}</span>
-              <select
-                value={prop('fontWeight')}
-                onChange={(e) => onProp(field, 'fontWeight', e.target.value || null)}
-                className="h-7 w-full rounded-md border border-input bg-background px-1.5 text-xs"
-                aria-label="Font weight"
-              >
-                <option value="">inherit</option>
-                {['400', '500', '600', '700', '800'].map((w) => <option key={w} value={w}>{w}</option>)}
-              </select>
-            </label>
-          </div>
-          <ColorP label="Color" name="color" />
-          <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-secondary p-0.5">
-            {(['left', 'center', 'right'] as const).map((a) => (
-              <button
-                key={a}
-                type="button"
-                onClick={() => onProp(field, 'align', prop('align') === a ? null : a)}
-                aria-pressed={prop('align') === a}
-                className={cn(
-                  'rounded-md px-1.5 py-1 text-[10px] font-medium capitalize transition-colors',
-                  prop('align') === a ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {a}
-              </button>
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <P label="Margin top" name="marginTop" placeholder="0px" />
-            <P label="Margin bottom" name="marginBottom" placeholder="0px" />
-          </div>
+
+          <PGroup title="Typography">
+            <div className="grid grid-cols-2 gap-2">
+              <P label="Size" name="fontSize" placeholder="56px" />
+              <label className="block">
+                <span className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">Weight{bucket !== 'base' && bp.fontWeight !== undefined && <Dot />}</span>
+                <select
+                  value={prop('fontWeight')}
+                  onChange={(e) => onProp(field, 'fontWeight', e.target.value || null)}
+                  className="h-7 w-full rounded-md border border-input bg-background px-1.5 text-xs"
+                  aria-label="Font weight"
+                >
+                  <option value="">inherit</option>
+                  {['400', '500', '600', '700', '800'].map((w) => <option key={w} value={w}>{w}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <P label="Line height" name="lineHeight" placeholder="1.2" />
+              <P label="Letter spacing" name="letterSpacing" placeholder="0px" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <span className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+                  Align{bucket !== 'base' && bp.align !== undefined && <Dot />}
+                </span>
+                <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-border bg-secondary/40 p-0.5">
+                  {(['left', 'center', 'right'] as const).map((a) => {
+                    const Icon = a === 'left' ? AlignLeft : a === 'center' ? AlignCenter : AlignRight
+                    return (
+                      <button
+                        key={a}
+                        type="button"
+                        onClick={() => onProp(field, 'align', prop('align') === a ? null : a)}
+                        aria-pressed={prop('align') === a}
+                        title={`Align ${a}`}
+                        className={cn(
+                          'grid place-items-center rounded-md py-1 transition-colors',
+                          prop('align') === a ? 'bg-card text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <div>
+                <span className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+                  Case{bucket !== 'base' && bp.transform !== undefined && <Dot />}
+                </span>
+                <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-border bg-secondary/40 p-0.5">
+                  {([['', '–', 'As typed'], ['uppercase', 'AA', 'UPPERCASE'], ['capitalize', 'Aa', 'Title Case']] as const).map(([v, l, tip]) => (
+                    <button
+                      key={l}
+                      type="button"
+                      onClick={() => onProp(field, 'transform', v && prop('transform') !== v ? v : null)}
+                      aria-pressed={prop('transform') === v && v !== ''}
+                      title={tip}
+                      className={cn(
+                        'rounded-md py-1 text-[10px] font-semibold transition-colors',
+                        (v ? prop('transform') === v : !prop('transform'))
+                          ? 'bg-card text-foreground shadow-sm ring-1 ring-border'
+                          : 'text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <ColorP label="Color" name="color" />
+          </PGroup>
+
+          <PGroup title="Spacing">
+            <div className="grid grid-cols-2 gap-2">
+              <P label="Margin top" name="marginTop" placeholder="0px" />
+              <P label="Margin bottom" name="marginBottom" placeholder="0px" />
+            </div>
+          </PGroup>
         </div>
       )}
 
@@ -2159,6 +2207,7 @@ function PropertiesPanel({
           )}
           {/* One-click controls — no dropdowns: fit as a segmented toggle,
               radius with quick presets. Fast hands over menus. */}
+          <PGroup title="Layout">
           <div>
             <span className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
               Fit
@@ -2187,6 +2236,10 @@ function PropertiesPanel({
               })}
             </div>
           </div>
+          <P label="Height" name="height" placeholder="auto" />
+          </PGroup>
+
+          <PGroup title="Appearance">
           <div>
             <span className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
               Corner radius
@@ -2222,7 +2275,8 @@ function PropertiesPanel({
               />
             </div>
           </div>
-          <P label="Height" name="height" placeholder="auto" />
+          <P label="Opacity" name="opacity" placeholder="100%" />
+          </PGroup>
         </div>
       )}
 
@@ -2310,6 +2364,28 @@ function countDefaults(def: SectionDef, lang: string, key: string): number {
 }
 
 const Dot = () => <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" title="Overridden at this breakpoint" />
+
+/** Colors read as HEX everywhere: #f1f4f1 → #F1F4F1; bare f1f4f1 gets its '#'. */
+function hexDisplay(v: string): string {
+  return /^#[0-9a-fA-F]{6}$/.test(v) ? v.toUpperCase() : v
+}
+function normalizeHexInput(v: string): string | null {
+  const t = v.trim()
+  if (!t) return null
+  if (/^[0-9a-fA-F]{6}$/.test(t)) return `#${t.toUpperCase()}`
+  if (/^#[0-9a-fA-F]{6}$/.test(t)) return t.toUpperCase()
+  return v
+}
+
+/** Figma-style property group: slim uppercase title over its controls. */
+function PGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-2 border-t border-border pt-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
+      {children}
+    </div>
+  )
+}
 
 function PageSettings({
   project,
@@ -2488,30 +2564,34 @@ function PageSettings({
   return (
     <div className="space-y-3">
       <PageSettingsTabs tab={tab} onTab={setTab} />
-      <label className="block">
-        <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Brand primary</span>
-        <span className="flex items-center gap-1.5">
-          <input type="color" value={project.tokens.primary ?? '#E71E25'}
-                 onChange={(e) => set({ tokens: { ...project.tokens, primary: e.target.value } })}
-                 className="h-7 w-9 cursor-pointer rounded border border-input p-0.5" aria-label="Primary color" />
-          <input type="color" value={project.tokens.accent ?? '#0A0F2E'}
-                 onChange={(e) => set({ tokens: { ...project.tokens, accent: e.target.value } })}
-                 className="h-7 w-9 cursor-pointer rounded border border-input p-0.5" aria-label="Accent color" />
-          <span className="text-[10px] text-muted-foreground">primary · accent</span>
-        </span>
-      </label>
-      <label className="block">
-        <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Website background · card fill</span>
-        <span className="flex items-center gap-1.5">
-          <input type="color" value={project.tokens.bg ?? '#FFFFFF'}
-                 onChange={(e) => set({ tokens: { ...project.tokens, bg: e.target.value } })}
-                 className="h-7 w-9 cursor-pointer rounded border border-input p-0.5" aria-label="Website background color" />
-          <input type="color" value={project.tokens.card ?? '#FFFFFF'}
-                 onChange={(e) => set({ tokens: { ...project.tokens, card: e.target.value } })}
-                 className="h-7 w-9 cursor-pointer rounded border border-input p-0.5" aria-label="Card fill color" />
-          <span className="text-[10px] text-muted-foreground">background · cards</span>
-        </span>
-      </label>
+      {/* Brand colors — swatch + editable HEX, Figma-style */}
+      <div className="grid grid-cols-2 gap-2">
+        {([['Primary', 'primary', '#E71E25'], ['Accent', 'accent', '#0A0F2E'],
+           ['Background', 'bg', '#FFFFFF'], ['Card fill', 'card', '#FFFFFF']] as const).map(([label, name, fallback]) => {
+          const v = project.tokens[name] ?? fallback
+          return (
+            <div key={name}>
+              <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">{label}</span>
+              <span className="flex items-center gap-1">
+                <input
+                  type="color"
+                  value={/^#[0-9a-fA-F]{6}$/.test(v) ? v : fallback}
+                  onChange={(e) => set({ tokens: { ...project.tokens, [name]: e.target.value.toUpperCase() } })}
+                  className="h-7 w-8 shrink-0 cursor-pointer rounded border border-input p-0.5"
+                  aria-label={`${label} color`}
+                />
+                <input
+                  value={hexDisplay(v)}
+                  onChange={(e) => set({ tokens: { ...project.tokens, [name]: normalizeHexInput(e.target.value) ?? '' } })}
+                  placeholder={fallback}
+                  aria-label={`${label} HEX`}
+                  className="h-7 w-full min-w-0 rounded-md border border-input bg-background px-1.5 text-[11px] focus-visible:border-primary focus-visible:outline-none"
+                />
+              </span>
+            </div>
+          )
+        })}
+      </div>
       <label className="block">
         <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Form action URL (where signups POST)</span>
         <input

@@ -258,7 +258,7 @@ _PROP_CSS = {
     "align": "text-align", "lineHeight": "line-height", "letterSpacing": "letter-spacing",
     "transform": "text-transform", "marginTop": "margin-top", "marginBottom": "margin-bottom",
     "bg": "background", "radius": "border-radius", "fit": "object-fit",
-    "height": "height", "gap": "gap",
+    "height": "height", "gap": "gap", "opacity": "opacity",
 }
 _BUCKET_MQ = {"base": None, "tablet": "@media (max-width:1199px)", "mobile": "@media (max-width:575px)"}
 
