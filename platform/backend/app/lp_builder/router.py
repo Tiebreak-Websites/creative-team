@@ -43,6 +43,16 @@ def _clean_project_patch(payload: dict, p: dict) -> None:
     if isinstance(payload.get("form"), dict):
         p["form"] = {"action_url": _clean_str(payload["form"].get("action_url"), 500),
                      "success_url": _clean_str(payload["form"].get("success_url"), 500)}
+    if isinstance(payload.get("seo"), dict):
+        s = payload["seo"]
+        p["seo"] = {
+            "og_title": _clean_str(s.get("og_title"), 200),
+            "og_description": _clean_str(s.get("og_description"), 400),
+            "og_image": _clean_str(s.get("og_image"), 6000),
+            "favicon": _clean_str(s.get("favicon"), 6000),
+            "canonical": _clean_str(s.get("canonical"), 500),
+            "robots_index": s.get("robots_index", True) is not False,
+        }
     if isinstance(payload.get("sections"), list):
         secs = []
         for s in payload["sections"][:_MAX_SECTIONS_PER_PAGE]:
@@ -251,6 +261,8 @@ def build_lp_builder_router() -> APIRouter:
             "sections": [], "tokens": dict(payload.get("tokens") or {}),
             "form": {"action_url": "", "success_url": ""}, "fonts": "system",
             "meta_title": "", "meta_description": "",
+            "seo": {"og_title": "", "og_description": "", "og_image": "",
+                    "favicon": "", "canonical": "", "robots_index": True},
             "created_by": (user or {}).get("email") or "",
             "created_at": core._now(), "updated_at": core._now(),
         }

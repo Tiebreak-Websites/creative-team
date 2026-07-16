@@ -53,6 +53,15 @@ export interface Instance {
   props: Record<string, Partial<Record<Breakpoint, Record<string, string | boolean>>>>
 }
 
+export interface SeoSettings {
+  og_title: string
+  og_description: string
+  og_image: string
+  favicon: string
+  canonical: string
+  robots_index: boolean
+}
+
 export interface Project {
   id: string
   name: string
@@ -65,6 +74,8 @@ export interface Project {
   fonts: 'system' | 'google'
   meta_title: string
   meta_description: string
+  /** Optional on projects created before the SEO tab existed. */
+  seo?: Partial<SeoSettings>
   created_by: string
   created_at: string
   updated_at: string

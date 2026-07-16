@@ -993,7 +993,13 @@ export function Builder({
                   onRemove={() => removeSection(selInst.iid)}
                 />
               ) : (
-                <PageSettings project={project} mutate={mutate} />
+                <PageSettings
+                  project={project}
+                  mutate={mutate}
+                  assets={assets}
+                  brandLogo={brandLogoSrc(brands.find((b) => b.id === project.brand_id), dark) || undefined}
+                  onError={onError}
+                />
               )}
             </div>
           </div>
@@ -1650,14 +1656,180 @@ const Dot = () => <span className="inline-block h-1.5 w-1.5 rounded-full bg-prim
 function PageSettings({
   project,
   mutate,
+  assets,
+  brandLogo,
+  onError,
 }: {
   project: Project
   mutate: (fn: (p: Project) => Project, opts?: { structural?: boolean }) => void
+  assets: { url: string; label: string }[]
+  brandLogo?: string
+  onError: (m: string) => void
 }) {
   const set = (patch: Partial<Project>, structural = true) => mutate((p) => ({ ...p, ...patch }), { structural })
+  const [tab, setTab] = useState<'page' | 'seo'>('page')
+  const seo = useMemo(
+    () => ({
+      og_title: '', og_description: '', og_image: '', favicon: '',
+      canonical: '', robots_index: true,
+      ...(project.seo ?? {}),
+    }),
+    [project.seo],
+  )
+  const setSeo = (patch: Partial<typeof seo>) => set({ seo: { ...seo, ...patch } }, false)
+  const [pickFor, setPickFor] = useState<'og_image' | 'favicon' | null>(null)
+  async function pickAsset(url: string, field: 'og_image' | 'favicon') {
+    setPickFor(null)
+    try {
+      const local = url.startsWith('/api/tools/lp-builder/') ? { url } : await importLpAsset(url)
+      setSeo({ [field]: local.url } as Partial<typeof seo>)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+  const title = project.meta_title || project.name
+  const desc = project.meta_description
+
+  if (tab === 'seo') {
+    return (
+      <div className="space-y-3">
+        <PageSettingsTabs tab={tab} onTab={setTab} />
+        <label className="block">
+          <span className="mb-0.5 flex items-center justify-between text-[10px] font-medium text-muted-foreground">
+            Search title
+            <span className={cn('tabular-nums', (project.meta_title || '').length > 60 && 'font-semibold text-destructive')}>
+              {(project.meta_title || '').length}/60
+            </span>
+          </span>
+          <input
+            value={project.meta_title}
+            onChange={(e) => set({ meta_title: e.target.value }, false)}
+            placeholder={project.name}
+            className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:border-primary focus-visible:outline-none"
+            aria-label="Search title"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-0.5 flex items-center justify-between text-[10px] font-medium text-muted-foreground">
+            Meta description
+            <span className={cn('tabular-nums', desc.length > 160 && 'font-semibold text-destructive')}>{desc.length}/160</span>
+          </span>
+          <textarea
+            value={project.meta_description}
+            onChange={(e) => set({ meta_description: e.target.value }, false)}
+            rows={3}
+            placeholder="One or two sentences shown under the title in Google."
+            className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs focus-visible:border-primary focus-visible:outline-none"
+            aria-label="Meta description"
+          />
+        </label>
+        {/* Google-style search preview */}
+        <div className="rounded-lg border border-border bg-background p-2.5">
+          <p className="truncate text-[13px] font-medium leading-snug text-[#1a0dab] dark:text-[#8ab4f8]">{title}</p>
+          <p className="truncate text-[10px] text-[#006621] dark:text-[#99c794]">
+            {seo.canonical || 'https://your-domain.com/'}
+          </p>
+          <p className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+            {desc || 'Add a meta description to control this text in search results.'}
+          </p>
+        </div>
+
+        <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Social sharing</p>
+        <label className="block">
+          <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Social title (og:title)</span>
+          <input
+            value={seo.og_title}
+            onChange={(e) => setSeo({ og_title: e.target.value })}
+            placeholder={title}
+            className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:border-primary focus-visible:outline-none"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Social description (og:description)</span>
+          <textarea
+            value={seo.og_description}
+            onChange={(e) => setSeo({ og_description: e.target.value })}
+            rows={2}
+            placeholder={desc || 'Falls back to the meta description.'}
+            className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs focus-visible:border-primary focus-visible:outline-none"
+          />
+        </label>
+        {/* Social card preview + image picker */}
+        <div className="overflow-hidden rounded-lg border border-border">
+          {seo.og_image ? (
+            <img src={seo.og_image} alt="" className="aspect-[1.91/1] w-full bg-muted/40 object-cover" />
+          ) : (
+            <div className="grid aspect-[1.91/1] w-full place-items-center bg-secondary/60 text-[10px] text-muted-foreground">
+              No social image (og:image) yet
+            </div>
+          )}
+          <div className="border-t border-border bg-secondary/40 p-2">
+            <p className="truncate text-[11px] font-semibold">{seo.og_title || title}</p>
+            <p className="line-clamp-2 text-[10px] text-muted-foreground">{seo.og_description || desc || ' '}</p>
+          </div>
+        </div>
+        <div className="flex gap-1.5">
+          <Button variant="outline" size="sm" className="h-7 flex-1 text-xs" onClick={() => setPickFor(pickFor === 'og_image' ? null : 'og_image')}>
+            <ImagePlus className="h-3.5 w-3.5" /> {seo.og_image ? 'Change image' : 'Pick from assets'}
+          </Button>
+          {seo.og_image && (
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" title="Remove social image" onClick={() => setSeo({ og_image: '' })}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+        {pickFor === 'og_image' && <AssetPickGrid assets={assets} onPick={(u) => void pickAsset(u, 'og_image')} />}
+
+        <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Site basics</p>
+        <div className="block">
+          <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Favicon</span>
+          <div className="flex items-center gap-1.5">
+            {seo.favicon ? (
+              <img src={seo.favicon} alt="" className="h-6 w-6 shrink-0 rounded border border-border bg-white object-contain p-0.5" />
+            ) : (
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded border border-dashed border-border text-[9px] text-muted-foreground">—</span>
+            )}
+            {brandLogo && (
+              <Button variant="outline" size="sm" className="h-7 flex-1 text-xs" onClick={() => void pickAsset(brandLogo, 'favicon')}>
+                Use brand logo
+              </Button>
+            )}
+            <Button variant="outline" size="sm" className={cn('h-7 text-xs', !brandLogo && 'flex-1')} onClick={() => setPickFor(pickFor === 'favicon' ? null : 'favicon')}>
+              Pick…
+            </Button>
+            {seo.favicon && (
+              <Button variant="ghost" size="sm" className="h-7 px-2" title="Remove favicon" onClick={() => setSeo({ favicon: '' })}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        </div>
+        {pickFor === 'favicon' && <AssetPickGrid assets={assets} onPick={(u) => void pickAsset(u, 'favicon')} />}
+        <label className="block">
+          <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Canonical URL (the page's final address)</span>
+          <input
+            value={seo.canonical}
+            onChange={(e) => setSeo({ canonical: e.target.value })}
+            placeholder="https://your-domain.com/offer"
+            className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:border-primary focus-visible:outline-none"
+          />
+        </label>
+        <label className="flex items-center justify-between rounded-lg border border-border bg-secondary/40 px-2.5 py-2">
+          <span className="text-xs">Allow search engines to index</span>
+          <input
+            type="checkbox"
+            checked={seo.robots_index !== false}
+            onChange={(e) => setSeo({ robots_index: e.target.checked })}
+            aria-label="Allow search engines to index"
+          />
+        </label>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Page settings</p>
+      <PageSettingsTabs tab={tab} onTab={setTab} />
       <label className="block">
         <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Brand primary</span>
         <span className="flex items-center gap-1.5">
@@ -1712,29 +1884,57 @@ function PageSettings({
           <option value="google">Google Fonts link (all scripts, needs internet)</option>
         </select>
       </label>
-      <label className="block">
-        <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Meta title</span>
-        <input
-          value={project.meta_title}
-          onChange={(e) => set({ meta_title: e.target.value }, false)}
-          placeholder={project.name}
-          className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:border-primary focus-visible:outline-none"
-        />
-      </label>
-      <label className="block">
-        <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Meta description</span>
-        <textarea
-          value={project.meta_description}
-          onChange={(e) => set({ meta_description: e.target.value }, false)}
-          rows={2}
-          className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs focus-visible:border-primary focus-visible:outline-none"
-          aria-label="Meta description"
-        />
-      </label>
       <p className="rounded-lg border border-dashed border-border bg-secondary/40 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
         Click any element on the page to edit it — double-click text to type directly. Use the device
-        toggle to set per-width overrides.
+        toggle to set per-width overrides. Titles, descriptions and social previews live in the <b>SEO</b> tab.
       </p>
+    </div>
+  )
+}
+
+function PageSettingsTabs({ tab, onTab }: { tab: 'page' | 'seo'; onTab: (t: 'page' | 'seo') => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-1 rounded-lg border border-border bg-secondary/40 p-0.5">
+      {(['page', 'seo'] as const).map((t) => (
+        <button
+          key={t}
+          type="button"
+          onClick={() => onTab(t)}
+          aria-pressed={tab === t}
+          className={cn(
+            'rounded-md px-2 py-1 text-xs font-medium transition-colors',
+            tab === t ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+          )}
+        >
+          {t === 'page' ? 'Page' : 'SEO'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Compact asset chooser used by the SEO tab (og:image / favicon). */
+function AssetPickGrid({ assets, onPick }: { assets: { url: string; label: string }[]; onPick: (url: string) => void }) {
+  if (assets.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-border px-2 py-1.5 text-[10px] text-muted-foreground">
+        No assets yet — attach a campaign in the top bar or upload one in the Assets tab.
+      </p>
+    )
+  }
+  return (
+    <div className="grid max-h-40 grid-cols-3 gap-1.5 overflow-y-auto rounded-lg border border-border p-1.5">
+      {assets.map((a, i) => (
+        <button
+          key={`${a.url}:${i}`}
+          type="button"
+          onClick={() => onPick(a.url)}
+          title={a.label}
+          className="overflow-hidden rounded-md border border-border transition-all hover:border-primary/60"
+        >
+          <img src={a.url} alt="" loading="lazy" className="aspect-square w-full bg-muted/40 object-cover" />
+        </button>
+      ))}
     </div>
   )
 }
