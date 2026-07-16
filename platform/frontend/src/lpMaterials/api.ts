@@ -172,6 +172,8 @@ export function createAdvertorial(payload: {
   /** false → the story is told without humans. */
   people: boolean
   campaign_id: string
+  /** 1..3 variations rendered from the same brief (default 1). */
+  candidates?: number
 }): Promise<MaterialJob> {
   return post('/advertorial', payload, 'Could not start the advertorial image')
 }

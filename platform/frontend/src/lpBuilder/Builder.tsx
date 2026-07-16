@@ -21,6 +21,7 @@ import {
   Redo2,
   Rows3,
   Smartphone,
+  Sparkles,
   Tablet,
   Trash2,
   Type,
@@ -33,7 +34,7 @@ import { Input } from '@/components/ui/input'
 import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
 import { cn } from '@/lib/utils'
 import { listBrands, type Brand } from '../bannerBuilder/brandsApi'
-import { listCampaigns, listJobs, type CampaignInfo } from '../lpMaterials/api'
+import { createAdvertorial, getJob, listCampaigns, listJobs, type CampaignInfo, type MaterialJob } from '../lpMaterials/api'
 import { CampaignPicker } from '../lpMaterials/CampaignPicker'
 import {
   brandTokens,
@@ -200,6 +201,8 @@ export function Builder({
   }, [projectId])
 
   // ---- campaign assets ------------------------------------------------------
+  // assetsBump forces a refetch after in-builder generation completes.
+  const [assetsBump, setAssetsBump] = useState(0)
   useEffect(() => {
     if (!project?.campaign_id) {
       setAssets([])
@@ -218,7 +221,7 @@ export function Builder({
         setAssets([...out])
       })
       .catch(() => setAssets(out))
-  }, [project?.campaign_id, campaigns])
+  }, [project?.campaign_id, campaigns, assetsBump])
 
   // ---- history ---------------------------------------------------------------
   const pushHistory = useCallback((p: Project) => {
@@ -350,6 +353,10 @@ export function Builder({
         }
       } else if (m.type === 'select') {
         setSelection(m.iid ? { iid: m.iid, fields: m.fields ?? [], tag: m.tag ?? '' } : null)
+        // Clicking an image on the page brings its assets straight into view.
+        if (m.iid && ((m.fields ?? []) as { kind: string }[]).some((f) => f.kind === 'img')) {
+          setLeftTab('assets')
+        }
       } else if (m.type === 'text') {
         mutate((p) => {
           const inst = p.sections.find((s) => s.iid === m.iid)
@@ -590,6 +597,22 @@ export function Builder({
     const imgField = sel?.fields.find((f) => f.kind === 'img')
     if (!sel || !imgField) return
     await assignImageTo(sel.iid, imgField.key, url)
+  }
+  /** Nearest LP-Materials aspect for the slot's rendered box on the canvas. */
+  function slotAspect(iid: string, key: string): '1:1' | '4:3' | '16:9' {
+    try {
+      const el = iframeRef.current?.contentDocument?.querySelector(
+        `[data-iid="${iid}"] [data-lp-img="${key}"]`,
+      ) as HTMLElement | null
+      const r = el?.getBoundingClientRect()
+      if (!r?.width || !r.height) return '4:3'
+      const ratio = r.width / r.height
+      const options: ['1:1' | '4:3' | '16:9', number][] = [['1:1', 1], ['4:3', 4 / 3], ['16:9', 16 / 9]]
+      options.sort((a, b) => Math.abs(Math.log(ratio / a[1])) - Math.abs(Math.log(ratio / b[1])))
+      return options[0][0]
+    } catch {
+      return '4:3'
+    }
   }
   async function uploadAndAssign(files: FileList | null) {
     const f = files?.[0]
@@ -967,6 +990,7 @@ export function Builder({
           <div className="flex w-72 shrink-0 flex-col border-l border-border bg-card/60">
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {selInst && selDef ? (
+                <>
                 <PropertiesPanel
                   inst={selInst}
                   def={selDef}
@@ -995,6 +1019,25 @@ export function Builder({
                   onDuplicate={() => duplicateSection(selInst.iid)}
                   onRemove={() => removeSection(selInst.iid)}
                 />
+                {(() => {
+                  const imgField = selection?.fields.find((f) => f.kind === 'img')
+                  return imgField ? (
+                    <GenerateForSlot
+                      key={`${selInst.iid}:${imgField.key}`}
+                      project={project}
+                      iid={selInst.iid}
+                      imgKey={imgField.key}
+                      campaigns={campaigns}
+                      onCampaignsAdd={(c) => setCampaigns((cs) => [c, ...cs])}
+                      onAttachCampaign={(id) => mutate((p) => ({ ...p, campaign_id: id }), { structural: false })}
+                      aspectFor={slotAspect}
+                      onAssign={(u) => void assignImage(u)}
+                      onAssetsChanged={() => setAssetsBump((n) => n + 1)}
+                      onError={onError}
+                    />
+                  ) : null
+                })()}
+                </>
               ) : (
                 <PageSettings
                   project={project}
@@ -1516,6 +1559,194 @@ function AssetsTab({
 }
 
 // ---------------------------------------------------------------------------
+// Generate-in-place: LP Materials generation for the selected image slot.
+// Runs the same cards job LP Materials uses (text-free, campaign-scoped),
+// aspect auto-matched to the slot's rendered box, results assignable in one
+// click and appearing in the Assets tab like any other campaign asset.
+// ---------------------------------------------------------------------------
+function GenerateForSlot({
+  project,
+  iid,
+  imgKey,
+  campaigns,
+  onCampaignsAdd,
+  onAttachCampaign,
+  aspectFor,
+  onAssign,
+  onAssetsChanged,
+  onError,
+}: {
+  project: Project
+  iid: string
+  imgKey: string
+  campaigns: CampaignInfo[]
+  onCampaignsAdd: (c: CampaignInfo) => void
+  onAttachCampaign: (id: string) => void
+  aspectFor: (iid: string, key: string) => '1:1' | '4:3' | '16:9'
+  onAssign: (url: string) => void
+  onAssetsChanged: () => void
+  onError: (m: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [subject, setSubject] = useState('')
+  const [details, setDetails] = useState('')
+  const [people, setPeople] = useState(false)
+  const [count, setCount] = useState(1)
+  const [job, setJob] = useState<MaterialJob | null>(null)
+  const [busy, setBusy] = useState(false)
+  const pollRef = useRef<number | null>(null)
+  useEffect(
+    () => () => {
+      if (pollRef.current) window.clearInterval(pollRef.current)
+    },
+    [],
+  )
+  const aspect = aspectFor(iid, imgKey)
+
+  async function start() {
+    if (!subject.trim() || busy || !project.campaign_id) return
+    setBusy(true)
+    setJob(null)
+    try {
+      const j = await createAdvertorial({
+        title: subject.trim(),
+        text: details.trim(),
+        people,
+        aspect,
+        campaign_id: project.campaign_id,
+        candidates: count,
+      })
+      setJob(j)
+      pollRef.current = window.setInterval(() => {
+        getJob(j.job_id)
+          .then((cur) => {
+            setJob(cur)
+            if (cur.status !== 'running') {
+              if (pollRef.current) window.clearInterval(pollRef.current)
+              pollRef.current = null
+              setBusy(false)
+              onAssetsChanged()
+            }
+          })
+          .catch(() => {
+            /* transient poll failure — keep trying */
+          })
+      }, 3000)
+    } catch (e) {
+      setBusy(false)
+      onError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <div className="mt-3 space-y-2 rounded-xl border border-border bg-secondary/30 p-2.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1.5 text-left"
+      >
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold">Generate for this slot</span>
+        <span className="rounded-full border border-border bg-card px-1.5 text-[9px] font-semibold tabular-nums text-muted-foreground">
+          {aspect}
+        </span>
+        <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && !project.campaign_id && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] leading-snug text-muted-foreground">
+            Generated images live on an LP Materials campaign — attach or create one:
+          </p>
+          <CampaignPicker campaigns={campaigns} value="" onChange={onAttachCampaign} onCreated={onCampaignsAdd} className="w-full" />
+        </div>
+      )}
+
+      {open && project.campaign_id && (
+        <div className="space-y-2">
+          <input
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="What should this image show?"
+            aria-label="Image subject"
+            className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:border-primary focus-visible:outline-none"
+          />
+          <textarea
+            value={details}
+            onChange={(e) => setDetails(e.target.value)}
+            rows={2}
+            placeholder="Details, mood, colors… (optional)"
+            aria-label="Image details"
+            className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs focus-visible:border-primary focus-visible:outline-none"
+          />
+          <div className="flex items-center gap-1.5">
+            <label className="flex min-w-0 flex-1 items-center justify-between rounded-lg border border-border bg-card/60 px-2 py-1.5">
+              <span className="text-[11px]">Include people</span>
+              <input type="checkbox" checked={people} onChange={(e) => setPeople(e.target.checked)} aria-label="Include people" />
+            </label>
+            <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card/60 p-0.5" role="group" aria-label="Variations">
+              {[1, 2, 3].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setCount(n)}
+                  aria-pressed={count === n}
+                  title={`${n} variation${n > 1 ? 's' : ''}`}
+                  className={cn(
+                    'h-6 w-6 rounded-md text-[10px] font-semibold tabular-nums transition-colors',
+                    count === n ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Button size="sm" className="w-full" disabled={busy || !subject.trim()} onClick={() => void start()}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {busy ? 'Generating…' : `Generate (${aspect}, no text)`}
+          </Button>
+
+          {job && (
+            <div className="space-y-1.5">
+              {job.items.map((it) => (
+                <div key={it.index} className="overflow-hidden rounded-lg border border-border bg-card">
+                  {it.status === 'ok' && it.url ? (
+                    <>
+                      <img src={it.url} alt="" className="max-h-32 w-full bg-muted/40 object-contain" />
+                      <div className="flex items-center gap-1.5 border-t border-border p-1.5">
+                        {it.qa && (
+                          <span className="min-w-0 flex-1 truncate text-[9px] text-amber-600 dark:text-amber-500" title={it.qa}>
+                            ⚠ {it.qa}
+                          </span>
+                        )}
+                        <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px]" onClick={() => onAssign(it.url!)}>
+                          Use in this slot
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => void start()} disabled={busy}>
+                          Retry
+                        </Button>
+                      </div>
+                    </>
+                  ) : it.status === 'failed' ? (
+                    <p className="px-2 py-1.5 text-[10px] text-destructive">{it.error || 'Generation failed.'}</p>
+                  ) : (
+                    <p className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> {it.label || 'Rendering…'}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Right panel
 // ---------------------------------------------------------------------------
 function defaultText(def: SectionDef, lang: string, key: string): string {
@@ -1694,21 +1925,70 @@ function PropertiesPanel({
             <Upload className="h-3.5 w-3.5" /> Upload image
           </Button>
           <p className="text-[10px] leading-snug text-muted-foreground">…or pick one in the <b>Assets</b> tab.</p>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Fit</span>
-              <select
-                value={prop('fit')}
-                onChange={(e) => onProp(field, 'fit', e.target.value || null)}
-                className="h-7 w-full rounded-md border border-input bg-background px-1.5 text-xs"
-                aria-label="Object fit"
-              >
-                <option value="">default</option>
-                <option value="cover">cover</option>
-                <option value="contain">contain</option>
-              </select>
-            </label>
-            <P label="Radius" name="radius" placeholder="16px" />
+          {/* One-click controls — no dropdowns: fit as a segmented toggle,
+              radius with quick presets. Fast hands over menus. */}
+          <div>
+            <span className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+              Fit
+              {bucket !== 'base' && bp.fit !== undefined && <Dot />}
+            </span>
+            <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-border bg-secondary/40 p-0.5">
+              {([['', 'Auto', 'Default behavior for this slot'],
+                 ['cover', 'Cover', 'Fill the box — crop what overflows'],
+                 ['contain', 'Contain', 'Show the whole image — letterbox if needed']] as const).map(([v, l, tip]) => {
+                const active = prop('fit') === v
+                return (
+                  <button
+                    key={v || 'auto'}
+                    type="button"
+                    onClick={() => onProp(field, 'fit', v || null)}
+                    title={tip}
+                    aria-pressed={active}
+                    className={cn(
+                      'rounded-md px-1 py-1 text-[10px] font-medium transition-colors',
+                      active ? 'bg-card text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {l}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          <div>
+            <span className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+              Corner radius
+              {bucket !== 'base' && bp.radius !== undefined && <Dot />}
+            </span>
+            <div className="flex items-center gap-1">
+              {([['0px', '0'], ['8px', '8'], ['16px', '16'], ['999px', 'Full']] as const).map(([v, l]) => {
+                const active = prop('radius') === v
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => onProp(field, 'radius', active ? null : v)}
+                    title={`Corner radius ${v}`}
+                    aria-pressed={active}
+                    className={cn(
+                      'h-6 min-w-7 rounded-md border px-1.5 text-[10px] font-medium tabular-nums transition-colors',
+                      active
+                        ? 'border-primary/50 bg-primary/10 text-foreground'
+                        : 'border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground',
+                    )}
+                  >
+                    {l}
+                  </button>
+                )
+              })}
+              <input
+                value={prop('radius')}
+                onChange={(e) => onProp(field, 'radius', e.target.value || null)}
+                placeholder="16px"
+                aria-label="Corner radius"
+                className="h-6 w-full min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 text-[10px] focus-visible:border-primary focus-visible:outline-none"
+              />
+            </div>
           </div>
           <P label="Height" name="height" placeholder="auto" />
         </div>
