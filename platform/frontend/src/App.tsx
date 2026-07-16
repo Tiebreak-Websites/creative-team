@@ -26,6 +26,7 @@ import { UserMenu } from './auth/UserMenu'
 import { Logo } from './components/Logo'
 import { FullScreenLoader, LogoLoader } from './components/LogoLoader'
 import { ThemeToggle } from './components/ThemeToggle'
+import { FeedbackWidget } from './components/FeedbackWidget'
 import { InstallButton } from './components/InstallButton'
 import { VersionBadge } from './components/VersionBadge'
 import { BrandsSettings } from './admin/BrandsSettings'
@@ -444,6 +445,7 @@ function Workspace() {
           </div>
         )}
       </main>
+      <FeedbackWidget />
       <HelpModal
         open={helpOpen}
         onClose={() => setHelpOpen(false)}

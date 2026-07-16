@@ -136,6 +136,10 @@ def create_app() -> FastAPI:
     from .lp_builder import build_lp_builder_router
     app.include_router(build_lp_builder_router(),
                        prefix="/api/tools/lp-builder", dependencies=protected)
+    # Floating suggestions/bug-report widget — per-user threads, admin checkmarks.
+    from .feedback import build_feedback_router
+    app.include_router(build_feedback_router(),
+                       prefix="/api/feedback", dependencies=protected)
 
     # Restore persisted banner runs from the durable disk (PLATFORM_ARTIFACT_DIR)
     # so the gallery survives restarts/redeploys. Run in a BACKGROUND thread so a
