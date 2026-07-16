@@ -2,22 +2,27 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   ArrowLeft,
   Check,
+  ChevronRight,
   Copy,
   Download,
   ExternalLink,
   Eye,
   EyeOff,
   GripVertical,
+  Image as ImageIcon,
   ImagePlus,
   Layers,
+  Link2,
   Loader2,
   Minus,
   Monitor,
   Plus,
   Redo2,
+  Rows3,
   Smartphone,
   Tablet,
   Trash2,
+  Type,
   Undo2,
   Upload,
   X,
@@ -44,6 +49,7 @@ import {
   type Language,
   type Project,
   type SectionDef,
+  type SectionField,
 } from './api'
 
 interface Selection {
@@ -137,7 +143,9 @@ export function Builder({
   const [selection, setSelection] = useState<Selection | null>(null)
   const [device, setDevice] = useState<Device>('desktop')
   const [preview, setPreview] = useState(false)
-  const [leftTab, setLeftTab] = useState<'add' | 'structure' | 'assets'>('add')
+  // Layers is the working default — Add is for building the page up, Layers
+  // for everything after.
+  const [leftTab, setLeftTab] = useState<'add' | 'layers' | 'assets'>('layers')
   const [brands, setBrands] = useState<Brand[]>([])
   const [campaigns, setCampaigns] = useState<CampaignInfo[]>([])
   const [assets, setAssets] = useState<{ url: string; label: string }[]>([])
@@ -798,7 +806,7 @@ export function Builder({
         {!preview && (
           <div className="flex w-64 shrink-0 flex-col border-r border-border bg-card/60">
             <div className="grid shrink-0 grid-cols-3 gap-1 border-b border-border p-1.5">
-              {([['add', 'Add', Plus], ['structure', 'Structure', Layers], ['assets', 'Assets', ImagePlus]] as const).map(
+              {([['add', 'Add', Plus], ['layers', 'Layers', Layers], ['assets', 'Assets', ImagePlus]] as const).map(
                 ([id, label, Icon]) => (
                   <button
                     key={id}
@@ -824,15 +832,18 @@ export function Builder({
                   onAppend={(k) => addSection(k)}
                 />
               )}
-              {leftTab === 'structure' && (
-                <StructureTab
+              {leftTab === 'layers' && (
+                <LayersTab
                   project={project}
                   lib={lib}
                   bucket={bucket}
                   selection={selection}
-                  onSelect={(iid) => {
-                    setSelection({ iid, fields: [], tag: 'section' })
-                    iframeRef.current?.contentWindow?.postMessage({ type: 'highlight', iid, key: null }, '*')
+                  onSelect={(iid, field) => {
+                    setSelection({ iid, fields: field ? [field] : [], tag: field ? field.kind : 'section' })
+                    iframeRef.current?.contentWindow?.postMessage(
+                      { type: 'highlight', iid, key: field?.key ?? null },
+                      '*',
+                    )
                   }}
                   onMove={moveSection}
                   onDuplicate={duplicateSection}
@@ -1072,7 +1083,17 @@ function AddTab({
   )
 }
 
-function StructureTab({
+// Figma-style layer tree: sections expand into their editable layers (texts,
+// images, links, repeat groups → items). Clicking a layer selects it in the
+// properties panel and flashes it on the canvas, exactly like a canvas click.
+const FIELD_ICON: Record<SectionField['kind'], typeof Type> = {
+  text: Type,
+  rich: Type,
+  img: ImageIcon,
+  link: Link2,
+}
+
+function LayersTab({
   project,
   lib,
   bucket,
@@ -1087,80 +1108,196 @@ function StructureTab({
   lib: Map<string, SectionDef>
   bucket: Breakpoint
   selection: Selection | null
-  onSelect: (iid: string) => void
+  onSelect: (iid: string, field?: SectionField) => void
   onMove: (from: number, to: number) => void
   onDuplicate: (iid: string) => void
   onRemove: (iid: string) => void
   onToggleHidden: (iid: string, hidden: boolean) => void
 }) {
   const [drag, setDrag] = useState<number | null>(null)
+  const [open, setOpen] = useState<Set<string>>(new Set()) // expanded section iids
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set()) // `${iid}:${repeatKey}`
+  const rowRefs = useRef(new Map<string, HTMLDivElement>())
+
+  // Canvas (or anywhere) selects a section → reveal it: expand + scroll to it.
+  useEffect(() => {
+    const iid = selection?.iid
+    if (!iid) return
+    setOpen((prev) => (prev.has(iid) ? prev : new Set(prev).add(iid)))
+    requestAnimationFrame(() => rowRefs.current.get(iid)?.scrollIntoView({ block: 'nearest' }))
+  }, [selection?.iid])
+
   if (project.sections.length === 0) {
     return <p className="p-3 text-center text-xs text-muted-foreground">No sections yet — drag one in from the Add tab.</p>
   }
+
+  const flip = (set: Set<string>, id: string) => {
+    const next = new Set(set)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  }
+  /** Layer label: live value if edited, else the template default, tags stripped. */
+  const labelFor = (inst: Instance, def: SectionDef | undefined, key: string) => {
+    const defaults = def ? { ...(def.texts.en ?? {}), ...(def.texts[project.language] ?? {}) } : {}
+    const raw = inst.texts[key] ?? defaults[key] ?? ''
+    const s = String(raw).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+    return s
+  }
+  const fieldSelected = (iid: string, key: string) =>
+    selection?.iid === iid && selection.fields[0]?.key === key
+
+  const layerRow = (
+    iid: string,
+    field: SectionField,
+    label: string,
+    depth: number,
+  ) => {
+    const Icon = FIELD_ICON[field.kind] ?? Type
+    return (
+      <button
+        key={`${iid}:${field.key}`}
+        type="button"
+        onClick={() => onSelect(iid, field)}
+        title={label || field.key}
+        className={cn(
+          'flex w-full items-center gap-1.5 rounded-lg py-1 pr-2 text-left transition-colors',
+          depth > 1 ? 'pl-10' : 'pl-6',
+          fieldSelected(iid, field.key)
+            ? 'bg-primary/10 text-foreground'
+            : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+        )}
+      >
+        <Icon className="h-3 w-3 shrink-0 opacity-70" />
+        <span className="min-w-0 flex-1 truncate text-[11px]">{label || field.key}</span>
+      </button>
+    )
+  }
+
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       {project.sections.map((inst, i) => {
         const def = lib.get(inst.template_key)
         const hidden = Boolean(inst.props?._section?.[bucket]?.hidden)
+        const kids = (def?.fields.length ?? 0) + (def?.repeats.length ?? 0)
+        const expanded = open.has(inst.iid) && kids > 0
         return (
-          <div
-            key={inst.iid}
-            draggable
-            onDragStart={() => setDrag(i)}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => {
-              if (drag !== null && drag !== i) onMove(drag, i)
-              setDrag(null)
-            }}
-            onClick={() => onSelect(inst.iid)}
-            className={cn(
-              'group flex cursor-pointer items-center gap-1.5 rounded-xl border px-2 py-1.5 transition-colors',
-              selection?.iid === inst.iid ? 'border-primary bg-primary/5' : 'border-border bg-card hover:border-foreground/25',
+          <div key={inst.iid}>
+            <div
+              ref={(el) => {
+                if (el) rowRefs.current.set(inst.iid, el)
+                else rowRefs.current.delete(inst.iid)
+              }}
+              draggable
+              onDragStart={() => setDrag(i)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => {
+                if (drag !== null && drag !== i) onMove(drag, i)
+                setDrag(null)
+              }}
+              onClick={() => onSelect(inst.iid)}
+              className={cn(
+                'group flex cursor-pointer items-center gap-1 rounded-xl border px-1.5 py-1.5 transition-colors',
+                selection?.iid === inst.iid && selection.fields.length === 0
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border bg-card hover:border-foreground/25',
+              )}
+            >
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setOpen((prev) => flip(prev, inst.iid))
+                }}
+                disabled={kids === 0}
+                title={expanded ? 'Collapse layers' : 'Expand layers'}
+                aria-label={expanded ? 'Collapse layers' : 'Expand layers'}
+                aria-expanded={expanded}
+                className={cn(
+                  'rounded p-0.5 text-muted-foreground hover:text-foreground',
+                  kids === 0 && 'invisible',
+                )}
+              >
+                <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-90')} />
+              </button>
+              <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/60" />
+              <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-secondary font-display text-[9px] font-bold">
+                {i + 1}
+              </span>
+              <span className={cn('min-w-0 flex-1 truncate text-xs', hidden && 'text-muted-foreground line-through')}>
+                {def?.name ?? inst.template_key}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleHidden(inst.iid, !hidden)
+                }}
+                title={hidden ? `Show on ${bucket}` : `Hide on ${bucket}`}
+                aria-label={hidden ? 'Show section' : 'Hide section'}
+                className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+              >
+                {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDuplicate(inst.iid)
+                }}
+                title="Duplicate section"
+                aria-label="Duplicate section"
+                className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (window.confirm('Remove this section?')) onRemove(inst.iid)
+                }}
+                title="Remove section"
+                aria-label="Remove section"
+                className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {expanded && def && (
+              <div className="mb-1 mt-0.5 space-y-px">
+                {def.fields.map((f) => layerRow(inst.iid, f, labelFor(inst, def, f.key) || f.key, 1))}
+                {def.repeats.map((r) => {
+                  const gid = `${inst.iid}:${r.key}`
+                  const gOpen = openGroups.has(gid)
+                  const count = inst.repeats[r.key] ?? Math.max(1, countDefaults(def, project.language, r.key))
+                  const firstField = r.fields[0]
+                  return (
+                    <div key={gid}>
+                      <button
+                        type="button"
+                        onClick={() => setOpenGroups((prev) => flip(prev, gid))}
+                        aria-expanded={gOpen}
+                        className="flex w-full items-center gap-1.5 rounded-lg py-1 pl-3.5 pr-2 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      >
+                        <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', gOpen && 'rotate-90')} />
+                        <Rows3 className="h-3 w-3 shrink-0 opacity-70" />
+                        <span className="min-w-0 flex-1 truncate text-[11px] capitalize">{r.key}</span>
+                        <span className="rounded-full bg-secondary px-1.5 text-[9px] font-semibold tabular-nums">{count}</span>
+                      </button>
+                      {gOpen &&
+                        firstField &&
+                        Array.from({ length: count }, (_, idx) => {
+                          const full = { ...firstField, key: `${r.key}.${idx}.${firstField.key}` }
+                          const preview = labelFor(inst, def, full.key)
+                          return layerRow(inst.iid, full, preview || `Item ${idx + 1}`, 2)
+                        })}
+                    </div>
+                  )
+                })}
+              </div>
             )}
-          >
-            <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/60" />
-            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-secondary font-display text-[9px] font-bold">
-              {i + 1}
-            </span>
-            <span className={cn('min-w-0 flex-1 truncate text-xs', hidden && 'text-muted-foreground line-through')}>
-              {def?.name ?? inst.template_key}
-            </span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onToggleHidden(inst.iid, !hidden)
-              }}
-              title={hidden ? `Show on ${bucket}` : `Hide on ${bucket}`}
-              aria-label={hidden ? 'Show section' : 'Hide section'}
-              className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
-            >
-              {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onDuplicate(inst.iid)
-              }}
-              title="Duplicate section"
-              aria-label="Duplicate section"
-              className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                if (window.confirm('Remove this section?')) onRemove(inst.iid)
-              }}
-              title="Remove section"
-              aria-label="Remove section"
-              className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
           </div>
         )
       })}
