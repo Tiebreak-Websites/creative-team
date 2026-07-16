@@ -47,6 +47,8 @@ export interface Instance {
   template_key: string
   texts: Record<string, string>
   images: Record<string, string>
+  /** Mobile-only image overrides (≤575px swaps via <picture> in the compositor). */
+  images_mobile?: Record<string, string>
   links: Record<string, string>
   repeats: Record<string, number>
   /** field key (or "_section") -> breakpoint -> prop -> css value */

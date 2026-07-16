@@ -356,6 +356,20 @@ def compose_section(tpl: dict, inst: dict, lang: str, tokens: dict,
                 raw = tokens.get("logo") or ""
             url = resolve_img(raw) if raw else ""
             html = _fill_attr(html, "data-lp-img", f["key"], "src", url or PLACEHOLDER_IMG)
+            # Per-breakpoint art direction: a mobile-specific image wraps the
+            # <img> in <picture> with a <source> on the SAME cutoff the prop
+            # overrides use (575px), so canvas mobile view and real phones
+            # both swap. Desktop/tablet keep the base image.
+            mobile_raw = (inst.get("images_mobile") or {}).get(f["key"])
+            if mobile_raw:
+                murl = resolve_img(mobile_raw)
+                if murl:
+                    key_esc = re.escape(f["key"])
+                    html = re.sub(
+                        rf'(<img\b[^>]*\bdata-lp-img="{key_esc}"[^>]*>)',
+                        lambda m: (f'<picture><source media="(max-width:575px)" '
+                                   f'srcset="{_esc(murl)}">{m.group(1)}</picture>'),
+                        html, count=1)
         elif f["kind"] == "link":
             href = (inst.get("links") or {}).get(f["key"])
             if href:

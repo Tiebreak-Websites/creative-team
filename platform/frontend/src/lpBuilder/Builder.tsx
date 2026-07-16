@@ -521,7 +521,7 @@ export function Builder({
   function addSection(templateKey: string, index?: number) {
     if (!lib.has(templateKey)) return
     mutate((p) => {
-      const inst: Instance = { iid: newIid(), template_key: templateKey, texts: {}, images: {}, links: {}, repeats: {}, props: {} }
+      const inst: Instance = { iid: newIid(), template_key: templateKey, texts: {}, images: {}, images_mobile: {}, links: {}, repeats: {}, props: {} }
       const at = index === undefined ? p.sections.length : Math.max(0, Math.min(p.sections.length, index))
       p.sections.splice(at, 0, inst)
       return p
@@ -580,23 +580,40 @@ export function Builder({
   }
   /** Assign an image URL into a specific slot — imports sibling-tool images
    * into the LP asset store first so exports can bundle them. */
-  async function assignImageTo(iid: string, key: string, url: string) {
+  // Assignments follow the device toggle, same as prop overrides: in mobile
+  // view an image goes to the slot's MOBILE override; desktop/tablet set the
+  // base image. `target` lets callers force it (hero pair's "Use for mobile").
+  async function assignImageTo(iid: string, key: string, url: string, target?: 'base' | 'mobile') {
+    const t = target ?? (bucket === 'mobile' ? 'mobile' : 'base')
     try {
       const local = url.startsWith('/api/tools/lp-builder/') ? { url } : await importLpAsset(url)
       mutate((p) => {
         const inst = p.sections.find((s) => s.iid === iid)
-        if (inst) inst.images[key] = local.url
+        if (inst) {
+          if (t === 'mobile') {
+            inst.images_mobile = { ...(inst.images_mobile ?? {}), [key]: local.url }
+          } else {
+            inst.images[key] = local.url
+          }
+        }
         return p
       })
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
     }
   }
-  async function assignImage(url: string) {
+  async function assignImage(url: string, target?: 'base' | 'mobile') {
     const sel = selection
     const imgField = sel?.fields.find((f) => f.kind === 'img')
     if (!sel || !imgField) return
-    await assignImageTo(sel.iid, imgField.key, url)
+    await assignImageTo(sel.iid, imgField.key, url, target)
+  }
+  function clearMobileImage(iid: string, key: string) {
+    mutate((p) => {
+      const inst = p.sections.find((s) => s.iid === iid)
+      if (inst?.images_mobile) delete inst.images_mobile[key]
+      return p
+    })
   }
   /** Nearest LP-Materials aspect for the slot's rendered box on the canvas. */
   function slotAspect(iid: string, key: string): '1:1' | '4:3' | '16:9' {
@@ -622,11 +639,7 @@ export function Builder({
       setAssets((prev) => [{ url: up.url, label: f.name }, ...prev])
       const imgField = selection?.fields.find((x) => x.kind === 'img')
       if (imgField && selection) {
-        mutate((p) => {
-          const inst = p.sections.find((s) => s.iid === selection.iid)
-          if (inst) inst.images[imgField.key] = up.url
-          return p
-        })
+        await assignImageTo(selection.iid, imgField.key, up.url)
       }
     } catch (e) {
       onError(e instanceof Error ? e.message : String(e))
@@ -1016,6 +1029,7 @@ export function Builder({
                     })
                   }
                   onUpload={(f) => void uploadAndAssign(f)}
+                  onClearMobile={(key) => clearMobileImage(selInst.iid, key)}
                   onDuplicate={() => duplicateSection(selInst.iid)}
                   onRemove={() => removeSection(selInst.iid)}
                 />
@@ -1031,7 +1045,7 @@ export function Builder({
                       onCampaignsAdd={(c) => setCampaigns((cs) => [c, ...cs])}
                       onAttachCampaign={(id) => mutate((p) => ({ ...p, campaign_id: id }), { structural: false })}
                       aspectFor={slotAspect}
-                      onAssign={(u) => void assignImage(u)}
+                      onAssign={(u, t) => void assignImage(u, t)}
                       onAssetsChanged={() => setAssetsBump((n) => n + 1)}
                       onError={onError}
                     />
@@ -1560,10 +1574,41 @@ function AssetsTab({
 
 // ---------------------------------------------------------------------------
 // Generate-in-place: LP Materials generation for the selected image slot.
-// Runs the same cards job LP Materials uses (text-free, campaign-scoped),
-// aspect auto-matched to the slot's rendered box, results assignable in one
-// click and appearing in the Assets tab like any other campaign asset.
+// Runs the same advertorial job LP Materials uses (text-free,
+// campaign-scoped), aspect auto-matched to the slot's rendered box, results
+// assignable in one click and appearing in the Assets tab like any other
+// campaign asset. Hero pair mode renders 4:3 + a re-composed 1:1 for mobile.
 // ---------------------------------------------------------------------------
+const STYLE_PRESETS: [string, string][] = [
+  ['Photo', 'Photorealistic photography, natural light.'],
+  ['Studio', 'Clean studio shot, controlled lighting, seamless backdrop.'],
+  ['Lifestyle', 'Warm lifestyle photography in a natural, believable setting.'],
+  ['3D', 'Modern 3D abstract render, soft gradients, depth of field.'],
+  ['Minimal', 'Minimal flat gradient background, generous negative space.'],
+]
+
+/** Clear-space instruction so the HTML headline never fights the visual. */
+function heroComposition(layout: 'left' | 'center' | 'right', aspect: string): string {
+  if (aspect === '1:1') {
+    return (
+      'Square mobile layout: keep the TOP third as clean negative space for an ' +
+      'overlaid headline; weight the subject in the bottom two thirds.'
+    )
+  }
+  if (layout === 'center') {
+    return (
+      'Composition: keep the CENTER clear as negative space for overlaid headline ' +
+      'text; frame the subject toward the edges.'
+    )
+  }
+  const clear = layout.toUpperCase()
+  const subjectSide = layout === 'left' ? 'right' : 'left'
+  return (
+    `Composition: keep the ${clear} half as clean negative space for overlaid ` +
+    `headline text; place the subject on the ${subjectSide}.`
+  )
+}
+
 function GenerateForSlot({
   project,
   iid,
@@ -1583,7 +1628,8 @@ function GenerateForSlot({
   onCampaignsAdd: (c: CampaignInfo) => void
   onAttachCampaign: (id: string) => void
   aspectFor: (iid: string, key: string) => '1:1' | '4:3' | '16:9'
-  onAssign: (url: string) => void
+  /** No target → the assign follows the device toggle (base vs mobile). */
+  onAssign: (url: string, target?: 'base' | 'mobile') => void
   onAssetsChanged: () => void
   onError: (m: string) => void
 }) {
@@ -1592,7 +1638,13 @@ function GenerateForSlot({
   const [details, setDetails] = useState('')
   const [people, setPeople] = useState(false)
   const [count, setCount] = useState(1)
-  const [job, setJob] = useState<MaterialJob | null>(null)
+  // Hero pair: one run → 4:3 (desktop+tablet) AND a re-composed 1:1 (mobile),
+  // each aspect art-directed separately, both text-free with clear space where
+  // the HTML headline sits.
+  const [heroPair, setHeroPair] = useState(false)
+  const [layout, setLayout] = useState<'left' | 'center' | 'right'>('left')
+  const [style, setStyle] = useState('')
+  const [jobs, setJobs] = useState<{ aspect: string; job: MaterialJob }[]>([])
   const [busy, setBusy] = useState(false)
   const pollRef = useRef<number | null>(null)
   useEffect(
@@ -1601,36 +1653,44 @@ function GenerateForSlot({
     },
     [],
   )
-  const aspect = aspectFor(iid, imgKey)
+  const slotRatio = aspectFor(iid, imgKey)
 
   async function start() {
     if (!subject.trim() || busy || !project.campaign_id) return
     setBusy(true)
-    setJob(null)
+    setJobs([])
+    const styleNote = STYLE_PRESETS.find(([k]) => k === style)?.[1] ?? ''
+    const aspects = heroPair ? (['4:3', '1:1'] as const) : ([slotRatio] as const)
     try {
-      const j = await createAdvertorial({
-        title: subject.trim(),
-        text: details.trim(),
-        people,
-        aspect,
-        campaign_id: project.campaign_id,
-        candidates: count,
-      })
-      setJob(j)
+      const started: { aspect: string; job: MaterialJob }[] = []
+      for (const a of aspects) {
+        const text = [details.trim(), heroPair ? heroComposition(layout, a) : '', styleNote]
+          .filter(Boolean)
+          .join(' ')
+        const j = await createAdvertorial({
+          title: subject.trim(),
+          text,
+          people,
+          aspect: a,
+          campaign_id: project.campaign_id,
+          candidates: count,
+        })
+        started.push({ aspect: a, job: j })
+      }
+      setJobs([...started])
       pollRef.current = window.setInterval(() => {
-        getJob(j.job_id)
-          .then((cur) => {
-            setJob(cur)
-            if (cur.status !== 'running') {
-              if (pollRef.current) window.clearInterval(pollRef.current)
-              pollRef.current = null
-              setBusy(false)
-              onAssetsChanged()
-            }
+        Promise.all(started.map((s) => getJob(s.job.job_id).catch(() => null))).then((cur) => {
+          started.forEach((s, i) => {
+            if (cur[i]) s.job = cur[i]!
           })
-          .catch(() => {
-            /* transient poll failure — keep trying */
-          })
+          setJobs([...started])
+          if (started.every((s) => s.job.status !== 'running')) {
+            if (pollRef.current) window.clearInterval(pollRef.current)
+            pollRef.current = null
+            setBusy(false)
+            onAssetsChanged()
+          }
+        })
       }, 3000)
     } catch (e) {
       setBusy(false)
@@ -1649,7 +1709,7 @@ function GenerateForSlot({
         <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
         <span className="min-w-0 flex-1 truncate text-xs font-semibold">Generate for this slot</span>
         <span className="rounded-full border border-border bg-card px-1.5 text-[9px] font-semibold tabular-nums text-muted-foreground">
-          {aspect}
+          {heroPair ? '4:3 + 1:1' : slotRatio}
         </span>
         <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
@@ -1680,6 +1740,56 @@ function GenerateForSlot({
             aria-label="Image details"
             className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs focus-visible:border-primary focus-visible:outline-none"
           />
+          <label className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card/60 px-2 py-1.5">
+            <span className="min-w-0 text-[11px] leading-snug">
+              Hero pair <span className="text-muted-foreground">— 4:3 + re-arranged 1:1 for mobile</span>
+            </span>
+            <input type="checkbox" checked={heroPair} onChange={(e) => setHeroPair(e.target.checked)} aria-label="Generate hero pair" />
+          </label>
+          {heroPair && (
+            <>
+              <div>
+                <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">
+                  Where does your headline sit? The image keeps that side clear.
+                </span>
+                <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-border bg-card/60 p-0.5">
+                  {(['left', 'center', 'right'] as const).map((l) => (
+                    <button
+                      key={l}
+                      type="button"
+                      onClick={() => setLayout(l)}
+                      aria-pressed={layout === l}
+                      title={`Headline ${l} — clear space there, subject opposite`}
+                      className={cn(
+                        'rounded-md px-1 py-1 text-[10px] font-medium capitalize transition-colors',
+                        layout === l ? 'bg-card text-foreground shadow-sm ring-1 ring-border' : 'text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      Text {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1" role="group" aria-label="Style preset">
+                {STYLE_PRESETS.map(([k]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setStyle(style === k ? '' : k)}
+                    aria-pressed={style === k}
+                    className={cn(
+                      'h-6 rounded-md border px-1.5 text-[10px] font-medium transition-colors',
+                      style === k
+                        ? 'border-primary/50 bg-primary/10 text-foreground'
+                        : 'border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground',
+                    )}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
           <div className="flex items-center gap-1.5">
             <label className="flex min-w-0 flex-1 items-center justify-between rounded-lg border border-border bg-card/60 px-2 py-1.5">
               <span className="text-[11px]">Include people</span>
@@ -1705,13 +1815,19 @@ function GenerateForSlot({
           </div>
           <Button size="sm" className="w-full" disabled={busy || !subject.trim()} onClick={() => void start()}>
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {busy ? 'Generating…' : `Generate (${aspect}, no text)`}
+            {busy ? 'Generating…' : `Generate (${heroPair ? '4:3 + 1:1' : slotRatio}, no text)`}
           </Button>
 
-          {job && (
-            <div className="space-y-1.5">
-              {job.items.map((it) => (
-                <div key={it.index} className="overflow-hidden rounded-lg border border-border bg-card">
+          {jobs.map(({ aspect: a, job: j }) => (
+            <div key={j.job_id} className="space-y-1.5">
+              {heroPair && (
+                <p className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {a === '1:1' ? <Smartphone className="h-3 w-3" /> : <Monitor className="h-3 w-3" />}
+                  {a === '1:1' ? 'Mobile · 1:1' : 'Desktop & tablet · 4:3'}
+                </p>
+              )}
+              {j.items.map((it) => (
+                <div key={`${j.job_id}:${it.index}`} className="overflow-hidden rounded-lg border border-border bg-card">
                   {it.status === 'ok' && it.url ? (
                     <>
                       <img src={it.url} alt="" className="max-h-32 w-full bg-muted/40 object-contain" />
@@ -1721,8 +1837,13 @@ function GenerateForSlot({
                             ⚠ {it.qa}
                           </span>
                         )}
-                        <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px]" onClick={() => onAssign(it.url!)}>
-                          Use in this slot
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 flex-1 text-[10px]"
+                          onClick={() => onAssign(it.url!, heroPair ? (a === '1:1' ? 'mobile' : 'base') : undefined)}
+                        >
+                          {heroPair ? (a === '1:1' ? 'Use for mobile' : 'Use for desktop & tablet') : 'Use in this slot'}
                         </Button>
                         <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => void start()} disabled={busy}>
                           Retry
@@ -1739,7 +1860,7 @@ function GenerateForSlot({
                 </div>
               ))}
             </div>
-          )}
+          ))}
         </div>
       )}
     </div>
@@ -1770,6 +1891,7 @@ function PropertiesPanel({
   onLink,
   onRepeat,
   onUpload,
+  onClearMobile,
   onDuplicate,
   onRemove,
 }: {
@@ -1785,6 +1907,7 @@ function PropertiesPanel({
   onLink: (key: string, v: string) => void
   onRepeat: (key: string, n: number) => void
   onUpload: (f: FileList | null) => void
+  onClearMobile: (key: string) => void
   onDuplicate: () => void
   onRemove: () => void
 }) {
@@ -1925,6 +2048,38 @@ function PropertiesPanel({
             <Upload className="h-3.5 w-3.5" /> Upload image
           </Button>
           <p className="text-[10px] leading-snug text-muted-foreground">…or pick one in the <b>Assets</b> tab.</p>
+          {/* Mobile art direction: this slot can show a different image ≤575px.
+              Set it by assigning while in mobile view, or via the hero pair. */}
+          {(inst.images_mobile?.[imgField.key] || device === 'mobile') && (
+            <div className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/40 px-2 py-1.5">
+              <Smartphone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              {inst.images_mobile?.[imgField.key] ? (
+                <>
+                  <img
+                    src={inst.images_mobile[imgField.key]}
+                    alt=""
+                    className="h-6 w-6 shrink-0 rounded border border-border bg-muted/40 object-cover"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
+                    Mobile shows its own image
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onClearMobile(imgField.key)}
+                    title="Remove the mobile-only image — mobile falls back to the main one"
+                    aria-label="Clear mobile image override"
+                    className="rounded p-0.5 text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              ) : (
+                <span className="min-w-0 flex-1 text-[10px] leading-snug text-muted-foreground">
+                  Assigning here in mobile view sets a <b>mobile-only</b> image.
+                </span>
+              )}
+            </div>
+          )}
           {/* One-click controls — no dropdowns: fit as a segmented toggle,
               radius with quick presets. Fast hands over menus. */}
           <div>

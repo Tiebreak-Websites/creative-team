@@ -63,6 +63,7 @@ def _clean_project_patch(payload: dict, p: dict) -> None:
                 "template_key": _clean_str(s.get("template_key"), 64),
                 "texts": {str(k)[:80]: str(v)[:2000] for k, v in (s.get("texts") or {}).items()},
                 "images": {str(k)[:80]: str(v)[:6000] for k, v in (s.get("images") or {}).items()},
+                "images_mobile": {str(k)[:80]: str(v)[:6000] for k, v in (s.get("images_mobile") or {}).items()},
                 "links": {str(k)[:80]: str(v)[:500] for k, v in (s.get("links") or {}).items()},
                 "repeats": {str(k)[:80]: max(1, min(12, int(v)))
                             for k, v in (s.get("repeats") or {}).items()
