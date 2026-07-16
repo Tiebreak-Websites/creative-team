@@ -33,6 +33,7 @@ import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
 import { cn } from '@/lib/utils'
 import { listBrands, type Brand } from '../bannerBuilder/brandsApi'
 import { listCampaigns, listJobs, type CampaignInfo } from '../lpMaterials/api'
+import { CampaignPicker } from '../lpMaterials/CampaignPicker'
 import {
   brandTokens,
   composePage,
@@ -709,18 +710,13 @@ export function Builder({
             </button>
           ))}
         </TopPicker>
-        <select
+        <CampaignPicker
+          campaigns={campaigns}
           value={project.campaign_id}
-          onChange={(e) => mutate((p) => ({ ...p, campaign_id: e.target.value }), { structural: false })}
-          className="h-8 w-44 min-w-28 max-w-64 flex-1 rounded-md border border-input bg-transparent px-1.5 text-xs"
-          aria-label="Campaign"
-          title="Attach an LP Materials campaign — its assets appear in the Assets tab"
-        >
-          <option value="">No campaign</option>
-          {campaigns.map((c) => (
-            <option key={c.campaign_id} value={c.campaign_id}>{c.name}</option>
-          ))}
-        </select>
+          onChange={(id) => mutate((p) => ({ ...p, campaign_id: id }), { structural: false })}
+          onCreated={(c) => setCampaigns((cs) => [c, ...cs])}
+          className="w-44 max-w-64 flex-1"
+        />
 
         {/* Right cluster — device sizes + undo/redo stay pinned to the far right. */}
         <span className="ml-auto inline-flex items-center rounded-lg border border-border bg-secondary p-0.5">
