@@ -19,8 +19,8 @@ export function VersionBadge() {
       title={`Internovus - Creative Builder v${__APP_VERSION__} · updated ${built}`}
     >
       <span className="font-semibold text-foreground/80">v{__APP_VERSION__}</span>
-      <span className="text-muted-foreground/50">·</span>
-      <span>{built}</span>
+      <span className="hidden text-muted-foreground/50 2xl:inline">·</span>
+      <span className="hidden 2xl:inline">{built}</span>
     </span>
   )
 }

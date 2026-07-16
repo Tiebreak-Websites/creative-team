@@ -21,7 +21,7 @@ export function UserMenu() {
   return (
     <div className="flex items-center gap-2">
       <span
-        className="hidden max-w-[180px] truncate text-xs text-muted-foreground sm:inline"
+        className="hidden max-w-[180px] truncate text-xs text-muted-foreground 2xl:inline"
         title={user.email}
       >
         {user.email}
