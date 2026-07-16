@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Check,
@@ -155,6 +155,12 @@ export function Builder({
   const canvasLoadedRef = useRef(false)
   const canvasModeRef = useRef<'editor' | 'preview'>('editor')
   const [scale, setScale] = useState(0.5)
+  const [zoomMode, setZoomMode] = useState<'fit' | 'manual'>('fit')
+  const [zoomMenu, setZoomMenu] = useState(false)
+  const scaleRef = useRef(0.5)
+  const zoomBoxRef = useRef<HTMLDivElement>(null)
+  const zoomCtrlRef = useRef<HTMLDivElement>(null)
+  const zoomFocusRef = useRef<{ ux: number; cx: number; innerTop?: number } | null>(null)
   const structuralRef = useRef(0)
   const [structural, setStructural] = useState(0)
   const lastScrollRef = useRef(0)
@@ -373,19 +379,126 @@ export function Builder({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection, mutate])
 
-  // ---- canvas scale ----------------------------------------------------------------
+  // ---- canvas zoom ----------------------------------------------------------------
+  // Default is Fit: auto-scale to the pane, re-measured on pane resize and
+  // device switch. Any manual zoom (steppers, presets, Ctrl/Cmd+wheel) flips to
+  // 'manual' and stays put until Fit is picked again in the zoom menu.
   useEffect(() => {
+    scaleRef.current = scale
+  }, [scale])
+  useEffect(() => {
+    if (zoomMode !== 'fit') return
     const el = canvasRef.current
     if (!el) return
     const measure = () => {
       const w = el.clientWidth - 40
-      setScale(Math.min(1, w / DEVICE_WIDTH[device]))
+      // Same floor as manual zoom — a degenerate pane must never yield scale≈0
+      // (100/scale% heights explode).
+      const s = Math.min(1, Math.max(0.1, w / DEVICE_WIDTH[device]))
+      scaleRef.current = s
+      setScale(s)
     }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [device, preview])
+  }, [device, preview, zoomMode])
+
+  /**
+   * Zoom to `next`, keeping a focus point visually still. `cx` is the focus in
+   * viewport coords (horizontal — the box recenters via mx-auto, corrected
+   * after paint below); `innerY` anchors vertically INSIDE the iframe, whose
+   * internal scroll is the page's vertical scroll (the box height is
+   * pane-fixed, so the outer pane never scrolls vertically).
+   */
+  const zoomTo = useCallback((next: number, focus?: { cx?: number; innerY?: number }) => {
+    const el = canvasRef.current
+    const box = zoomBoxRef.current
+    const prev = scaleRef.current
+    const s = Math.min(2, Math.max(0.1, next))
+    setZoomMode('manual')
+    if (s === prev) return
+    if (el && box) {
+      const r = box.getBoundingClientRect()
+      const er = el.getBoundingClientRect()
+      const cx = focus?.cx ?? er.left + el.clientWidth / 2
+      const f: { ux: number; cx: number; innerTop?: number } = { ux: (cx - r.left) / prev, cx }
+      if (focus?.innerY !== undefined) {
+        const se = iframeRef.current?.contentDocument?.scrollingElement
+        if (se) f.innerTop = se.scrollTop + focus.innerY * (1 - prev / s)
+      }
+      zoomFocusRef.current = f
+    }
+    // Sync the ref NOW — rapid stepper clicks land in one tick, before the
+    // post-paint effect would update it, and must compound rather than repeat.
+    scaleRef.current = s
+    setScale(s)
+  }, [])
+  // After the new scale paints, put the focused point back under the pointer.
+  useLayoutEffect(() => {
+    const f = zoomFocusRef.current
+    if (!f) return
+    zoomFocusRef.current = null
+    const el = canvasRef.current
+    const box = zoomBoxRef.current
+    if (el && box) {
+      const r = box.getBoundingClientRect()
+      el.scrollLeft += r.left + f.ux * scale - f.cx
+    }
+    if (f.innerTop !== undefined) {
+      const se = iframeRef.current?.contentDocument?.scrollingElement
+      if (se) se.scrollTop = f.innerTop
+    }
+  }, [scale])
+
+  // Ctrl/Cmd + wheel zooms — over the pane AND inside the canvas iframe (which
+  // swallows wheel events; allow-same-origin lets us attach straight onto its
+  // document, re-attached on every load since each srcdoc is a fresh document).
+  const wheelZoom = useCallback(
+    (e: WheelEvent, toParent?: (x: number, y: number) => { cx: number; innerY: number }) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      const factor = Math.exp(-e.deltaY * 0.0015)
+      const p = toParent ? toParent(e.clientX, e.clientY) : { cx: e.clientX, innerY: undefined }
+      zoomTo(scaleRef.current * factor, p)
+    },
+    [zoomTo],
+  )
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const h = (e: WheelEvent) => wheelZoom(e)
+    el.addEventListener('wheel', h, { passive: false })
+    return () => el.removeEventListener('wheel', h)
+  }, [wheelZoom])
+  const attachIframeWheel = useCallback(() => {
+    const frame = iframeRef.current
+    const doc = frame?.contentDocument
+    if (!frame || !doc) return
+    const h = (e: WheelEvent) =>
+      wheelZoom(e, (x, y) => {
+        const s = scaleRef.current
+        return { cx: frame.getBoundingClientRect().left + x * s, innerY: y }
+      })
+    doc.addEventListener('wheel', h, { passive: false })
+  }, [wheelZoom])
+
+  // Close the zoom menu on outside click / Escape.
+  useEffect(() => {
+    if (!zoomMenu) return
+    const onDown = (e: PointerEvent) => {
+      if (!zoomCtrlRef.current?.contains(e.target as Node)) setZoomMenu(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setZoomMenu(false)
+    }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [zoomMenu])
 
   // ---- mutations --------------------------------------------------------------------
   function addSection(templateKey: string, index?: number) {
@@ -735,29 +848,104 @@ export function Builder({
         )}
 
         {/* canvas */}
-        <div ref={canvasRef} className="relative min-w-0 flex-1 overflow-auto bg-secondary/40 p-5">
-          <div className="mx-auto" style={{ width: DEVICE_WIDTH[device] * scale, height: `calc(100% - 4px)` }}>
-            <div
-              style={{
-                width: DEVICE_WIDTH[device],
-                height: `${100 / scale}%`,
-                transform: `scale(${scale})`,
-                transformOrigin: 'top left',
-              }}
-              className="overflow-hidden rounded-xl border border-border bg-white shadow-2xl"
-            >
-              <iframe
-                ref={iframeRef}
-                title="Landing page canvas"
-                srcDoc={srcdoc}
-                className="h-full w-full border-0"
-                sandbox="allow-scripts allow-same-origin"
-              />
+        <div className="relative min-w-0 flex-1">
+          <div ref={canvasRef} className="h-full w-full overflow-auto bg-secondary/40 p-5">
+            <div ref={zoomBoxRef} className="mx-auto" style={{ width: DEVICE_WIDTH[device] * scale, height: `calc(100% - 4px)` }}>
+              <div
+                style={{
+                  width: DEVICE_WIDTH[device],
+                  height: `${100 / scale}%`,
+                  transform: `scale(${scale})`,
+                  transformOrigin: 'top left',
+                }}
+                className="overflow-hidden rounded-xl border border-border bg-white shadow-2xl"
+              >
+                <iframe
+                  ref={iframeRef}
+                  title="Landing page canvas"
+                  srcDoc={srcdoc}
+                  onLoad={attachIframeWheel}
+                  className="h-full w-full border-0"
+                  sandbox="allow-scripts allow-same-origin"
+                />
+              </div>
             </div>
           </div>
-          <span className="pointer-events-none absolute bottom-3 right-4 rounded-full border border-border bg-card/90 px-2.5 py-1 text-[10px] font-medium text-muted-foreground shadow backdrop-blur">
-            {DEVICE_WIDTH[device]}px · {Math.round(scale * 100)}%
-          </span>
+          {/* zoom control — sits on the pane wrapper, NOT inside the scroller,
+              so it stays pinned bottom-right however far the canvas scrolls */}
+          <div ref={zoomCtrlRef} className="absolute bottom-3 right-4 z-10">
+            {zoomMenu && (
+              <div className="absolute bottom-full right-0 mb-1.5 w-40 rounded-xl border border-border bg-popover p-1 shadow-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setZoomMode('fit')
+                    setZoomMenu(false)
+                  }}
+                  className={cn(
+                    'flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition-colors hover:bg-accent',
+                    zoomMode === 'fit' ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  Fit to pane
+                  {zoomMode === 'fit' && <Check className="h-3.5 w-3.5 text-primary" />}
+                </button>
+                {[0.5, 0.75, 1, 1.5, 2].map((z) => {
+                  const active = zoomMode === 'manual' && Math.abs(scale - z) < 0.005
+                  return (
+                    <button
+                      key={z}
+                      type="button"
+                      onClick={() => {
+                        zoomTo(z)
+                        setZoomMenu(false)
+                      }}
+                      className={cn(
+                        'flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs tabular-nums transition-colors hover:bg-accent',
+                        active ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      {Math.round(z * 100)}%
+                      {active && <Check className="h-3.5 w-3.5 text-primary" />}
+                    </button>
+                  )
+                })}
+                <p className="border-t border-border px-2.5 pb-1 pt-1.5 text-[10px] text-muted-foreground">
+                  {DEVICE_WIDTH[device]}px canvas · Ctrl+scroll zooms
+                </p>
+              </div>
+            )}
+            <div className="flex items-center gap-0.5 rounded-full border border-border bg-card/90 p-0.5 shadow backdrop-blur">
+              <button
+                type="button"
+                onClick={() => zoomTo(scaleRef.current / 1.25)}
+                title="Zoom out"
+                aria-label="Zoom out"
+                className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setZoomMenu((v) => !v)}
+                title={`Zoom — ${DEVICE_WIDTH[device]}px canvas`}
+                aria-haspopup="menu"
+                aria-expanded={zoomMenu}
+                className="min-w-[3.5rem] rounded-full px-1.5 py-1 text-center text-[11px] font-medium tabular-nums text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                {Math.round(scale * 100)}%{zoomMode === 'fit' ? ' · Fit' : ''}
+              </button>
+              <button
+                type="button"
+                onClick={() => zoomTo(scaleRef.current * 1.25)}
+                title="Zoom in"
+                aria-label="Zoom in"
+                className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* right panel */}
