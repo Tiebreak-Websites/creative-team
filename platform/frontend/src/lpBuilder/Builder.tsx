@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   ChevronRight,
   Copy,
   Download,
@@ -798,9 +799,14 @@ export function Builder({
 
       {/* ------------------------------- body ------------------------------- */}
       <div className="flex min-h-0 flex-1">
-        {/* left panel */}
+        {/* left panel — widens while Add is active so 2-per-row thumbnails read well */}
         {!preview && (
-          <div className="flex w-64 shrink-0 flex-col border-r border-border bg-card/60">
+          <div
+            className={cn(
+              'flex shrink-0 flex-col border-r border-border bg-card/60 transition-[width] duration-200',
+              leftTab === 'add' ? 'w-96' : 'w-64',
+            )}
+          >
             <div className="grid shrink-0 grid-cols-3 gap-1 border-b border-border p-1.5">
               {([['add', 'Add', Plus], ['layers', 'Layers', Layers], ['assets', 'Assets', ImagePlus]] as const).map(
                 ([id, label, Icon]) => (
@@ -824,6 +830,7 @@ export function Builder({
                 <AddTab
                   sections={sections}
                   brands={brands}
+                  project={project}
                   onDragKey={(k) => (dragKeyRef.current = k)}
                   onAppend={(k) => addSection(k)}
                 />
@@ -1008,77 +1015,220 @@ export function Builder({
 // ---------------------------------------------------------------------------
 // Left tabs
 // ---------------------------------------------------------------------------
+// Section thumbnails are real renders: each template composes server-side as a
+// one-section page (same compositor as the canvas, current brand tokens +
+// language) and paints in a tiny scripts-off iframe. Cached per template+theme
+// so reopening a category is instant; the single-open accordion keeps at most
+// one category's iframes alive.
+const THUMB_W = 800 // compose viewport — tablet-ish styles, readable when scaled
+const thumbCache = new Map<string, string>()
+
+function thumbKey(defKey: string, p: Project) {
+  const t = p.tokens || {}
+  return [defKey, p.brand_id, p.language, t.primary, t.accent, t.bg, t.card].join('|')
+}
+
+function SectionThumb({ def, project }: { def: SectionDef; project: Project }) {
+  const key = thumbKey(def.key, project)
+  const [doc, setDoc] = useState<string | null>(() => thumbCache.get(key) ?? null)
+  useEffect(() => {
+    let gone = false
+    const cached = thumbCache.get(key)
+    if (cached !== undefined) {
+      setDoc(cached)
+      return
+    }
+    const stub = {
+      id: 'thumb', name: def.name, brand_id: project.brand_id, language: project.language,
+      campaign_id: '', tokens: project.tokens, form: { action_url: '', success_url: '' },
+      fonts: 'system', meta_title: '', meta_description: '',
+      sections: [{ iid: 'thumb0', template_key: def.key, texts: {}, images: {}, links: {}, repeats: {}, props: {} }],
+    } as unknown as Project
+    composePage(stub, 'preview')
+      .then((html) => {
+        thumbCache.set(key, html)
+        if (!gone) setDoc(html)
+      })
+      .catch(() => {
+        thumbCache.set(key, '')
+        if (!gone) setDoc('')
+      })
+    return () => {
+      gone = true
+    }
+  }, [key, def, project])
+  return (
+    <span className="pointer-events-none block h-20 overflow-hidden rounded-t-[11px] bg-white">
+      {doc ? (
+        <iframe
+          title={`${def.name} preview`}
+          srcDoc={doc}
+          tabIndex={-1}
+          aria-hidden
+          scrolling="no"
+          sandbox=""
+          className="origin-top-left border-0"
+          style={{ width: THUMB_W, height: THUMB_W, transform: 'scale(var(--thumb-scale))' }}
+        />
+      ) : (
+        <span className="flex h-full items-center justify-center bg-secondary/60">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground/60" />
+        </span>
+      )}
+    </span>
+  )
+}
+
 function AddTab({
   sections,
   brands,
+  project,
   onDragKey,
   onAppend,
 }: {
   sections: SectionDef[]
   brands: Brand[]
+  project: Project
   onDragKey: (k: string) => void
   onAppend: (k: string) => void
 }) {
+  const dark = useIsDark()
+  // Template groups are BRAND groups: a category matching a brand id gets the
+  // brand's logo as its header. The top-bar brand SCOPES this tab: only that
+  // brand's templates (plus the generic element categories) are offered.
+  const brandFor = useCallback(
+    (cat: string) =>
+      brands.find((b) => b.id.toLowerCase() === cat.toLowerCase() || b.name.toLowerCase() === cat.toLowerCase()),
+    [brands],
+  )
+  const activeBrand = brands.find((b) => b.id === project.brand_id)
   const cats = useMemo(() => {
     const by = new Map<string, SectionDef[]>()
     for (const s of [...sections].sort((a, b) => a.position - b.position)) {
       if (!by.has(s.category)) by.set(s.category, [])
       by.get(s.category)!.push(s)
     }
-    return [...by.entries()]
-  }, [sections])
-  // Template groups are BRAND groups: a category matching a brand id gets the
-  // brand's logo (from Settings ▸ Brands) as its header.
-  const dark = useIsDark()
-  const brandFor = (cat: string) =>
-    brands.find((b) => b.id.toLowerCase() === cat.toLowerCase() || b.name.toLowerCase() === cat.toLowerCase())
+    let all = [...by.entries()]
+    if (activeBrand) {
+      all = all.filter(([cat]) => {
+        const b = brandFor(cat)
+        return !b || b.id === activeBrand.id
+      })
+    }
+    // brand template groups float to the top, generic element categories after
+    return all.sort((a, b) => Number(Boolean(brandFor(b[0]))) - Number(Boolean(brandFor(a[0]))))
+  }, [sections, activeBrand, brandFor])
+
+  // Single-open accordion. Opening one closes the other; switching the brand
+  // opens its template group.
+  const [openCat, setOpenCat] = useState<string | null>(null)
+  const [switcher, setSwitcher] = useState(false)
+  const open = cats.some(([c]) => c === openCat) ? openCat : (cats[0]?.[0] ?? null)
+  useEffect(() => {
+    if (!activeBrand) return
+    const own = cats.find(([c]) => brandFor(c)?.id === activeBrand.id)
+    if (own) setOpenCat(own[0])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on brand switch
+  }, [project.brand_id])
+
+  const catLabel = (cat: string) => brandFor(cat)?.name ?? (CATEGORY_LABEL[cat] ?? cat)
+
   return (
-    <div className="space-y-4">
-      {cats.map(([cat, list]) => {
-        const brand = brandFor(cat)
-        return (
-        <div key={cat}>
-          {brand ? (
-            <div className="mb-1.5 flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-2 py-1.5">
-              {brandLogoSrc(brand, dark) ? (
-                <img src={brandLogoSrc(brand, dark)} alt="" className="h-4 max-w-20 object-contain object-left" />
-              ) : null}
-              <span className="truncate text-[11px] font-semibold">{brand.name}</span>
-              <span className="ml-auto text-[9px] uppercase tracking-wide text-muted-foreground">template</span>
-            </div>
-          ) : (
-            <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {CATEGORY_LABEL[cat] ?? cat}
-            </p>
-          )}
-          <div className="space-y-1.5">
-            {list.map((s) => (
-              <div
-                key={s.key}
-                draggable
-                onDragStart={(e) => {
-                  onDragKey(s.key)
-                  e.dataTransfer.setData('text/lp-section', s.key)
-                  e.dataTransfer.effectAllowed = 'copy'
+    <div className="relative space-y-1.5" style={{ ['--thumb-scale' as string]: `${169 / THUMB_W}` }}>
+      {/* sticky switcher — always shows which category is open */}
+      <div className="sticky -top-2 z-10 -mx-1 rounded-lg border border-border bg-card/95 shadow-sm backdrop-blur">
+        <button
+          type="button"
+          onClick={() => setSwitcher((v) => !v)}
+          aria-expanded={switcher}
+          title="Switch category"
+          className="flex w-full items-center gap-1.5 px-2.5 py-2 text-left"
+        >
+          <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Showing</span>
+          <span className="min-w-0 flex-1 truncate text-xs font-semibold">{open ? catLabel(open) : '—'}</span>
+          <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform', switcher && 'rotate-180')} />
+        </button>
+        {switcher && (
+          <div className="border-t border-border p-1">
+            {cats.map(([cat]) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => {
+                  setOpenCat(cat)
+                  setSwitcher(false)
                 }}
-                className="group flex cursor-grab items-center gap-2 rounded-xl border border-border bg-card px-2.5 py-2 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/50 active:cursor-grabbing"
-                title="Drag onto the page — or use ＋ to append"
+                className={cn(
+                  'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                  cat === open ? 'font-semibold' : 'text-muted-foreground hover:text-foreground',
+                )}
               >
-                <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-                <span className="min-w-0 flex-1 truncate text-xs font-medium">{s.name}</span>
-                <button
-                  type="button"
-                  onClick={() => onAppend(s.key)}
-                  className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
-                  title={`Append "${s.name}" to the page`}
-                  aria-label={`Append ${s.name}`}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              </div>
+                {catLabel(cat)}
+                {cat === open && <Check className="h-3.5 w-3.5 text-primary" />}
+              </button>
             ))}
           </div>
-        </div>
+        )}
+      </div>
+
+      {cats.map(([cat, list]) => {
+        const brand = brandFor(cat)
+        const isOpen = cat === open
+        return (
+          <div key={cat} className="overflow-hidden rounded-xl border border-border">
+            <button
+              type="button"
+              onClick={() => setOpenCat(isOpen ? null : cat)}
+              aria-expanded={isOpen}
+              className={cn(
+                'flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors',
+                isOpen ? 'bg-secondary/70' : 'bg-secondary/30 hover:bg-secondary/60',
+              )}
+            >
+              <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform', isOpen && 'rotate-90')} />
+              {brand && brandLogoSrc(brand, dark) ? (
+                <img src={brandLogoSrc(brand, dark)} alt="" className="h-4 max-w-20 object-contain object-left" />
+              ) : null}
+              <span className="min-w-0 flex-1 truncate text-[11px] font-semibold">
+                {brand ? brand.name : (CATEGORY_LABEL[cat] ?? cat)}
+              </span>
+              {brand && <span className="text-[9px] uppercase tracking-wide text-muted-foreground">template</span>}
+              <span className="rounded-full bg-secondary px-1.5 text-[9px] font-semibold tabular-nums text-muted-foreground">
+                {list.length}
+              </span>
+            </button>
+            {isOpen && (
+              <div className="grid grid-cols-2 gap-2 border-t border-border p-2">
+                {list.map((s) => (
+                  <div
+                    key={s.key}
+                    draggable
+                    onDragStart={(e) => {
+                      onDragKey(s.key)
+                      e.dataTransfer.setData('text/lp-section', s.key)
+                      e.dataTransfer.effectAllowed = 'copy'
+                    }}
+                    className="group relative cursor-grab overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/50 active:cursor-grabbing"
+                    title={`${s.name} — drag onto the page, or use ＋ to append`}
+                  >
+                    <SectionThumb def={s} project={project} />
+                    <span className="block truncate border-t border-border px-2 py-1.5 text-[10px] font-medium">
+                      {s.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onAppend(s.key)}
+                      className="absolute right-1 top-1 rounded-md border border-border bg-card/95 p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                      title={`Append "${s.name}" to the page`}
+                      aria-label={`Append ${s.name}`}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )
       })}
     </div>
