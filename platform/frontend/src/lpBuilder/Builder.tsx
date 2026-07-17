@@ -822,13 +822,21 @@ export function Builder({
             </button>
           ))}
         </TopPicker>
-        <CampaignPicker
-          campaigns={campaigns}
-          value={project.campaign_id}
-          onChange={(id) => mutate((p) => ({ ...p, campaign_id: id }), { structural: false })}
-          onCreated={(c) => setCampaigns((cs) => [c, ...cs])}
-          className="w-44 max-w-64 flex-1"
-        />
+        {/* Monday.com item id — the project's tracking key (digits only). */}
+        <label className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2"
+               title="Monday.com item id">
+          <span className="text-xs font-semibold text-muted-foreground">#</span>
+          <input
+            value={project.monday_id ?? ''}
+            onChange={(e) =>
+              mutate((p) => ({ ...p, monday_id: e.target.value.replace(/\D/g, '').slice(0, 20) }), { structural: false })
+            }
+            inputMode="numeric"
+            placeholder="Monday ID"
+            aria-label="Monday ID"
+            className="w-28 bg-transparent text-xs tabular-nums outline-none placeholder:text-muted-foreground"
+          />
+        </label>
 
         {/* Right cluster — device sizes + undo/redo stay pinned to the far right. */}
         <span className="ml-auto inline-flex items-center rounded-lg border border-border bg-secondary p-0.5">

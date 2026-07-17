@@ -69,6 +69,8 @@ export interface Project {
   name: string
   brand_id: string
   language: string
+  /** Monday.com item id (digits only) — the project's tracking key. */
+  monday_id?: string
   campaign_id: string
   sections: Instance[]
   tokens: Record<string, string>
@@ -91,6 +93,7 @@ export interface ProjectSummary {
   name: string
   brand_id: string
   language: string
+  monday_id?: string
   campaign_id: string
   created_by: string
   created_at: string
@@ -174,7 +177,7 @@ export async function createProject(payload: {
   name: string
   brand_id?: string
   language: string
-  campaign_id?: string
+  monday_id?: string
   tokens?: Record<string, string>
 }): Promise<Project> {
   const r = await fetch(`${LPB}/projects`, { method: 'POST', headers: j, credentials: 'include', body: JSON.stringify(payload) })

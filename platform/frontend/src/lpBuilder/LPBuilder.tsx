@@ -17,12 +17,12 @@ import {
   X,
 } from 'lucide-react'
 import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
+import { flagUrl } from '@/lib/flags'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, formatUserName } from '@/lib/utils'
 import { useAuth } from '../auth/AuthContext'
 import { listBrands, type Brand } from '../bannerBuilder/brandsApi'
-import { listCampaigns, type CampaignInfo } from '../lpMaterials/api'
 import { AdminTemplates } from './AdminTemplates'
 import { Builder } from './Builder'
 import {
@@ -142,22 +142,16 @@ function Dashboard({
   const [query, setQuery] = useState('')
   const [langPickFor, setLangPickFor] = useState<ProjectSummary | null>(null)
   const [brands, setBrands] = useState<Brand[]>([])
-  const [campaigns, setCampaigns] = useState<CampaignInfo[]>([])
   /** null = folders home; brand id = inside that brand's folder; '' = "Other". */
   const [folder, setFolder] = useState<string | null>(null)
   const dark = useIsDark()
 
   useEffect(() => {
     listBrands().then(setBrands).catch(() => {})
-    listCampaigns().then(setCampaigns).catch(() => {})
   }, [])
 
-  /** Card cover: the page's own hero image, else the attached campaign's hero. */
-  const coverFor = (p: ProjectSummary): string | null =>
-    p.cover_url ||
-    (p.campaign_id
-      ? campaigns.find((c) => c.campaign_id === p.campaign_id)?.hero_url ?? null
-      : null)
+  /** Card cover: the page's own hero image (first placed image). */
+  const coverFor = (p: ProjectSummary): string | null => p.cover_url || null
 
   const brandIds = useMemo(() => new Set(brands.map((b) => b.id)), [brands])
 
@@ -342,10 +336,14 @@ function Dashboard({
                   )}
                   <div className="p-3.5">
                     <p className="truncate font-display text-sm font-semibold">{p.name}</p>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
-                      <span className="uppercase">{p.language}</span>
-                      {p.brand_id && <span>· {p.brand_id}</span>}
-                      <span>· {p.sections} section{p.sections === 1 ? '' : 's'}</span>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">
+                      {flagUrl(p.language) ? (
+                        <img src={flagUrl(p.language)} alt="" className="h-3 w-[18px] rounded-[2px] object-cover" />
+                      ) : (
+                        <span className="uppercase">{p.language}</span>
+                      )}
+                      <span>{p.sections} section{p.sections === 1 ? '' : 's'}</span>
+                      {p.monday_id && <span title="Monday ID">· #{p.monday_id}</span>}
                     </p>
                     <p className="mt-1 text-[11px] text-muted-foreground/80">
                       by {formatUserName(p.created_by)} ·{' '}
@@ -484,30 +482,21 @@ function NewLpModal({
   onError: (m: string) => void
 }) {
   const [name, setName] = useState('')
+  const [mondayId, setMondayId] = useState('')
   const [brandId, setBrandId] = useState(presetBrandId ?? '')
   const [language, setLanguage] = useState('en')
-  const [campaignId, setCampaignId] = useState('')
   const [brands, setBrands] = useState<Brand[]>([])
-  const [campaigns, setCampaigns] = useState<CampaignInfo[]>([])
   const [saving, setSaving] = useState(false)
+  const dark = useIsDark()
 
   useEffect(() => {
     listBrands().then(setBrands).catch(() => {})
-    listCampaigns().then(setCampaigns).catch(() => {})
   }, [])
 
-  // Attaching a campaign pre-selects the language from its market when we can
-  // guess it (Malaysia -> ms, Thailand -> th, Japan -> ja, Sweden -> sv).
-  function onCampaign(id: string) {
-    setCampaignId(id)
-    const market = (campaigns.find((c) => c.campaign_id === id)?.market || '').toLowerCase()
-    const guess = market.includes('malay') ? 'ms' : market.includes('thai') ? 'th'
-      : market.includes('japan') ? 'ja' : market.includes('swed') ? 'sv' : ''
-    if (guess && languages.some((l) => l.code === guess)) setLanguage(guess)
-  }
+  const canCreate = name.trim() && mondayId.trim() && !saving
 
   async function create() {
-    if (!name.trim() || saving) return
+    if (!canCreate) return
     setSaving(true)
     try {
       const brand = brands.find((b) => b.id === brandId)
@@ -515,7 +504,7 @@ function NewLpModal({
         name: name.trim(),
         brand_id: brandId || undefined,
         language,
-        campaign_id: campaignId || undefined,
+        monday_id: mondayId.trim() || undefined,
         tokens: brand ? brandTokens(brand) : undefined,
       })
       onCreated(p.id)
@@ -531,47 +520,122 @@ function NewLpModal({
       <div className="mb-5 flex items-center justify-between">
         <div>
           <h3 className="font-display text-xl font-bold tracking-tight">New landing page</h3>
-          <p className="mt-0.5 text-sm text-muted-foreground">Pick the brand and the language — everything is editable later.</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">Name it, add the Monday ID, pick the brand and language — all editable later.</p>
         </div>
         <button type="button" onClick={onClose} title="Close" aria-label="Close"
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:border-destructive hover:text-destructive">
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="space-y-3">
-        <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus
-               placeholder="Name — e.g. BrainTrade MY · July" aria-label="Landing page name" className="h-11 text-base" />
-        <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">Brand</span>
-            <select value={brandId} onChange={(e) => setBrandId(e.target.value)}
-                    className="h-10 w-full rounded-md border border-input bg-transparent px-2 text-sm" aria-label="Brand">
-              <option value="">No brand</option>
-              {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">Project name</span>
+            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus
+                   placeholder="e.g. BrainTrade MY · July" aria-label="Landing page name" className="h-11 text-base" />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">Language</span>
-            <select value={language} onChange={(e) => setLanguage(e.target.value)}
-                    className="h-10 w-full rounded-md border border-input bg-transparent px-2 text-sm" aria-label="Language">
-              {languages.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
-            </select>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">Monday ID</span>
+            <Input
+              value={mondayId}
+              onChange={(e) => setMondayId(e.target.value.replace(/\D/g, '').slice(0, 20))}
+              inputMode="numeric"
+              placeholder="3079506872"
+              aria-label="Monday ID"
+              className="h-11 w-full text-base tabular-nums sm:w-44"
+            />
           </label>
         </div>
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-muted-foreground">LP Materials campaign (optional — its assets appear in the builder)</span>
-          <select value={campaignId} onChange={(e) => onCampaign(e.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-transparent px-2 text-sm" aria-label="Campaign">
-            <option value="">No campaign</option>
-            {campaigns.map((c) => <option key={c.campaign_id} value={c.campaign_id}>{c.name}</option>)}
-          </select>
-        </label>
-        <Button size="lg" className="w-full" disabled={!name.trim() || saving} onClick={() => void create()}>
+
+        {/* Brand — pick by logo (theme-aware: white lettering on dark, dark on light) */}
+        <div>
+          <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Brand</span>
+          <div className="grid max-h-40 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
+            <BrandChoice active={brandId === ''} onClick={() => setBrandId('')} label="No brand" />
+            {brands.map((b) => (
+              <BrandChoice
+                key={b.id}
+                active={brandId === b.id}
+                onClick={() => setBrandId(b.id)}
+                label={b.name}
+                logo={brandLogoSrc(b, dark) || undefined}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Language — pick by country flag + name */}
+        <div>
+          <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Language</span>
+          <div className="grid max-h-44 grid-cols-2 gap-1.5 overflow-y-auto sm:grid-cols-3">
+            {languages.map((l) => {
+              const active = language === l.code
+              const flag = flagUrl(l.code)
+              return (
+                <button
+                  key={l.code}
+                  type="button"
+                  onClick={() => setLanguage(l.code)}
+                  aria-pressed={active}
+                  className={cn(
+                    'flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-sm transition-colors',
+                    active ? 'border-primary bg-primary/10 font-semibold text-foreground'
+                           : 'border-border hover:border-foreground/30 hover:bg-accent',
+                  )}
+                >
+                  {flag ? (
+                    <img src={flag} alt="" className="h-4 w-6 shrink-0 rounded-[2px] object-cover" />
+                  ) : (
+                    <span className="grid h-4 w-6 shrink-0 place-items-center rounded-[2px] bg-secondary text-[8px] font-bold uppercase">
+                      {l.code}
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate">{l.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <Button size="lg" className="w-full" disabled={!canCreate} onClick={() => void create()}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePlus2 className="h-4 w-4" />}
-          Create & open the builder
+          Create &amp; open the builder
         </Button>
       </div>
     </ModalShell>
+  )
+}
+
+/** A brand choice tile in the New-LP modal — its logo (theme-aware) or name. */
+function BrandChoice({
+  active,
+  onClick,
+  label,
+  logo,
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+  logo?: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      title={label}
+      className={cn(
+        'flex h-16 flex-col items-center justify-center gap-1 rounded-xl border px-2 transition-all',
+        active ? 'border-primary bg-primary/10 ring-1 ring-primary/40'
+               : 'border-border hover:border-foreground/30 hover:bg-accent',
+      )}
+    >
+      {logo ? (
+        <img src={logo} alt={label} className="max-h-8 max-w-full object-contain" />
+      ) : (
+        <span className="truncate text-xs font-medium">{label}</span>
+      )}
+    </button>
   )
 }
 

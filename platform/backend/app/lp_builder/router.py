@@ -61,6 +61,8 @@ def _clean_project_patch(payload: dict, p: dict) -> None:
     for k in ("brand_id", "language", "campaign_id", "fonts", "font_family", "meta_title", "meta_description"):
         if k in payload:
             p[k] = _clean_str(payload.get(k), 400) or ("" if k != "fonts" else "system")
+    if "monday_id" in payload:  # Monday.com item id — digits only
+        p["monday_id"] = re.sub(r"\D", "", str(payload.get("monday_id") or ""))[:20]
     if p.get("fonts") not in ("system", "google"):
         p["fonts"] = "system"
     if isinstance(payload.get("tokens"), dict):
@@ -267,7 +269,7 @@ def build_lp_builder_router() -> APIRouter:
         with core.lock():
             ps = sorted(core.projects().values(), key=lambda p: p.get("updated_at", ""), reverse=True)
         return {"projects": [{k: p.get(k) for k in
-                              ("id", "name", "brand_id", "language", "campaign_id",
+                              ("id", "name", "brand_id", "language", "monday_id", "campaign_id",
                                "created_by", "created_at", "updated_at")}
                              | {"sections": len(p.get("sections") or []),
                                 "cover_url": _cover_url(p)} for p in ps]}
@@ -284,6 +286,7 @@ def build_lp_builder_router() -> APIRouter:
             "id": core.new_project_id(), "name": name,
             "brand_id": _clean_str(payload.get("brand_id"), 64),
             "language": lang,
+            "monday_id": re.sub(r"\D", "", str(payload.get("monday_id") or ""))[:20],
             "campaign_id": _clean_str(payload.get("campaign_id"), 64),
             "sections": [], "tokens": dict(payload.get("tokens") or {}),
             "form": {"action_url": "", "success_url": ""}, "fonts": "system",
