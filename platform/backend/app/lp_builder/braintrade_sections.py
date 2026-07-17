@@ -19,11 +19,11 @@ _FONT = "font-family:'Urbanist',var(--lp-font)"
 BRAINTRADE_SECTIONS = [
  {
   "key": "bt-header",
-  "name": "BT / Header",
+  "name": "Header",
   "category": "braintrade",
   "position": 200,
   "html": "<section class=\"lp-sec-bt-header\">\n <div class=\"lp-wrap bth-row\"><img class=\"bth-logo\" data-lp-img=\"logo\" src=\"\" alt=\"BrainTrade\"></div>\n</section>",
-  "css": ".lp-sec-bt-header{background:var(--lp-card);padding:34px 0 20px}\n.lp-sec-bt-header .bth-row{display:flex;justify-content:flex-start}\n.lp-sec-bt-header .bth-logo{height:40px;object-fit:contain;object-position:left}\n@media (max-width:575px){.lp-sec-bt-header{padding:20px 0 12px}.lp-sec-bt-header .bth-logo{height:32px}}",
+  "css": ".lp-sec-bt-header{background:var(--lp-card);padding:34px 0 20px}\n.lp-sec-bt-header .bth-row{display:flex;justify-content:center}\n.lp-sec-bt-header .bth-logo{height:40px;object-fit:contain}\n@media (max-width:575px){.lp-sec-bt-header{padding:20px 0 12px}.lp-sec-bt-header .bth-logo{height:32px}}",
   "texts": {
    "en": {}
   },
@@ -33,7 +33,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-hero-form",
-  "name": "BT / Hero + form",
+  "name": "Hero + form",
   "category": "braintrade",
   "position": 205,
   "html": "<section class=\"lp-sec-bt-hero-form\">\n <div class=\"lp-wrap bthf-grid\">\n  <div class=\"bthf-media\"><img data-lp-img=\"creative\" src=\"\" alt=\"\"></div>\n  <form class=\"bthf-card\" data-lp-form>\n   <h1 class=\"bthf-title\" data-lp-text=\"title\">Start Your Trading Education With a Personal Trainer</h1>\n   <div class=\"bthf-fields\">\n    <input class=\"bthf-in\" type=\"text\" name=\"name\" data-lp-text=\"ph_name\" placeholder=\"Full name\" required>\n    <input class=\"bthf-in\" type=\"email\" name=\"email\" data-lp-text=\"ph_email\" placeholder=\"E-Mail\" required>\n    <div class=\"bthf-phone-row\">\n     <input class=\"bthf-in bthf-code\" type=\"tel\" name=\"phone_code\" data-lp-text=\"ph_code\" placeholder=\"+359\">\n     <input class=\"bthf-in\" type=\"tel\" name=\"phone\" data-lp-text=\"ph_phone\" placeholder=\"Phone number\" required>\n    </div>\n   </div>\n   <label class=\"bthf-consent\"><input type=\"checkbox\" name=\"consent\" required> <span data-lp-text=\"consent\">I agree to the Privacy Policy and Terms &amp; Conditions</span></label>\n   <button class=\"bthf-btn\" type=\"submit\" data-lp-text=\"submit\">Start My Coaching Journey</button>\n   <p class=\"bthf-trust\" data-lp-text=\"trust\">✓ Free to join ✓ No experience required ✓ 1-on-1 guidance included</p>\n  </form>\n </div>\n</section>",
@@ -154,7 +154,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-steps",
-  "name": "BT / 3 simple steps",
+  "name": "3 simple steps",
   "category": "braintrade",
   "position": 210,
   "html": "<section class=\"lp-sec-bt-steps\">\n <div class=\"lp-wrap\">\n  <h2 class=\"bts-title\" data-lp-text=\"title\">Join BrainTrade In 3 Simple Steps</h2>\n  <div class=\"bts-grid\">\n   <!--lp-repeat:steps--><div class=\"bts-card\"><div class=\"bts-icon\"><img data-lp-img=\"icon\" src=\"\" alt=\"\"></div><div class=\"bts-body\"><h3 class=\"bts-card-title\" data-lp-text=\"title\">1. Sign up and learn</h3><p class=\"bts-card-text\" data-lp-rich=\"text\">Register today and gain immediate access to our highly-rated online investment academy.</p></div></div><!--/lp-repeat:steps-->\n  </div>\n </div>\n</section>",
@@ -259,7 +259,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-2blog",
-  "name": "BT / 2 blog cards",
+  "name": "2 blog cards",
   "category": "braintrade",
   "position": 212,
   "html": "<section class=\"lp-sec-bt-2blog\">\n <div class=\"lp-wrap b2b-grid\">\n  <div class=\"b2b-copy\">\n   <h2 class=\"b2b-title\" data-lp-text=\"title\">Test Title</h2>\n   <p class=\"b2b-text\" data-lp-rich=\"text\">Ronkos Moribi and It Oji Nik, at Ed Olamkorber at Sit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar. Fermentum scelerisque sit consectetur hak mi. Mollis leo elivend ultricies brus yakulis.</p>\n  </div>\n  <div class=\"b2b-media\"><img data-lp-img=\"image\" src=\"\" alt=\"\"></div>\n </div>\n</section>",
@@ -274,7 +274,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-content-split",
-  "name": "BT / Content (text)",
+  "name": "Content (text)",
   "category": "braintrade",
   "position": 215,
   "html": "<section class=\"lp-sec-bt-content-split\">\n <div class=\"lp-wrap\">\n  <div class=\"btcs-copy\">\n   <h2 class=\"btcs-title\" data-lp-text=\"title\">Title</h2>\n   <p class=\"btcs-text\" data-lp-rich=\"text\">Ronkos Moribi and It Oji Nik, at Ed Olamkorber at Sit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar. Fermentum scelerisque sit consectetur hak mi. Mollis leo elivend ultricies brus yakulis.</p>\n  </div>\n </div>\n</section>",
@@ -286,7 +286,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-2col",
-  "name": "BT / 2 columns",
+  "name": "2 columns",
   "category": "braintrade",
   "position": 216,
   "html": "<section class=\"lp-sec-bt-2col\">\n <div class=\"lp-wrap\">\n  <h2 class=\"b2c-title\" data-lp-text=\"title\">Title 2 columns</h2>\n  <div class=\"b2c-grid\">\n   <!--lp-repeat:cols--><div class=\"b2c-col\"><p class=\"b2c-text\" data-lp-rich=\"text\">Ronkos Moribi and It Oji Nik, at Ed Olamkorber at Sit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar. Fermentum scelerisque sit consectetur hak mi. Mollis leo elivend ultricies brus yakulis.</p></div><!--/lp-repeat:cols-->\n  </div>\n </div>\n</section>",
@@ -302,7 +302,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-symbols",
-  "name": "BT / Symbols",
+  "name": "Symbols",
   "category": "braintrade",
   "position": 218,
   "html": "<section class=\"lp-sec-bt-symbols\">\n <div class=\"lp-wrap\">\n  <h2 class=\"bsy-title\" data-lp-text=\"title\">Lorem ipsum dolor sit amet, consectetur.</h2>\n  <div class=\"bsy-grid\">\n   <!--lp-repeat:cards--><div class=\"bsy-card\"><div class=\"bsy-media\"><img data-lp-img=\"image\" src=\"\" alt=\"\"></div><div class=\"bsy-body\"><h3 class=\"bsy-card-title\" data-lp-text=\"title\">Title 1</h3><p class=\"bsy-card-text\" data-lp-rich=\"text\">Egestas elit dui scelerisque ut eu purus aliquam vitae habitasse.</p></div></div><!--/lp-repeat:cards-->\n  </div>\n </div>\n</section>",
@@ -324,7 +324,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-cards-grid",
-  "name": "BT / Cards grid",
+  "name": "Cards grid",
   "category": "braintrade",
   "position": 220,
   "html": "<section class=\"lp-sec-bt-cards-grid\">\n <div class=\"lp-wrap\">\n  <h2 class=\"btcg-title\" data-lp-text=\"title\">Lorem ipsum dolor sit amet, consectetur.</h2>\n  <div class=\"btcg-grid\">\n   <!--lp-repeat:cards--><div class=\"btcg-card\"><div class=\"btcg-media\"><img data-lp-img=\"image\" src=\"\" alt=\"\"></div><h3 class=\"btcg-card-title\" data-lp-text=\"title\">Title</h3><p class=\"btcg-card-text\" data-lp-rich=\"text\">Egestas elit dui scelerisque ut eu purus aliquam vitae habitasse.</p></div><!--/lp-repeat:cards-->\n  </div>\n </div>\n</section>",
@@ -336,7 +336,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-cta",
-  "name": "BT / CTA button",
+  "name": "CTA button",
   "category": "braintrade",
   "position": 225,
   "html": "<section class=\"lp-sec-bt-cta\">\n <div class=\"lp-wrap btc-inner\"><a class=\"btc-btn\" data-lp-link=\"cta_href\" data-lp-text=\"cta\" href=\"#signup\">Start Now</a></div>\n</section>",
@@ -348,7 +348,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-journey",
-  "name": "BT / Journey (60 days)",
+  "name": "Journey (60 days)",
   "category": "braintrade",
   "position": 230,
   "html": "<section class=\"lp-sec-bt-journey\">\n <div class=\"lp-wrap\">\n  <h2 class=\"btj-title\" data-lp-text=\"title\">Your Guided Learning Journey in 60 Days</h2>\n  <div class=\"btj-grid\">\n   <!--lp-repeat:months--><div class=\"btj-card\"><img class=\"btj-bg\" data-lp-img=\"bg\" src=\"\" alt=\"\"><div class=\"btj-label\"><img class=\"btj-cal\" data-lp-img=\"icon\" src=\"\" alt=\"\"><span data-lp-text=\"label\">Month 1</span></div><h3 class=\"btj-card-title\" data-lp-text=\"title\">Learn &amp; Practice</h3><p class=\"btj-card-text\" data-lp-rich=\"text\">Build your foundation with structured educational guidance and ongoing feedback.</p></div><!--/lp-repeat:months-->\n   <img class=\"btj-sep\" data-lp-img=\"divider\" src=\"\" alt=\"\">\n  </div>\n </div>\n</section>",
@@ -435,7 +435,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-benefits",
-  "name": "BT / Benefits",
+  "name": "Benefits",
   "category": "braintrade",
   "position": 235,
   "html": "<section class=\"lp-sec-bt-benefits\">\n <div class=\"lp-wrap\">\n  <h2 class=\"btb-title\" data-lp-text=\"title\">Take your trading journey to the next level</h2>\n  <div class=\"btb-grid\">\n   <!--lp-repeat:cards--><div class=\"btb-card\"><div class=\"btb-icon\"><img data-lp-img=\"icon\" src=\"\" alt=\"\"></div><h3 class=\"btb-card-title\" data-lp-text=\"title\">Personal Trainer</h3><p class=\"btb-card-text\" data-lp-rich=\"text\">Receive 1-on-1 personalized guidance</p></div><!--/lp-repeat:cards-->\n  </div>\n </div>\n</section>",
@@ -573,7 +573,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-coaching",
-  "name": "BT / Personal coaching",
+  "name": "Personal coaching",
   "category": "braintrade",
   "position": 240,
   "html": "<section class=\"lp-sec-bt-coaching\">\n <div class=\"lp-wrap btco-grid\">\n  <div class=\"btco-media\"><img data-lp-img=\"photo\" src=\"\" alt=\"\"></div>\n  <div class=\"btco-copy\">\n   <h2 class=\"btco-title\" data-lp-text=\"title\">Personal Coaching</h2>\n   <p class=\"btco-sub\" data-lp-text=\"subtitle\">Get professional 1-on-1 training</p>\n   <p class=\"btco-text\" data-lp-rich=\"body\">Our Academy Trainer program pairs you with a dedicated personal trading coach.</p>\n   <a class=\"btco-btn\" data-lp-link=\"cta_href\" data-lp-text=\"cta\" href=\"#signup\">Meet Your Trainer</a>\n  </div>\n </div>\n</section>",
@@ -634,7 +634,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-learn",
-  "name": "BT / Learn & practice",
+  "name": "Learn & practice",
   "category": "braintrade",
   "position": 245,
   "html": "<section class=\"lp-sec-bt-learn\">\n <div class=\"lp-wrap btl-grid\">\n  <div class=\"btl-copy\">\n   <div class=\"btl-head\">\n    <h2 class=\"btl-title\" data-lp-text=\"title\">Learn and Practice</h2>\n    <p class=\"btl-sub\" data-lp-text=\"subtitle\">Join our Live Campus</p>\n    <p class=\"btl-text\" data-lp-rich=\"body\">All your courses, trainer sessions, and trading tools — accessible in one platform.</p>\n   </div>\n   <div class=\"btl-bullets\">\n    <!--lp-repeat:bullets--><div class=\"btl-bullet\"><img class=\"btl-check\" data-lp-img=\"check\" src=\"\" alt=\"\"><span data-lp-text=\"label\">Let us introduce you to the Financial Markets</span></div><!--/lp-repeat:bullets-->\n   </div>\n  </div>\n  <div class=\"btl-media\"><img data-lp-img=\"screenshot\" src=\"\" alt=\"\"></div>\n </div>\n</section>",
@@ -728,7 +728,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-switch",
-  "name": "BT / Switch to trader mode",
+  "name": "Switch to trader mode",
   "category": "braintrade",
   "position": 250,
   "html": "<section class=\"lp-sec-bt-switch\">\n <div class=\"lp-wrap btsw-grid\">\n  <div class=\"btsw-media\"><img data-lp-img=\"screenshot\" src=\"\" alt=\"\"></div>\n  <div class=\"btsw-copy\">\n   <h2 class=\"btsw-title\" data-lp-text=\"title\">Switch To Trader Mode</h2>\n   <p class=\"btsw-sub\" data-lp-text=\"subtitle\">Get ready to enter the world of trading</p>\n   <p class=\"btsw-text\" data-lp-rich=\"body\">Access educational resources, practice in a simulated environment, and trade independently when you choose.</p>\n  </div>\n </div>\n</section>",
@@ -786,7 +786,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-faq",
-  "name": "BT / FAQ",
+  "name": "FAQ",
   "category": "braintrade",
   "position": 255,
   "html": "<section class=\"lp-sec-bt-faq\">\n <div class=\"lp-wrap btf-grid\">\n  <div class=\"btf-left\">\n   <h2 class=\"btf-title\" data-lp-text=\"title\">Frequently Asked Questions</h2>\n   <p class=\"btf-sub\" data-lp-rich=\"subtitle\">We are glad to help! Here are some of the most common questions.</p>\n   <div class=\"btf-art\">\n    <span class=\"btf-frame\"></span>\n    <span class=\"btf-dot\"></span>\n    <div class=\"btf-media\"><img data-lp-img=\"photo\" src=\"\" alt=\"\"></div>\n    <img class=\"btf-star\" data-lp-img=\"star\" src=\"\" alt=\"\">\n    <img class=\"btf-squiggle\" data-lp-img=\"squiggle\" src=\"\" alt=\"\">\n   </div>\n  </div>\n  <div class=\"btf-list\">\n   <!--lp-repeat:faq--><div class=\"btf-item\" data-lp-acc><button class=\"faq-q\" type=\"button\"><span data-lp-text=\"q\">Do I need prior experience to start the courses?</span><span class=\"btf-x\" aria-hidden=\"true\"></span></button><div class=\"faq-a btf-a\"><p data-lp-rich=\"a\">No prior experience is required to start the courses.</p></div></div><!--/lp-repeat:faq-->\n  </div>\n </div>\n</section>",
@@ -993,7 +993,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-testimonials",
-  "name": "BT / Testimonials",
+  "name": "Testimonials",
   "category": "braintrade",
   "position": 260,
   "html": "<section class=\"lp-sec-bt-testimonials\">\n <div class=\"lp-wrap btt-wrap\">\n  <div class=\"btt-top\">\n   <div class=\"btt-intro\">\n    <h2 class=\"btt-title\" data-lp-text=\"title\">A Word From Our Students</h2>\n    <p class=\"btt-sub\" data-lp-rich=\"subtitle\">Enough talk from our side. Here are the opinions that matter the most — your own.</p>\n   </div>\n   <div class=\"btt-controls\">\n    <span class=\"btt-dots\"><span class=\"btt-dot on\"></span><span class=\"btt-dot\"></span><span class=\"btt-dot\"></span></span>\n    <span class=\"btt-nav btt-prev\"><img data-lp-img=\"arrow\" src=\"\" alt=\"\"></span>\n    <span class=\"btt-nav btt-next\"><img data-lp-img=\"arrow2\" src=\"\" alt=\"\"></span>\n   </div>\n  </div>\n  <div class=\"btt-grid\">\n   <!--lp-repeat:reviews--><div class=\"btt-card\"><div class=\"btt-head\"><div class=\"btt-person\"><img class=\"btt-avatar\" data-lp-img=\"photo\" src=\"\" alt=\"\"><div class=\"btt-who\"><p class=\"btt-name\" data-lp-text=\"name\">Jenny Wilson</p><p class=\"btt-role\" data-lp-text=\"role\">Customer Support Agent</p></div></div><img class=\"btt-mark\" data-lp-img=\"mark\" src=\"\" alt=\"\"></div><p class=\"btt-quote\" data-lp-rich=\"quote\">BrainTrade really opened my eyes to how many opportunities show up in the markets every day.</p></div><!--/lp-repeat:reviews-->\n  </div>\n </div>\n</section>",
@@ -1130,7 +1130,7 @@ BRAINTRADE_SECTIONS = [
  },
  {
   "key": "bt-footer",
-  "name": "BT / Footer",
+  "name": "Footer",
   "category": "braintrade",
   "position": 265,
   "html": "<section class=\"lp-sec-bt-footer\">\n <div class=\"lp-wrap btft-inner\">\n  <nav class=\"btft-links\">\n   <a data-lp-link=\"privacy_href\" data-lp-text=\"link_privacy\" href=\"#\">Privacy Policy</a>\n   <a data-lp-link=\"contact_href\" data-lp-text=\"link_contact\" href=\"#\">Contact Us</a>\n   <a data-lp-link=\"terms_href\" data-lp-text=\"link_terms\" href=\"#\">Terms and Conditions</a>\n  </nav>\n  <p class=\"btft-legal\" data-lp-rich=\"legal\">BrainTrade (www.thebraintrade.com) is operated by BT Nexus Limited. Please read the terms, privacy policy, and cookie policy before proceeding.</p>\n  <p class=\"btft-copy\" data-lp-text=\"copyright\">© 2026 All rights reserved.</p>\n </div>\n</section>",

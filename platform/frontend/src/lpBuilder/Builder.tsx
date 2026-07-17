@@ -11,7 +11,6 @@ import {
   Download,
   ExternalLink,
   Eye,
-  EyeOff,
   GripVertical,
   Image as ImageIcon,
   ImagePlus,
@@ -34,7 +33,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
+import { brandLogoSrc, brandLogoUri, useIsDark } from '@/lib/brandLogo'
 import { cn } from '@/lib/utils'
 import { listBrands, type Brand } from '../bannerBuilder/brandsApi'
 import { createAdvertorial, getJob, listCampaigns, listJobs, type CampaignInfo, type MaterialJob } from '../lpMaterials/api'
@@ -149,6 +148,10 @@ export function Builder({
 }) {
   const [project, setProject] = useState<Project | null>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
+  // Multi-selected SECTION iids in the Layers tree (shift-click) — used for
+  // bulk delete via the Delete/Backspace key. Independent of `selection`
+  // (which drives the single-element properties panel).
+  const [selectedIids, setSelectedIids] = useState<string[]>([])
   const [device, setDevice] = useState<Device>('desktop')
   const [preview, setPreview] = useState(false)
   // Layers is the working default — Add is for building the page up, Layers
@@ -194,6 +197,20 @@ export function Builder({
     sections.forEach((s) => m.set(s.key, s))
     return m
   }, [sections])
+  // The project brand's own logo(s) as placeable assets (stored as inline SVG
+  // data URIs — assignImageTo puts data: URIs in without a round-trip import).
+  const brandLogos = useMemo(() => {
+    const b = brands.find((x) => x.id === project?.brand_id)
+    if (!b) return []
+    const out: { url: string; label: string }[] = []
+    const light = brandLogoUri(b.logo_svg, false)
+    if (light) out.push({ url: light, label: `${b.name} logo` })
+    if (b.logo_svg_dark) {
+      const d = brandLogoUri(b.logo_svg_dark, false)
+      if (d && d !== light) out.push({ url: d, label: `${b.name} logo (dark)` })
+    }
+    return out
+  }, [brands, project?.brand_id])
 
   // ---- load ---------------------------------------------------------------
   useEffect(() => {
@@ -361,10 +378,15 @@ export function Builder({
             { type: 'highlight', iid: selection.iid, key: selection.fields[0]?.key ?? null }, '*')
         }
       } else if (m.type === 'select') {
+        const fields = (m.fields ?? []) as { kind: string }[]
         setSelection(m.iid ? { iid: m.iid, fields: m.fields ?? [], tag: m.tag ?? '' } : null)
-        // Clicking an image on the page brings its assets straight into view.
-        if (m.iid && ((m.fields ?? []) as { kind: string }[]).some((f) => f.kind === 'img')) {
+        setSelectedIids(m.iid ? [m.iid] : []) // a canvas click resets the layer multi-selection
+        // Clicking an IMAGE brings its assets into view; clicking TEXT/a link
+        // opens the Layers tree (which reveals + highlights that element).
+        if (m.iid && fields.some((f) => f.kind === 'img')) {
           setLeftTab('assets')
+        } else if (m.iid && fields.some((f) => f.kind === 'text' || f.kind === 'rich' || f.kind === 'link')) {
+          setLeftTab('layers')
         }
       } else if (m.type === 'text') {
         mutate((p) => {
@@ -575,6 +597,31 @@ export function Builder({
     doc.addEventListener('pointercancel', up)
   }, [wheelZoom, panScreen])
 
+  // Delete / Backspace removes the multi-selected layers (unless typing in a
+  // field or editing text on the canvas). Bulk delete of shift-selected rows.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      const t = e.target as HTMLElement | null
+      const tag = t?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || t?.isContentEditable) return
+      if (selectedIids.length === 0) return
+      e.preventDefault()
+      const n = selectedIids.length
+      if (window.confirm(n === 1 ? 'Remove this section?' : `Remove ${n} sections?`)) {
+        const ids = new Set(selectedIids)
+        mutate((p) => {
+          p.sections = p.sections.filter((s) => !ids.has(s.iid))
+          return p
+        })
+        setSelectedIids([])
+        setSelection((s) => (s && ids.has(s.iid) ? null : s))
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [selectedIids, mutate])
+
   // Close the zoom menu on outside click / Escape.
   useEffect(() => {
     if (!zoomMenu) return
@@ -661,7 +708,10 @@ export function Builder({
   async function assignImageTo(iid: string, key: string, url: string, target?: 'base' | 'mobile') {
     const t = target ?? (bucket === 'mobile' ? 'mobile' : 'base')
     try {
-      const local = url.startsWith('/api/tools/lp-builder/') ? { url } : await importLpAsset(url)
+      // Already-local server URLs and inline data: URIs (brand SVG logos) go in
+      // as-is; anything else (sibling-tool image) is imported so exports bundle it.
+      const local =
+        url.startsWith('/api/tools/lp-builder/') || url.startsWith('data:') ? { url } : await importLpAsset(url)
       mutate((p) => {
         const inst = p.sections.find((s) => s.iid === iid)
         if (inst) {
@@ -822,13 +872,21 @@ export function Builder({
             </button>
           ))}
         </TopPicker>
-        <CampaignPicker
-          campaigns={campaigns}
-          value={project.campaign_id}
-          onChange={(id) => mutate((p) => ({ ...p, campaign_id: id }), { structural: false })}
-          onCreated={(c) => setCampaigns((cs) => [c, ...cs])}
-          className="w-44 max-w-64 flex-1"
-        />
+        {/* Monday.com item id — the project's tracking key (digits only). */}
+        <label className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2"
+               title="Monday.com item id">
+          <span className="text-xs font-semibold text-muted-foreground">#</span>
+          <input
+            value={project.monday_id ?? ''}
+            onChange={(e) =>
+              mutate((p) => ({ ...p, monday_id: e.target.value.replace(/\D/g, '').slice(0, 20) }), { structural: false })
+            }
+            inputMode="numeric"
+            placeholder="Monday ID"
+            aria-label="Monday ID"
+            className="w-28 bg-transparent text-xs tabular-nums outline-none placeholder:text-muted-foreground"
+          />
+        </label>
 
         {/* Right cluster — device sizes + undo/redo stay pinned to the far right. */}
         <span className="ml-auto inline-flex items-center rounded-lg border border-border bg-secondary p-0.5">
@@ -950,10 +1008,19 @@ export function Builder({
                 <LayersTab
                   project={project}
                   lib={lib}
-                  bucket={bucket}
                   selection={selection}
-                  onSelect={(iid, field) => {
-                    setSelection({ iid, fields: field ? [field] : [], tag: field ? field.kind : 'section' })
+                  selectedIids={selectedIids}
+                  onSelect={(iid, field, shift) => {
+                    if (!field && shift) {
+                      // shift-click a section row → toggle it in the multi-selection
+                      setSelectedIids((prev) =>
+                        prev.includes(iid) ? prev.filter((x) => x !== iid) : [...prev, iid],
+                      )
+                      setSelection({ iid, fields: [], tag: 'section' })
+                    } else {
+                      setSelectedIids(field ? [] : [iid])
+                      setSelection({ iid, fields: field ? [field] : [], tag: field ? field.kind : 'section' })
+                    }
                     iframeRef.current?.contentWindow?.postMessage(
                       { type: 'highlight', iid, key: field?.key ?? null },
                       '*',
@@ -962,11 +1029,10 @@ export function Builder({
                   onMove={moveSection}
                   onDuplicate={duplicateSection}
                   onRemove={removeSection}
-                  onToggleHidden={(iid, hidden) => setProp(iid, '_section', 'hidden', hidden || null)}
                 />
               )}
               {leftTab === 'assets' && (
-                <AssetsTab assets={assets} selection={selection} onAssign={(u) => void assignImage(u)} onUpload={(f) => void uploadAndAssign(f)} />
+                <AssetsTab assets={assets} brandLogos={brandLogos} selection={selection} onAssign={(u) => void assignImage(u)} onUpload={(f) => void uploadAndAssign(f)} />
               )}
             </div>
           </div>
@@ -978,6 +1044,15 @@ export function Builder({
             ref={(el) => {
               canvasRef.current = el
               setCanvasEl(el)
+            }}
+            onClick={(e) => {
+              // Clicking the empty pane AROUND the page (not the page itself,
+              // whose clicks stay inside the iframe) deselects → global settings.
+              if (e.target === canvasRef.current || e.target === zoomBoxRef.current) {
+                setSelection(null)
+                setSelectedIids([])
+                iframeRef.current?.contentWindow?.postMessage({ lp: 1, type: 'deselect' }, '*')
+              }
             }}
             className="no-scrollbar h-full w-full overflow-auto bg-secondary/40 p-5"
           >
@@ -1386,23 +1461,22 @@ const FIELD_ICON: Record<SectionField['kind'], typeof Type> = {
 function LayersTab({
   project,
   lib,
-  bucket,
   selection,
+  selectedIids,
   onSelect,
   onMove,
   onDuplicate,
   onRemove,
-  onToggleHidden,
 }: {
   project: Project
   lib: Map<string, SectionDef>
-  bucket: Breakpoint
   selection: Selection | null
-  onSelect: (iid: string, field?: SectionField) => void
+  /** Section iids in the shift-click multi-selection (for bulk delete). */
+  selectedIids: string[]
+  onSelect: (iid: string, field?: SectionField, shift?: boolean) => void
   onMove: (from: number, to: number) => void
   onDuplicate: (iid: string) => void
   onRemove: (iid: string) => void
-  onToggleHidden: (iid: string, hidden: boolean) => void
 }) {
   const [drag, setDrag] = useState<number | null>(null)
   const [open, setOpen] = useState<Set<string>>(new Set()) // expanded section iids
@@ -1468,9 +1542,10 @@ function LayersTab({
     <div className="space-y-1">
       {project.sections.map((inst, i) => {
         const def = lib.get(inst.template_key)
-        const hidden = Boolean(inst.props?._section?.[bucket]?.hidden)
         const kids = (def?.fields.length ?? 0) + (def?.repeats.length ?? 0)
         const expanded = open.has(inst.iid) && kids > 0
+        const multi = selectedIids.includes(inst.iid)
+        const singleActive = selection?.iid === inst.iid && selection.fields.length === 0
         return (
           <div key={inst.iid}>
             <div
@@ -1485,12 +1560,15 @@ function LayersTab({
                 if (drag !== null && drag !== i) onMove(drag, i)
                 setDrag(null)
               }}
-              onClick={() => onSelect(inst.iid)}
+              onClick={(e) => onSelect(inst.iid, undefined, e.shiftKey)}
+              title="Click to select · Shift-click to multi-select, then Delete"
               className={cn(
                 'group flex cursor-pointer items-center gap-1 rounded-xl border px-1.5 py-1.5 transition-colors',
-                selection?.iid === inst.iid && selection.fields.length === 0
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border bg-card hover:border-foreground/25',
+                multi
+                  ? 'border-primary bg-primary/10 ring-1 ring-primary/40'
+                  : singleActive
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border bg-card hover:border-foreground/25',
               )}
             >
               <button
@@ -1514,21 +1592,9 @@ function LayersTab({
               <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-secondary font-display text-[9px] font-bold">
                 {i + 1}
               </span>
-              <span className={cn('min-w-0 flex-1 truncate text-sm', hidden && 'text-muted-foreground line-through')}>
+              <span className="min-w-0 flex-1 truncate text-sm">
                 {def?.name ?? inst.template_key}
               </span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onToggleHidden(inst.iid, !hidden)
-                }}
-                title={hidden ? `Show on ${bucket}` : `Hide on ${bucket}`}
-                aria-label={hidden ? 'Show section' : 'Hide section'}
-                className="rounded p-0.5 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
-              >
-                {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-              </button>
               <button
                 type="button"
                 onClick={(e) => {
@@ -1599,11 +1665,14 @@ let lpIconsCache: { name: string; url: string }[] | null = null
 
 function AssetsTab({
   assets,
+  brandLogos,
   selection,
   onAssign,
   onUpload,
 }: {
   assets: { url: string; label: string }[]
+  /** The project brand's own logo(s) — placeable like any asset. */
+  brandLogos: { url: string; label: string }[]
   selection: Selection | null
   onAssign: (url: string) => void
   onUpload: (f: FileList | null) => void
@@ -1631,6 +1700,31 @@ function AssetsTab({
         <b>Drag an image onto any image slot</b> on the page
         {imgSelected ? ' — or click it to fill the selected slot.' : ' (slots highlight green while dragging).'}
       </p>
+      {brandLogos.length > 0 && (
+        <div>
+          <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Brand logo
+          </p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {brandLogos.map((lg) => (
+              <button
+                key={lg.url}
+                type="button"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/lp-asset', lg.url)
+                  e.dataTransfer.effectAllowed = 'copy'
+                }}
+                onClick={() => imgSelected && onAssign(lg.url)}
+                title={`${lg.label} — drag onto an image slot${imgSelected ? ' or click to fill the selected one' : ''}`}
+                className="cursor-grab rounded-lg border border-border bg-white p-2 transition-all hover:-translate-y-0.5 hover:border-primary/50 active:cursor-grabbing"
+              >
+                <img src={lg.url} alt={lg.label} className="pointer-events-none h-8 w-full object-contain" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {icons.length > 0 && (
         <div>
           <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -2119,7 +2213,7 @@ function PropertiesPanel({
 
           <PGroup title="Typography">
             <div className="grid grid-cols-2 gap-2">
-              <P label="Size" name="fontSize" placeholder="56px" />
+              {P({ label: "Size", name: "fontSize", placeholder: "56px" })}
               <label className="block">
                 <span className="mb-0.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground">Weight{bucket !== 'base' && bp.fontWeight !== undefined && <Dot />}</span>
                 <select
@@ -2134,8 +2228,8 @@ function PropertiesPanel({
               </label>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <P label="Line height" name="lineHeight" placeholder="1.2" />
-              <P label="Letter spacing" name="letterSpacing" placeholder="0px" />
+              {P({ label: "Line height", name: "lineHeight", placeholder: "1.2" })}
+              {P({ label: "Letter spacing", name: "letterSpacing", placeholder: "0px" })}
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -2188,13 +2282,13 @@ function PropertiesPanel({
                 </div>
               </div>
             </div>
-            <ColorP label="Color" name="color" />
+            {ColorP({ label: "Color", name: "color" })}
           </PGroup>
 
           <PGroup title="Spacing">
             <div className="grid grid-cols-2 gap-2">
-              <P label="Margin top" name="marginTop" placeholder="0px" />
-              <P label="Margin bottom" name="marginBottom" placeholder="0px" />
+              {P({ label: "Margin top", name: "marginTop", placeholder: "0px" })}
+              {P({ label: "Margin bottom", name: "marginBottom", placeholder: "0px" })}
             </div>
           </PGroup>
         </div>
@@ -2274,7 +2368,7 @@ function PropertiesPanel({
               })}
             </div>
           </div>
-          <P label="Height" name="height" placeholder="auto" />
+          {P({ label: "Height", name: "height", placeholder: "auto" })}
           </PGroup>
 
           <PGroup title="Appearance">
@@ -2313,7 +2407,7 @@ function PropertiesPanel({
               />
             </div>
           </div>
-          <P label="Opacity" name="opacity" placeholder="100%" />
+          {P({ label: "Opacity", name: "opacity", placeholder: "100%" })}
           </PGroup>
         </div>
       )}
@@ -2333,20 +2427,11 @@ function PropertiesPanel({
 
       {!elementSelected && (
         <div className="space-y-2.5">
-          <ColorP label="Background" name="bg" />
+          {ColorP({ label: "Background", name: "bg" })}
           <div className="grid grid-cols-2 gap-2">
-            <P label="Padding Y" name="padY" placeholder="96px" />
-            <P label="Max width" name="maxWidth" placeholder="1140px" />
+            {P({ label: "Padding Y", name: "padY", placeholder: "96px" })}
+            {P({ label: "Max width", name: "maxWidth", placeholder: "1140px" })}
           </div>
-          <label className="flex items-center justify-between rounded-lg border border-border bg-secondary/40 px-2.5 py-2">
-            <span className="text-xs">Hidden on {device}</span>
-            <input
-              type="checkbox"
-              checked={Boolean(bp.hidden)}
-              onChange={(e) => onProp('_section', 'hidden', e.target.checked || null)}
-              aria-label={`Hide section on ${device}`}
-            />
-          </label>
           {def.repeats.length > 0 && (
             <div className="space-y-1.5">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Items</p>
