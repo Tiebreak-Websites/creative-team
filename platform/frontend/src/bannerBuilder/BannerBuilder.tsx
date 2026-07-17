@@ -57,14 +57,18 @@ interface ConceptCard {
 export const LOCALES = [
   { value: 'en', label: 'English', short: 'EN', cc: 'gb' },
   { value: 'es-419', label: 'Spanish (LatAm)', short: 'ES', cc: 'mx' },
-  { value: 'pt', label: 'Portuguese', short: 'PT', cc: 'pt' },
+  { value: 'pt', label: 'Portuguese', short: 'PT', cc: 'br' },
   { value: 'sv', label: 'Swedish', short: 'SV', cc: 'se' },
+  { value: 'no', label: 'Norwegian', short: 'NO', cc: 'no' },
   { value: 'ja', label: 'Japanese', short: 'JA', cc: 'jp' },
   { value: 'th', label: 'Thai', short: 'TH', cc: 'th' },
+  { value: 'ms', label: 'Malaysian', short: 'MS', cc: 'my' },
+  { value: 'vi', label: 'Vietnamese', short: 'VI', cc: 'vn' },
   { value: 'pl', label: 'Polish', short: 'PL', cc: 'pl' },
   { value: 'zh', label: 'Chinese', short: 'ZH', cc: 'cn' },
   { value: 'ar', label: 'Arabic', short: 'AR', cc: 'sa' },
   { value: 'it', label: 'Italian', short: 'IT', cc: 'it' },
+  { value: 'fr', label: 'French', short: 'FR', cc: 'fr' },
   { value: 'de', label: 'German', short: 'DE', cc: 'de' },
 ]
 

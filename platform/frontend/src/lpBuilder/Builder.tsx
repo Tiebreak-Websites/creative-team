@@ -79,7 +79,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 // (flagcdn is allowed by the CSP img-src https: whitelist; on failure the
 // picker falls back to the language code).
 const FLAG_CC: Record<string, string> = {
-  en: 'gb', ms: 'my', th: 'th', ja: 'jp', sv: 'se', pt: 'br', es: 'es',
+  en: 'gb', ms: 'my', th: 'th', ja: 'jp', sv: 'se', no: 'no', pt: 'br', es: 'mx',
   vi: 'vn', it: 'it', pl: 'pl', fr: 'fr', de: 'de', ar: 'sa', zh: 'cn',
 }
 const flagUrl = (code: string) =>

@@ -50,6 +50,7 @@ DEFAULT_LANGS = [
     {"code": "th", "label": "Thai"},
     {"code": "ja", "label": "Japanese"},
     {"code": "sv", "label": "Swedish"},
+    {"code": "no", "label": "Norwegian"},
     {"code": "pt", "label": "Portuguese"},
     {"code": "es", "label": "Spanish"},
     {"code": "vi", "label": "Vietnamese"},
