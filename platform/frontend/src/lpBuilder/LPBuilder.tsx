@@ -16,12 +16,21 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
+import { brandLogoSrc, brandLogoUri, useIsDark } from '@/lib/brandLogo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, formatUserName } from '@/lib/utils'
 import { useAuth } from '../auth/AuthContext'
-import { listBrands, type Brand } from '../bannerBuilder/brandsApi'
+import {
+  entityAccent,
+  ENTITY_KINDS,
+  KIND_HINT,
+  KIND_LABEL,
+  kindOf,
+  listBrands,
+  NEUTRAL_ACCENT,
+  type Brand,
+} from '../bannerBuilder/brandsApi'
 import { listCampaigns, type CampaignInfo } from '../lpMaterials/api'
 import { AdminTemplates } from './AdminTemplates'
 import { Builder } from './Builder'
@@ -148,7 +157,11 @@ function Dashboard({
   const dark = useIsDark()
 
   useEffect(() => {
-    listBrands().then(setBrands).catch(() => {})
+    // Every active entity gets a folder, white labels included: a WL is itself
+    // a marketing surface, so it owns landing pages exactly like a broker does.
+    // (This is the folder axis — which entity a page belongs to. It is NOT the
+    // brand picker, where a WL would never be offered.)
+    listBrands().then((all) => setBrands(all.filter((b) => b.active !== false))).catch(() => {})
     listCampaigns().then(setCampaigns).catch(() => {})
   }, [])
 
@@ -161,8 +174,8 @@ function Dashboard({
 
   const brandIds = useMemo(() => new Set(brands.map((b) => b.id)), [brands])
 
-  // One folder per brand from the store (new brands appear automatically),
-  // plus "Other" for pages whose brand is empty or no longer exists.
+  // One folder per registry entity (new ones appear automatically), plus
+  // "Other" for pages whose entity is empty or no longer registered.
   const folders = useMemo(() => {
     const ps = projects ?? []
     const out = brands.map((b) => {
@@ -181,6 +194,23 @@ function Dashboard({
     }
     return out
   }, [brands, projects, brandIds])
+
+  /** Folders grouped by registry category. A retired entity keeps its folder
+   * only while it still holds pages, so history stays reachable without
+   * cluttering the home view. "Other" is kind-less and trails the groups. */
+  const folderGroups = useMemo(() => {
+    const withBrand = folders.filter((f) => f.brand)
+    const groups = ENTITY_KINDS.map((kind) => ({
+      kind,
+      label: kind === 'academy' ? 'Academies' : `${KIND_LABEL[kind]}s`,
+      hint: KIND_HINT[kind],
+      items: withBrand.filter(
+        (f) => kindOf(f.brand) === kind && (f.brand.active !== false || f.count > 0),
+      ),
+    })).filter((g) => g.items.length > 0)
+    const other = folders.filter((f) => !f.brand)
+    return { groups, other }
+  }, [folders])
 
   const folderBrand = folder ? brands.find((b) => b.id === folder) ?? null : null
 
@@ -230,7 +260,7 @@ function Dashboard({
             <p className="mt-1 text-sm text-muted-foreground">
               {folder !== null
                 ? `Landing pages in the ${folderBrand?.name ?? 'Other'} folder.`
-                : 'One folder per brand — pick a folder to see its landing pages.'}
+                : 'One folder per broker, white label and academy — pick one to see its landing pages.'}
             </p>
           </div>
         </div>
@@ -249,7 +279,7 @@ function Dashboard({
       <div className="mb-5 grid grid-cols-3 gap-3">
         {[
           { label: 'Landing pages', value: projects?.length ?? '—', icon: Layout },
-          { label: 'Brand folders', value: folders.length || '—', icon: FolderOpen },
+          { label: 'Folders', value: folders.length || '—', icon: FolderOpen },
           { label: 'Languages in use', value: projects ? langsInUse : '—', icon: Languages },
         ].map((s, i) => (
           <div
@@ -271,34 +301,28 @@ function Dashboard({
             <Loader2 className="h-4 w-4 animate-spin" /> Loading…
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {folders.map((f, i) => (
-              <button
-                key={f.id || 'other'}
-                type="button"
-                onClick={() => setFolder(f.id)}
-                className="group animate-fade-up overflow-hidden rounded-2xl border border-border bg-card text-left shadow-sm transition-all hover:-translate-y-1 hover:border-primary/40 hover:shadow-md"
-                style={{ animationDelay: `${Math.min(i * 60, 360)}ms` }}
-                title={`Open the ${f.name} folder`}
-              >
-                <div className="flex h-24 items-center justify-center gap-3 bg-gradient-to-br from-primary/10 via-secondary to-secondary">
-                  {f.brand?.logo_svg ? (
-                    <img src={brandLogoSrc(f.brand, dark)} alt="" className="h-9 max-w-40 object-contain" />
-                  ) : (
-                    <FolderOpen className="h-8 w-8 text-primary/50" />
-                  )}
+          <div className="space-y-7">
+            {folderGroups.groups.map((g) => (
+              <section key={g.kind}>
+                <div className="mb-2.5 flex items-baseline gap-2">
+                  <h2 className="font-display text-sm font-semibold">{g.label}</h2>
+                  <span className="text-xs tabular-nums text-muted-foreground">{g.items.length}</span>
+                  <span className="hidden text-xs text-muted-foreground/80 sm:inline">{g.hint}</span>
                 </div>
-                <div className="flex items-center gap-2 p-3.5">
-                  <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
-                  <span className="truncate font-display text-sm font-semibold">{f.name}</span>
-                  <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
-                    {f.count} page{f.count === 1 ? '' : 's'}
-                    {f.latest &&
-                      ` · ${new Date(f.latest).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
+                <FolderGrid folders={g.items} dark={dark} onOpen={setFolder} />
+              </section>
+            ))}
+            {folderGroups.other.length > 0 && (
+              <section>
+                <div className="mb-2.5 flex items-baseline gap-2">
+                  <h2 className="font-display text-sm font-semibold text-muted-foreground">Other</h2>
+                  <span className="hidden text-xs text-muted-foreground/80 sm:inline">
+                    Pages whose entity is unset or no longer registered.
                   </span>
                 </div>
-              </button>
-            ))}
+                <FolderGrid folders={folderGroups.other} dark={dark} onOpen={setFolder} />
+              </section>
+            )}
           </div>
         )
       ) : (
@@ -416,6 +440,67 @@ function Dashboard({
   )
 }
 
+/** One category's folder cards, 5 across on a wide screen.
+ *
+ * The tile shows the entity's registry ICON — the same square mark as Settings >
+ * Brands, so a folder is recognisable at a glance and every card reads the same.
+ * It falls back to a wordmark (for an entity with only a logo) and then to a
+ * generic folder. `dark` only matters for that wordmark path; icons carry their
+ * own plate and are shown as-authored. */
+function FolderGrid({
+  folders,
+  dark,
+  onOpen,
+}: {
+  folders: { id: string; name: string; brand: Brand | null; count: number; latest: string }[]
+  dark: boolean
+  onOpen: (id: string) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      {folders.map((f, i) => {
+        const accent = f.brand ? entityAccent(f.brand) ?? NEUTRAL_ACCENT : NEUTRAL_ACCENT
+        const icon = f.brand?.icon_svg ? brandLogoUri(f.brand.icon_svg, false) : ''
+        return (
+          <button
+            key={f.id || 'other'}
+            type="button"
+            onClick={() => onOpen(f.id)}
+            className="group animate-fade-up overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:-translate-y-1 hover:border-primary/40 hover:shadow-md"
+            style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
+            title={`Open the ${f.name} folder`}
+          >
+            <div
+              className="flex h-16 items-center justify-center"
+              // The entity's own colour, kept faint so the mark stays readable.
+              style={{ backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)` }}
+            >
+              {icon ? (
+                <img src={icon} alt="" className="h-10 w-10 rounded-md bg-white object-contain" />
+              ) : f.brand?.logo_svg ? (
+                <img src={brandLogoSrc(f.brand, dark)} alt="" className="h-7 max-w-28 object-contain" />
+              ) : (
+                <FolderOpen className="h-6 w-6 text-primary/50" />
+              )}
+            </div>
+            <div className="p-2.5">
+              <div className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: accent }} />
+                <span className="truncate font-display text-[13px] font-semibold">{f.name}</span>
+              </div>
+              <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
+                {f.count} page{f.count === 1 ? '' : 's'}
+                {f.latest &&
+                  ` · ${new Date(f.latest).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
+              </span>
+            </div>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function CardAction({
   children,
   title,
@@ -492,7 +577,10 @@ function NewLpModal({
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    listBrands().then(setBrands).catch(() => {})
+    // Same set as the folder home: a page can belong to any active entity,
+    // white labels included. If this used brandOptions() a WL folder could
+    // exist that no page could ever be created in.
+    listBrands().then((all) => setBrands(all.filter((b) => b.active !== false))).catch(() => {})
     listCampaigns().then(setCampaigns).catch(() => {})
   }, [])
 
@@ -543,11 +631,21 @@ function NewLpModal({
                placeholder="Name — e.g. BrainTrade MY · July" aria-label="Landing page name" className="h-11 text-base" />
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">Brand</span>
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">Belongs to</span>
             <select value={brandId} onChange={(e) => setBrandId(e.target.value)}
-                    className="h-10 w-full rounded-md border border-input bg-transparent px-2 text-sm" aria-label="Brand">
-              <option value="">No brand</option>
-              {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                    className="h-10 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+                    aria-label="Belongs to">
+              <option value="">Unassigned</option>
+              {/* Grouped by registry category — 16 flat options reads as a wall. */}
+              {ENTITY_KINDS.map((kind) => {
+                const items = brands.filter((b) => kindOf(b) === kind)
+                if (!items.length) return null
+                return (
+                  <optgroup key={kind} label={kind === 'academy' ? 'Academies' : `${KIND_LABEL[kind]}s`}>
+                    {items.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </optgroup>
+                )
+              })}
             </select>
           </label>
           <label className="block">
