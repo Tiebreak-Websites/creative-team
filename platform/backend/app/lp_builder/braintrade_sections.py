@@ -23,7 +23,7 @@ BRAINTRADE_SECTIONS = [
   "category": "braintrade",
   "position": 200,
   "html": "<section class=\"lp-sec-bt-header\">\n <div class=\"lp-wrap bth-row\"><img class=\"bth-logo\" data-lp-img=\"logo\" src=\"\" alt=\"BrainTrade\"></div>\n</section>",
-  "css": ".lp-sec-bt-header{background:var(--lp-card);padding:18px 0}\n.lp-sec-bt-header .bth-row{display:flex;justify-content:flex-end}\n.lp-sec-bt-header .bth-logo{height:34px;object-fit:contain}",
+  "css": ".lp-sec-bt-header{background:var(--lp-card);padding:34px 0 20px}\n.lp-sec-bt-header .bth-row{display:flex;justify-content:flex-start}\n.lp-sec-bt-header .bth-logo{height:40px;object-fit:contain;object-position:left}\n@media (max-width:575px){.lp-sec-bt-header{padding:20px 0 12px}.lp-sec-bt-header .bth-logo{height:32px}}",
   "texts": {
    "en": {}
   },
@@ -36,17 +36,18 @@ BRAINTRADE_SECTIONS = [
   "name": "BT / Hero + form",
   "category": "braintrade",
   "position": 205,
-  "html": "<section class=\"lp-sec-bt-hero-form\">\n <div class=\"lp-wrap bthf-grid\">\n  <div class=\"bthf-media\"><img data-lp-img=\"creative\" src=\"\" alt=\"\"></div>\n  <form class=\"bthf-card\" data-lp-form>\n   <h1 class=\"bthf-title\" data-lp-text=\"title\">Start Your Trading Education With a Personal Trainer</h1>\n   <input class=\"bthf-in\" type=\"text\" name=\"name\" data-lp-text=\"ph_name\" placeholder=\"Full name\" required>\n   <input class=\"bthf-in\" type=\"email\" name=\"email\" data-lp-text=\"ph_email\" placeholder=\"E-Mail\" required>\n   <input class=\"bthf-in\" type=\"tel\" name=\"phone\" data-lp-text=\"ph_phone\" placeholder=\"Phone number\" required>\n   <label class=\"bthf-consent\"><input type=\"checkbox\" name=\"consent\" required> <span data-lp-text=\"consent\">I agree to the Privacy Policy and Terms &amp; Conditions</span></label>\n   <button class=\"bthf-btn\" type=\"submit\" data-lp-text=\"submit\">Start My Coaching Journey</button>\n   <p class=\"bthf-trust\" data-lp-text=\"trust\">✓ Free to join ✓ No experience required ✓ 1-on-1 guidance included</p>\n  </form>\n </div>\n</section>",
-  "css": ".lp-sec-bt-hero-form{background:var(--lp-card);padding:28px 0 56px;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-hero-form .bthf-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:40px;align-items:stretch}\n.lp-sec-bt-hero-form .bthf-media{border-radius:24px;background:#F8D8CC;min-height:520px;overflow:hidden}\n.lp-sec-bt-hero-form .bthf-media img{width:100%;height:100%;object-fit:cover;display:block}\n.lp-sec-bt-hero-form .bthf-card{display:flex;flex-direction:column;gap:12px;padding:8px 0}\n.lp-sec-bt-hero-form .bthf-title{color:var(--lp-accent);font-size:1.55rem;font-weight:700;line-height:1.3;margin:0 0 10px;text-align:center}\n.lp-sec-bt-hero-form .bthf-in{border:1px solid #DDE1E6;border-radius:10px;padding:.9rem 1rem;font-size:.98rem;font-family:inherit}\n.lp-sec-bt-hero-form .bthf-consent{display:flex;gap:.55rem;font-size:.8rem;color:var(--lp-muted);align-items:flex-start;line-height:1.45}\n.lp-sec-bt-hero-form .bthf-btn{background:var(--lp-primary);color:#fff;border:0;border-radius:10px;padding:1rem;font-size:1.05rem;font-weight:700;cursor:pointer;font-family:inherit}\n.lp-sec-bt-hero-form .bthf-trust{color:var(--lp-accent);font-size:.85rem;text-align:center;margin:4px 0 0;white-space:pre-line}\n@media (max-width:1199px){.lp-sec-bt-hero-form .bthf-grid{grid-template-columns:1fr 1fr;gap:24px}}\n@media (max-width:575px){.lp-sec-bt-hero-form{padding:16px 0 40px}.lp-sec-bt-hero-form .bthf-grid{grid-template-columns:1fr}.lp-sec-bt-hero-form .bthf-media{min-height:260px}}",
+  "html": "<section class=\"lp-sec-bt-hero-form\">\n <div class=\"lp-wrap bthf-grid\">\n  <div class=\"bthf-media\"><img data-lp-img=\"creative\" src=\"\" alt=\"\"></div>\n  <form class=\"bthf-card\" data-lp-form>\n   <h1 class=\"bthf-title\" data-lp-text=\"title\">Start Your Trading Education With a Personal Trainer</h1>\n   <div class=\"bthf-fields\">\n    <input class=\"bthf-in\" type=\"text\" name=\"name\" data-lp-text=\"ph_name\" placeholder=\"Full name\" required>\n    <input class=\"bthf-in\" type=\"email\" name=\"email\" data-lp-text=\"ph_email\" placeholder=\"E-Mail\" required>\n    <div class=\"bthf-phone-row\">\n     <input class=\"bthf-in bthf-code\" type=\"tel\" name=\"phone_code\" data-lp-text=\"ph_code\" placeholder=\"+359\">\n     <input class=\"bthf-in\" type=\"tel\" name=\"phone\" data-lp-text=\"ph_phone\" placeholder=\"Phone number\" required>\n    </div>\n   </div>\n   <label class=\"bthf-consent\"><input type=\"checkbox\" name=\"consent\" required> <span data-lp-text=\"consent\">I agree to the Privacy Policy and Terms &amp; Conditions</span></label>\n   <button class=\"bthf-btn\" type=\"submit\" data-lp-text=\"submit\">Start My Coaching Journey</button>\n   <p class=\"bthf-trust\" data-lp-text=\"trust\">✓ Free to join ✓ No experience required ✓ 1-on-1 guidance included</p>\n  </form>\n </div>\n</section>",
+  "css": ".lp-sec-bt-hero-form{background:var(--lp-card);padding:20px 0 40px;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-hero-form .bthf-grid{display:flex;gap:30px;align-items:stretch}\n.lp-sec-bt-hero-form .bthf-media{flex:1 1 0;min-width:0;border-radius:20px;background:#FFD4D4;min-height:645px;overflow:hidden}\n.lp-sec-bt-hero-form .bthf-media img{width:100%;height:100%;object-fit:cover;display:block}\n.lp-sec-bt-hero-form .bthf-card{width:412px;flex:0 0 412px;background:#fff;border-radius:16px;box-shadow:0 0 20px rgba(0,0,0,.1);padding:35px 25px;display:flex;flex-direction:column;gap:30px;justify-content:center;margin:0}\n.lp-sec-bt-hero-form .bthf-title{color:var(--lp-accent);font-size:24px;font-weight:500;line-height:1.4;margin:0;text-align:center}\n.lp-sec-bt-hero-form .bthf-fields{display:flex;flex-direction:column;gap:10px}\n.lp-sec-bt-hero-form .bthf-in{display:block;width:100%;border:0;border-bottom:2px solid #C9CDD1;border-radius:0;background:transparent;padding:20px 6px 14px;font-size:16px;line-height:1.4;color:var(--lp-accent);font-family:inherit;outline:none;transition:border-color .15s ease}\n.lp-sec-bt-hero-form .bthf-in::placeholder{color:var(--lp-muted)}\n.lp-sec-bt-hero-form .bthf-in:focus{border-bottom-color:var(--lp-primary)}\n.lp-sec-bt-hero-form .bthf-phone-row{display:flex;gap:10px}\n.lp-sec-bt-hero-form .bthf-code{width:99px;flex:0 0 99px}\n.lp-sec-bt-hero-form .bthf-phone-row .bthf-in:last-child{flex:1 1 0;min-width:0}\n.lp-sec-bt-hero-form .bthf-consent{display:flex;gap:10px;font-size:14px;color:var(--lp-muted);align-items:flex-start;line-height:1.4;cursor:pointer}\n.lp-sec-bt-hero-form .bthf-consent input{appearance:none;-webkit-appearance:none;width:18px;height:18px;flex:0 0 18px;border:1px solid var(--lp-muted);border-radius:5px;background:#fff;margin:1px 0 0;cursor:pointer}\n.lp-sec-bt-hero-form .bthf-consent input:checked{background:var(--lp-primary) url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"white\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 6L9 17l-5-5\"/></svg>') center/12px no-repeat;border-color:var(--lp-primary)}\n.lp-sec-bt-hero-form .bthf-btn{background:var(--lp-primary);color:#fff;border:0;border-radius:16px;padding:16px 10px;font-size:20px;font-weight:700;line-height:1.4;cursor:pointer;font-family:inherit;filter:drop-shadow(0 3px 4.5px rgba(204,204,204,.4))}\n.lp-sec-bt-hero-form .bthf-btn:hover{filter:drop-shadow(0 3px 4.5px rgba(204,204,204,.4)) brightness(1.05)}\n.lp-sec-bt-hero-form .bthf-trust{color:var(--lp-muted);font-size:16px;line-height:1.4;text-align:center;margin:0;white-space:pre-line}\n@media (max-width:1199px){.lp-sec-bt-hero-form .bthf-grid{gap:24px}.lp-sec-bt-hero-form .bthf-media{min-height:560px}}\n@media (max-width:575px){.lp-sec-bt-hero-form{padding:12px 0 32px}.lp-sec-bt-hero-form .bthf-grid{flex-direction:column}.lp-sec-bt-hero-form .bthf-media{min-height:260px;width:100%}.lp-sec-bt-hero-form .bthf-card{width:100%;flex:1 1 auto;padding:30px 20px}}",
   "texts": {
    "en": {
     "title": "Start Your Trading Education With a Personal Trainer",
     "ph_name": "Full name",
     "ph_email": "E-Mail",
+    "ph_code": "+359",
     "ph_phone": "Phone number",
     "consent": "I agree to the Privacy Policy and Terms & Conditions",
     "submit": "Start My Coaching Journey",
-    "trust": "✓ Free to join ✓ No experience required  ✓ 1-on-1 guidance included"
+    "trust": "✓ Free to join ✓ No experience required\n✓ 1-on-1 guidance included"
    },
    "pt": {
     "title": "Comece Sua Jornada com um Coach Pessoal",
@@ -61,19 +62,20 @@ BRAINTRADE_SECTIONS = [
     "title": "専任メンターと共にあなたのトレーディング教育を始めましょう",
     "ph_name": "フルネーム",
     "ph_email": "Eメール",
+    "ph_code": "+81",
     "ph_phone": "電話番号",
     "consent": "利用規約およびプライバシーポリシーに同意します。",
     "submit": "登録して始める",
-    "trust": "✓ 参加無料 ✓ 経験不問  ✓ 1対1の指導が含まれています"
+    "trust": "✓ 参加無料 ✓ 経験不問\n✓ 1対1の指導が含まれています"
    },
    "th": {
-    "title": " เริ่มเรียนเทรดกับโค้ชส่วนตัว",
+    "title": "เริ่มเรียนเทรดกับโค้ชส่วนตัว",
     "ph_name": "ชื่อเต็ม",
     "ph_email": "อีเมล",
     "ph_phone": "หมายเลขโทรศัพท์",
     "consent": "ฉันยอมรับ ข้อกำหนดและเงื่อนไข และ นโยบายความเป็นส่วนตัว แล้ว",
-    "submit": "ริ่มต้นกับโค้ชของฉัน",
-    "trust": " สมัครฟรี ✓ ไม่ต้องมีประสบการณ์ ✓ รวมคำแนะนำแบบ 1-ต่อ-1"
+    "submit": "เริ่มต้นกับโค้ชของฉัน",
+    "trust": "✓ สมัครฟรี ✓ ไม่ต้องมีประสบการณ์ ✓ รวมคำแนะนำแบบ 1-ต่อ-1"
    },
    "vi": {
     "title": "Bắt đầu giáo dục giao dịch của bạn với một huấn luyện viên cá nhân",
@@ -86,12 +88,12 @@ BRAINTRADE_SECTIONS = [
    },
    "ar": {
     "title": "ابدأ تعليمك في التداول مع مدرب شخصي",
-    "ph_name": "البريد الإلكتروني",
-    "ph_email": "الاسم الكامل",
-    "ph_phone": "البريد الإلكتروني",
-    "consent": "رقم الهاتف",
-    "submit": "أوافق على سياسة الخصوصية والشروط والأحكام",
-    "trust": "ابدأ رحلتي في التدريب"
+    "ph_name": "الاسم الكامل",
+    "ph_email": "البريد الإلكتروني",
+    "ph_phone": "رقم الهاتف",
+    "consent": "أوافق على سياسة الخصوصية والشروط والأحكام",
+    "submit": "ابدأ رحلتي في التدريب",
+    "trust": "✓ الانضمام مجاني ✓ لا حاجة لخبرة سابقة\n✓ إرشاد فردي متضمن"
    },
    "zh": {
     "title": "与专属导师一起，开启您的交易教育之旅",
@@ -127,7 +129,7 @@ BRAINTRADE_SECTIONS = [
     "ph_phone": "Telefonnummer",
     "consent": "Jag godkänner användarvillkoren och sekretesspolicyn.",
     "submit": "Starta min utbildning",
-    "trust": "✓ Gratis att börja ✓ Ingen erfarenhet krävs  ✓ 1-mot-1 vägledning ingår"
+    "trust": "✓ Gratis att börja ✓ Ingen erfarenhet krävs\n✓ 1-mot-1 vägledning ingår"
    },
    "fr": {
     "title": "Commencez votre carrière de trading Avec un mentor personnel",
@@ -145,7 +147,7 @@ BRAINTRADE_SECTIONS = [
     "ph_phone": "Telefonnummer",
     "consent": "Ich stimme den Allgemeinen Geschäftsbedingungen und der Datenschutzerklärung zu.",
     "submit": "Beginnen Sie Ihre Coaching-Reise",
-    "trust": "✓ Kostenlos beitreten ✓ Keine Erfahrung erforderlich ✓ 1-zu-1 Anleitung inklusive "
+    "trust": "✓ Kostenlos beitreten ✓ Keine Erfahrung erforderlich ✓ 1-zu-1 Anleitung inklusive"
    }
   },
   "assets": {}
@@ -155,8 +157,8 @@ BRAINTRADE_SECTIONS = [
   "name": "BT / 3 simple steps",
   "category": "braintrade",
   "position": 210,
-  "html": "<section class=\"lp-sec-bt-steps\">\n <div class=\"lp-wrap\">\n  <h2 class=\"bts-title\" data-lp-text=\"title\">Join BrainTrade In 3 Simple Steps</h2>\n  <div class=\"bts-grid\">\n   <!--lp-repeat:steps--><div class=\"bts-card\"><div class=\"bts-icon\"><img data-lp-img=\"icon\" src=\"\" alt=\"\"></div><h3 class=\"bts-card-title\" data-lp-text=\"title\">1. Sign up and learn</h3><p class=\"bts-card-text\" data-lp-rich=\"text\">Register today and gain immediate access to our highly-rated online investment academy.</p></div><!--/lp-repeat:steps-->\n  </div>\n </div>\n</section>",
-  "css": ".lp-sec-bt-steps{background:var(--lp-bg);padding:56px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-steps .bts-title{color:var(--lp-accent);font-size:1.9rem;font-weight:700;text-align:center;margin:0 0 34px}\n.lp-sec-bt-steps .bts-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}\n.lp-sec-bt-steps .bts-card{background:var(--lp-card);border:1px solid #DDE1E6;border-radius:16px;padding:26px;text-align:center}\n.lp-sec-bt-steps .bts-icon{height:64px;display:flex;align-items:center;justify-content:center;margin-bottom:14px}\n.lp-sec-bt-steps .bts-icon img{max-height:64px;object-fit:contain}\n.lp-sec-bt-steps .bts-card-title{color:var(--lp-accent);font-size:1.05rem;font-weight:600;margin:0 0 8px}\n.lp-sec-bt-steps .bts-card-text{color:var(--lp-muted);font-size:.92rem;line-height:1.55;margin:0}\n@media (max-width:575px){.lp-sec-bt-steps .bts-grid{grid-template-columns:1fr}}",
+  "html": "<section class=\"lp-sec-bt-steps\">\n <div class=\"lp-wrap\">\n  <h2 class=\"bts-title\" data-lp-text=\"title\">Join BrainTrade In 3 Simple Steps</h2>\n  <div class=\"bts-grid\">\n   <!--lp-repeat:steps--><div class=\"bts-card\"><div class=\"bts-icon\"><img data-lp-img=\"icon\" src=\"\" alt=\"\"></div><div class=\"bts-body\"><h3 class=\"bts-card-title\" data-lp-text=\"title\">1. Sign up and learn</h3><p class=\"bts-card-text\" data-lp-rich=\"text\">Register today and gain immediate access to our highly-rated online investment academy.</p></div></div><!--/lp-repeat:steps-->\n  </div>\n </div>\n</section>",
+  "css": ".lp-sec-bt-steps{background:var(--lp-bg);padding:40px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-steps .bts-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:1.4;text-align:center;margin:0 0 40px}\n.lp-sec-bt-steps .bts-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;align-items:stretch}\n.lp-sec-bt-steps .bts-card{background:var(--lp-card);border:1px solid #DDE1E6;border-radius:16px;padding:30px 20px;display:flex;flex-direction:column;gap:20px;align-items:center;text-align:center;filter:drop-shadow(0 0 2.5px rgba(0,0,0,.1))}\n.lp-sec-bt-steps .bts-icon{width:70px;height:70px;flex:0 0 auto}\n.lp-sec-bt-steps .bts-icon img{width:70px;height:70px;object-fit:contain;display:block}\n.lp-sec-bt-steps .bts-body{display:flex;flex-direction:column;gap:5px;width:100%}\n.lp-sec-bt-steps .bts-card-title{color:var(--lp-accent);font-size:20px;font-weight:500;line-height:1.2;margin:0}\n.lp-sec-bt-steps .bts-card-text{color:var(--lp-muted);font-size:16px;font-weight:400;line-height:1.4;margin:0}\n@media (max-width:575px){.lp-sec-bt-steps{padding:24px 0}.lp-sec-bt-steps .bts-title{font-size:24px;margin:0 0 24px}.lp-sec-bt-steps .bts-grid{grid-template-columns:1fr;gap:24px}.lp-sec-bt-steps .bts-card-title{font-size:18px}}",
   "texts": {
    "en": {
     "title": "Join BrainTrade In 3 Simple Steps",
@@ -249,17 +251,74 @@ BRAINTRADE_SECTIONS = [
     "steps.2.text": "Börja din utbildning i onlinehandel och lär dig mer om de finansiella marknaderna och verktygen du behöver för att bemästra dem."
    }
   },
+  "assets": {
+   "steps.0.icon": "bundled:steps-signature.svg",
+   "steps.1.icon": "bundled:steps-support.svg",
+   "steps.2.icon": "bundled:steps-platform.svg"
+  }
+ },
+ {
+  "key": "bt-2blog",
+  "name": "BT / 2 blog cards",
+  "category": "braintrade",
+  "position": 212,
+  "html": "<section class=\"lp-sec-bt-2blog\">\n <div class=\"lp-wrap b2b-grid\">\n  <div class=\"b2b-copy\">\n   <h2 class=\"b2b-title\" data-lp-text=\"title\">Test Title</h2>\n   <p class=\"b2b-text\" data-lp-rich=\"text\">Ronkos Moribi and It Oji Nik, at Ed Olamkorber at Sit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar. Fermentum scelerisque sit consectetur hak mi. Mollis leo elivend ultricies brus yakulis.</p>\n  </div>\n  <div class=\"b2b-media\"><img data-lp-img=\"image\" src=\"\" alt=\"\"></div>\n </div>\n</section>",
+  "css": ".lp-sec-bt-2blog{background:var(--lp-bg);padding:40px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-2blog .b2b-grid{display:flex;gap:30px;align-items:center}\n.lp-sec-bt-2blog .b2b-copy{flex:1 1 0;min-width:0}\n.lp-sec-bt-2blog .b2b-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:1.4;margin:0 0 30px}\n.lp-sec-bt-2blog .b2b-text{color:var(--lp-muted);font-size:16px;line-height:1.4;margin:0;white-space:pre-line}\n.lp-sec-bt-2blog .b2b-media{flex:1 1 0;min-width:0;height:340px;border-radius:10px;background:#FFD4D4;overflow:hidden}\n.lp-sec-bt-2blog .b2b-media img{width:100%;height:100%;object-fit:cover;display:block}\n@media (max-width:1199px){.lp-sec-bt-2blog .b2b-grid{flex-direction:row-reverse}.lp-sec-bt-2blog .b2b-media{flex:0 0 404px;height:230px}}\n@media (max-width:575px){.lp-sec-bt-2blog{padding:24px 0}.lp-sec-bt-2blog .b2b-grid{flex-direction:column-reverse}.lp-sec-bt-2blog .b2b-media{flex:0 0 auto;width:100%;height:252px}.lp-sec-bt-2blog .b2b-title{font-size:24px;margin:0 0 16px}}",
+  "texts": {
+   "en": {
+    "title": "Test Title",
+    "text": "Ronkos Moribi and It Oji Nik, at Ed Olamkorber at Sit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar. Fermentum scelerisque sit consectetur hak mi. Mollis leo elivend ultricies brus yakulis."
+   }
+  },
   "assets": {}
  },
  {
   "key": "bt-content-split",
-  "name": "BT / Content (image + text)",
+  "name": "BT / Content (text)",
   "category": "braintrade",
   "position": 215,
-  "html": "<section class=\"lp-sec-bt-content-split\">\n <div class=\"lp-wrap btcs-grid\">\n  <div class=\"btcs-copy\">\n   <h2 class=\"btcs-title\" data-lp-text=\"title\">Test Title</h2>\n   <p class=\"btcs-text\" data-lp-rich=\"text\">Rankos, Marita and Il Oji Nik, at Ed Olamkobner at Str. Condimentum at nonk in eros scelerisque ad. Commodo in viverra nonk, olamkorber aut. Non, amet, olect scelerisque notam sagittis, pulvinar.</p>\n  </div>\n  <div class=\"btcs-media\"><img data-lp-img=\"image\" src=\"\" alt=\"\"></div>\n </div>\n</section>",
-  "css": ".lp-sec-bt-content-split{background:var(--lp-bg);padding:56px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-content-split .btcs-grid{display:grid;grid-template-columns:1fr 1fr;gap:44px;align-items:center}\n.lp-sec-bt-content-split .btcs-title{color:var(--lp-accent);font-size:1.7rem;font-weight:700;margin:0 0 14px}\n.lp-sec-bt-content-split .btcs-text{color:var(--lp-muted);line-height:1.7;margin:0;white-space:pre-line}\n.lp-sec-bt-content-split .btcs-media{border-radius:20px;background:#F8D8CC;min-height:300px;overflow:hidden}\n.lp-sec-bt-content-split .btcs-media img{width:100%;height:100%;object-fit:cover;display:block}\n@media (max-width:575px){.lp-sec-bt-content-split .btcs-grid{grid-template-columns:1fr}}",
+  "html": "<section class=\"lp-sec-bt-content-split\">\n <div class=\"lp-wrap\">\n  <div class=\"btcs-copy\">\n   <h2 class=\"btcs-title\" data-lp-text=\"title\">Title</h2>\n   <p class=\"btcs-text\" data-lp-rich=\"text\">Ronkos Moribi and It Oji Nik, at Ed Olamkorber at Sit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar. Fermentum scelerisque sit consectetur hak mi. Mollis leo elivend ultricies brus yakulis.</p>\n  </div>\n </div>\n</section>",
+  "css": ".lp-sec-bt-content-split{background:var(--lp-bg);padding:40px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-content-split .btcs-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:1.4;margin:0 0 30px}\n.lp-sec-bt-content-split .btcs-text{color:var(--lp-muted);font-size:16px;line-height:1.4;margin:0;white-space:pre-line}\n@media (max-width:575px){.lp-sec-bt-content-split{padding:24px 0}.lp-sec-bt-content-split .btcs-title{font-size:24px;margin:0 0 16px}}",
   "texts": {
    "en": {}
+  },
+  "assets": {}
+ },
+ {
+  "key": "bt-2col",
+  "name": "BT / 2 columns",
+  "category": "braintrade",
+  "position": 216,
+  "html": "<section class=\"lp-sec-bt-2col\">\n <div class=\"lp-wrap\">\n  <h2 class=\"b2c-title\" data-lp-text=\"title\">Title 2 columns</h2>\n  <div class=\"b2c-grid\">\n   <!--lp-repeat:cols--><div class=\"b2c-col\"><p class=\"b2c-text\" data-lp-rich=\"text\">Ronkos Moribi and It Oji Nik, at Ed Olamkorber at Sit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar. Fermentum scelerisque sit consectetur hak mi. Mollis leo elivend ultricies brus yakulis.</p></div><!--/lp-repeat:cols-->\n  </div>\n </div>\n</section>",
+  "css": ".lp-sec-bt-2col{background:var(--lp-bg);padding:40px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-2col .b2c-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:1.4;margin:0 0 30px}\n.lp-sec-bt-2col .b2c-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px}\n.lp-sec-bt-2col .b2c-text{color:var(--lp-muted);font-size:16px;line-height:1.4;margin:0;white-space:pre-line}\n@media (max-width:575px){.lp-sec-bt-2col{padding:24px 0}.lp-sec-bt-2col .b2c-title{font-size:24px;margin:0 0 16px}.lp-sec-bt-2col .b2c-grid{grid-template-columns:1fr;gap:24px}}",
+  "texts": {
+   "en": {
+    "title": "Title 2 columns",
+    "cols.0.text": "Ronkos Moribi and It Oji Nik, at Ed Olamkorber at Sit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar. Fermentum scelerisque sit consectetur hak mi. Mollis leo elivend ultricies brus yakulis.",
+    "cols.1.text": "Ronkos Moribi and It Oji Nik, at Ed Olamkorber at Sit. Condimentum sit nonk in eros scelerisque sid. Commodo in vivera nonk, olamkorber aut. Non, amet, alect scelerisque nolam sagittis, pulvinar. Fermentum scelerisque sit consectetur hak mi. Mollis leo elivend ultricies brus yakulis."
+   }
+  },
+  "assets": {}
+ },
+ {
+  "key": "bt-symbols",
+  "name": "BT / Symbols",
+  "category": "braintrade",
+  "position": 218,
+  "html": "<section class=\"lp-sec-bt-symbols\">\n <div class=\"lp-wrap\">\n  <h2 class=\"bsy-title\" data-lp-text=\"title\">Lorem ipsum dolor sit amet, consectetur.</h2>\n  <div class=\"bsy-grid\">\n   <!--lp-repeat:cards--><div class=\"bsy-card\"><div class=\"bsy-media\"><img data-lp-img=\"image\" src=\"\" alt=\"\"></div><div class=\"bsy-body\"><h3 class=\"bsy-card-title\" data-lp-text=\"title\">Title 1</h3><p class=\"bsy-card-text\" data-lp-rich=\"text\">Egestas elit dui scelerisque ut eu purus aliquam vitae habitasse.</p></div></div><!--/lp-repeat:cards-->\n  </div>\n </div>\n</section>",
+  "css": ".lp-sec-bt-symbols{background:var(--lp-bg);padding:40px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-symbols .bsy-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:1.1;text-align:center;margin:0 0 40px}\n.lp-sec-bt-symbols .bsy-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:30px;align-items:stretch}\n.lp-sec-bt-symbols .bsy-card{background:var(--lp-card);border:1px solid #DDE1E6;border-radius:16px;box-shadow:0 0 5px rgba(0,0,0,.1);overflow:hidden;display:flex;flex-direction:column}\n.lp-sec-bt-symbols .bsy-media{height:220px;background:#FFD4D4;overflow:hidden}\n.lp-sec-bt-symbols .bsy-media img{width:100%;height:100%;object-fit:cover;display:block}\n.lp-sec-bt-symbols .bsy-body{display:flex;flex-direction:column;gap:16px;padding:24px 16px 16px}\n.lp-sec-bt-symbols .bsy-card-title{color:var(--lp-accent);font-size:20px;font-weight:500;line-height:1.1;margin:0}\n.lp-sec-bt-symbols .bsy-card-text{color:var(--lp-muted);font-size:16px;line-height:1.4;margin:0}\n@media (max-width:1199px){.lp-sec-bt-symbols .bsy-grid{gap:16px}}\n@media (max-width:575px){.lp-sec-bt-symbols{padding:24px 0}.lp-sec-bt-symbols .bsy-title{font-size:24px;margin:0 0 30px}.lp-sec-bt-symbols .bsy-grid{grid-template-columns:1fr;gap:16px}}",
+  "texts": {
+   "en": {
+    "title": "Lorem ipsum dolor sit amet, consectetur.",
+    "cards.0.title": "Title 1",
+    "cards.0.text": "Egestas elit dui scelerisque ut eu purus aliquam vitae habitasse.",
+    "cards.1.title": "Title",
+    "cards.1.text": "Egestas elit dui scelerisque ut eu purus aliquam vitae habitasse.",
+    "cards.2.title": "Title",
+    "cards.2.text": "Egestas elit dui scelerisque ut eu purus aliquam vitae habitasse.",
+    "cards.3.title": "Title",
+    "cards.3.text": "Egestas elit dui scelerisque ut eu purus aliquam vitae habitasse."
+   }
   },
   "assets": {}
  },
@@ -281,7 +340,7 @@ BRAINTRADE_SECTIONS = [
   "category": "braintrade",
   "position": 225,
   "html": "<section class=\"lp-sec-bt-cta\">\n <div class=\"lp-wrap btc-inner\"><a class=\"btc-btn\" data-lp-link=\"cta_href\" data-lp-text=\"cta\" href=\"#signup\">Start Now</a></div>\n</section>",
-  "css": ".lp-sec-bt-cta{background:var(--lp-bg);padding:26px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-cta .btc-inner{text-align:center}\n.lp-sec-bt-cta .btc-btn{display:inline-block;background:var(--lp-primary);color:#fff;border-radius:12px;padding:1rem 3rem;font-weight:700;font-size:1.05rem;text-decoration:none}",
+  "css": ".lp-sec-bt-cta{background:var(--lp-bg);padding:2px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-cta .btc-inner{display:flex;justify-content:center}\n.lp-sec-bt-cta .btc-btn{display:inline-flex;align-items:center;justify-content:center;min-height:68px;background:var(--lp-primary);border:2px solid var(--lp-primary);border-radius:16px;padding:10px 98px;color:#fff;font-size:20px;font-weight:700;line-height:1;letter-spacing:.5px;text-align:center;text-decoration:none}\n@media (max-width:575px){.lp-sec-bt-cta .btc-btn{width:100%;padding:10px 16px}}",
   "texts": {
    "en": {}
   },
@@ -292,8 +351,8 @@ BRAINTRADE_SECTIONS = [
   "name": "BT / Journey (60 days)",
   "category": "braintrade",
   "position": 230,
-  "html": "<section class=\"lp-sec-bt-journey\">\n <div class=\"lp-wrap\">\n  <h2 class=\"btj-title\" data-lp-text=\"title\">Your Guided Learning Journey in 60 Days</h2>\n  <div class=\"btj-grid\">\n   <!--lp-repeat:months--><div class=\"btj-card\"><span class=\"btj-label\" data-lp-text=\"label\">Month 1</span><h3 class=\"btj-card-title\" data-lp-text=\"title\">Learn &amp; Practice</h3><p class=\"btj-card-text\" data-lp-rich=\"text\">Build your foundation with structured educational guidance and ongoing feedback.</p></div><!--/lp-repeat:months-->\n  </div>\n </div>\n</section>",
-  "css": ".lp-sec-bt-journey{background:var(--lp-bg);padding:56px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-journey .btj-title{color:var(--lp-accent);font-size:1.9rem;font-weight:700;text-align:center;margin:0 0 34px}\n.lp-sec-bt-journey .btj-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}\n.lp-sec-bt-journey .btj-card{background:var(--lp-card);border:1px solid #DDE1E6;border-radius:16px;padding:26px}\n.lp-sec-bt-journey .btj-label{display:inline-block;color:var(--lp-muted);border:1px solid #DDE1E6;border-radius:999px;padding:.25rem .8rem;font-size:.8rem;margin-bottom:12px}\n.lp-sec-bt-journey .btj-card-title{color:var(--lp-primary);font-size:1.25rem;font-weight:700;margin:0 0 10px}\n.lp-sec-bt-journey .btj-card-text{color:var(--lp-muted);line-height:1.6;margin:0}\n@media (max-width:575px){.lp-sec-bt-journey .btj-grid{grid-template-columns:1fr}}",
+  "html": "<section class=\"lp-sec-bt-journey\">\n <div class=\"lp-wrap\">\n  <h2 class=\"btj-title\" data-lp-text=\"title\">Your Guided Learning Journey in 60 Days</h2>\n  <div class=\"btj-grid\">\n   <!--lp-repeat:months--><div class=\"btj-card\"><img class=\"btj-bg\" data-lp-img=\"bg\" src=\"\" alt=\"\"><div class=\"btj-label\"><img class=\"btj-cal\" data-lp-img=\"icon\" src=\"\" alt=\"\"><span data-lp-text=\"label\">Month 1</span></div><h3 class=\"btj-card-title\" data-lp-text=\"title\">Learn &amp; Practice</h3><p class=\"btj-card-text\" data-lp-rich=\"text\">Build your foundation with structured educational guidance and ongoing feedback.</p></div><!--/lp-repeat:months-->\n   <img class=\"btj-sep\" data-lp-img=\"divider\" src=\"\" alt=\"\">\n  </div>\n </div>\n</section>",
+  "css": ".lp-sec-bt-journey{background:var(--lp-bg);padding:80px 0 40px;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-journey .btj-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:1.4;text-align:center;margin:0 0 30px}\n.lp-sec-bt-journey .btj-grid{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:100px;align-items:stretch}\n.lp-sec-bt-journey .btj-card{position:relative;background:var(--lp-card);border:1px solid #DDE1E6;border-radius:16px;box-shadow:0 0 5px rgba(0,0,0,.1);padding:30px;display:flex;flex-direction:column;gap:10px;overflow:hidden}\n.lp-sec-bt-journey .btj-card>*{position:relative;z-index:1}\n.lp-sec-bt-journey .btj-bg{position:absolute;right:-148px;top:-1px;width:472px;height:auto;z-index:0;pointer-events:none}\n.lp-sec-bt-journey .btj-card:not(:last-child) .btj-bg{display:none}\n.lp-sec-bt-journey .btj-label{display:flex;align-items:center;gap:10px;color:var(--lp-accent);font-size:16px;line-height:1.4;min-height:51px}\n.lp-sec-bt-journey .btj-cal{width:26px;height:26px;flex:0 0 26px}\n.lp-sec-bt-journey .btj-card-title{color:var(--lp-primary);font-size:24px;font-weight:600;line-height:normal;margin:0}\n.lp-sec-bt-journey .btj-card-text{color:var(--lp-muted);font-size:16px;line-height:1.4;margin:0;white-space:pre-line}\n.lp-sec-bt-journey .btj-card:last-child .btj-card-text{max-width:367px}\n.lp-sec-bt-journey .btj-sep{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:40px;height:40px;z-index:2}\n@media (max-width:575px){.lp-sec-bt-journey{padding:24px 0}.lp-sec-bt-journey .btj-title{font-size:24px;margin:0 0 24px}.lp-sec-bt-journey .btj-grid{grid-template-columns:1fr;gap:72px}.lp-sec-bt-journey .btj-bg{display:none}.lp-sec-bt-journey .btj-card:last-child .btj-card-text{max-width:none}.lp-sec-bt-journey .btj-sep{transform:translate(-50%,-50%) rotate(90deg)}}",
   "texts": {
    "en": {
     "title": "Your Guided Learning Journey in 60 Days",
@@ -368,7 +427,11 @@ BRAINTRADE_SECTIONS = [
     "months.1.text": "Phát triển kiến thức của bạn và giao dịch độc lập với sự hỗ trợ giáo dục có sẵn. Chuyển từ tài nguyên học tập sang giao dịch tự định hướng với sự hỗ trợ liên tục từ BrainTrade."
    }
   },
-  "assets": {}
+  "assets": {
+   "icon": "bundled:journey-calendar.svg",
+   "bg": "bundled:journey-rocket.png",
+   "divider": "bundled:journey-arrow.svg"
+  }
  },
  {
   "key": "bt-benefits",
@@ -376,7 +439,7 @@ BRAINTRADE_SECTIONS = [
   "category": "braintrade",
   "position": 235,
   "html": "<section class=\"lp-sec-bt-benefits\">\n <div class=\"lp-wrap\">\n  <h2 class=\"btb-title\" data-lp-text=\"title\">Take your trading journey to the next level</h2>\n  <div class=\"btb-grid\">\n   <!--lp-repeat:cards--><div class=\"btb-card\"><div class=\"btb-icon\"><img data-lp-img=\"icon\" src=\"\" alt=\"\"></div><h3 class=\"btb-card-title\" data-lp-text=\"title\">Personal Trainer</h3><p class=\"btb-card-text\" data-lp-rich=\"text\">Receive 1-on-1 personalized guidance</p></div><!--/lp-repeat:cards-->\n  </div>\n </div>\n</section>",
-  "css": ".lp-sec-bt-benefits{background:var(--lp-bg);padding:56px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-benefits .btb-title{color:var(--lp-accent);font-size:1.9rem;font-weight:700;text-align:center;margin:0 0 34px}\n.lp-sec-bt-benefits .btb-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}\n.lp-sec-bt-benefits .btb-card{background:var(--lp-card);border:1px solid #DDE1E6;border-radius:16px;padding:24px;text-align:center}\n.lp-sec-bt-benefits .btb-icon{height:88px;display:flex;align-items:center;justify-content:center;margin-bottom:12px}\n.lp-sec-bt-benefits .btb-icon img{max-height:88px;object-fit:contain}\n.lp-sec-bt-benefits .btb-card-title{color:var(--lp-accent);font-size:1.02rem;font-weight:600;margin:0 0 8px}\n.lp-sec-bt-benefits .btb-card-text{color:var(--lp-muted);font-size:.9rem;line-height:1.5;margin:0}\n@media (max-width:1199px){.lp-sec-bt-benefits .btb-grid{grid-template-columns:repeat(2,1fr)}}\n@media (max-width:575px){.lp-sec-bt-benefits .btb-grid{grid-template-columns:1fr}}",
+  "css": ".lp-sec-bt-benefits{background:var(--lp-bg);padding:40px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-benefits .btb-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:70px;text-align:center;margin:0 0 30px}\n.lp-sec-bt-benefits .btb-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px 30px;align-items:stretch}\n.lp-sec-bt-benefits .btb-card{background:var(--lp-card);border-radius:16px;box-shadow:0 0 5px rgba(0,0,0,.1);padding:30px;display:flex;flex-direction:column;gap:20px;align-items:center;text-align:center}\n.lp-sec-bt-benefits .btb-icon{width:70px;height:70px;flex:0 0 auto}\n.lp-sec-bt-benefits .btb-icon img{width:70px;height:70px;object-fit:contain;display:block}\n.lp-sec-bt-benefits .btb-card-title{color:var(--lp-accent);font-size:20px;font-weight:500;line-height:normal;margin:0}\n.lp-sec-bt-benefits .btb-card-text{color:var(--lp-muted);font-size:16px;line-height:1.4;margin:0}\n@media (max-width:1199px){.lp-sec-bt-benefits .btb-title{line-height:1.4}}\n@media (max-width:575px){.lp-sec-bt-benefits{padding:24px 0}.lp-sec-bt-benefits .btb-title{font-size:24px;margin:0 0 24px}.lp-sec-bt-benefits .btb-grid{grid-template-columns:1fr;gap:16px}.lp-sec-bt-benefits .btb-card-title{font-size:18px}}",
   "texts": {
    "en": {
     "title": "Take your trading journey to the next level",
@@ -499,7 +562,14 @@ BRAINTRADE_SECTIONS = [
     "cards.5.text": "รับข้อเสนอพิเศษจากโบรกเกอร์ที่เชื่อถือได้"
    }
   },
-  "assets": {}
+  "assets": {
+   "cards.0.icon": "bundled:benefit-personal-trainer.svg",
+   "cards.1.icon": "bundled:benefit-ai-tools.svg",
+   "cards.2.icon": "bundled:benefit-live-campus.svg",
+   "cards.3.icon": "bundled:benefit-market-signals.svg",
+   "cards.4.icon": "bundled:benefit-exclusive-content.svg",
+   "cards.5.icon": "bundled:benefit-seamless-transition.svg"
+  }
  },
  {
   "key": "bt-coaching",
@@ -507,7 +577,7 @@ BRAINTRADE_SECTIONS = [
   "category": "braintrade",
   "position": 240,
   "html": "<section class=\"lp-sec-bt-coaching\">\n <div class=\"lp-wrap btco-grid\">\n  <div class=\"btco-media\"><img data-lp-img=\"photo\" src=\"\" alt=\"\"></div>\n  <div class=\"btco-copy\">\n   <h2 class=\"btco-title\" data-lp-text=\"title\">Personal Coaching</h2>\n   <p class=\"btco-sub\" data-lp-text=\"subtitle\">Get professional 1-on-1 training</p>\n   <p class=\"btco-text\" data-lp-rich=\"body\">Our Academy Trainer program pairs you with a dedicated personal trading coach.</p>\n   <a class=\"btco-btn\" data-lp-link=\"cta_href\" data-lp-text=\"cta\" href=\"#signup\">Meet Your Trainer</a>\n  </div>\n </div>\n</section>",
-  "css": ".lp-sec-bt-coaching{background:var(--lp-bg);padding:56px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-coaching .btco-grid{display:grid;grid-template-columns:1fr 1.2fr;gap:44px;align-items:center}\n.lp-sec-bt-coaching .btco-media{border-radius:20px;background:#F8D8CC;min-height:320px;overflow:hidden}\n.lp-sec-bt-coaching .btco-media img{width:100%;height:100%;object-fit:cover;display:block}\n.lp-sec-bt-coaching .btco-title{color:var(--lp-primary);font-size:1.7rem;font-weight:700;margin:0 0 6px}\n.lp-sec-bt-coaching .btco-sub{color:var(--lp-accent);font-weight:600;font-size:1.05rem;margin:0 0 14px}\n.lp-sec-bt-coaching .btco-text{color:var(--lp-muted);line-height:1.7;margin:0 0 22px;white-space:pre-line}\n.lp-sec-bt-coaching .btco-btn{display:inline-block;background:var(--lp-primary);color:#fff;border-radius:12px;padding:.95rem 2.4rem;font-weight:700;text-decoration:none}\n@media (max-width:575px){.lp-sec-bt-coaching .btco-grid{grid-template-columns:1fr}}",
+  "css": ".lp-sec-bt-coaching{background:var(--lp-bg);padding:40px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-coaching .btco-grid{display:flex;gap:30px;align-items:center}\n.lp-sec-bt-coaching .btco-media{flex:0 0 469px;height:417px;border-radius:21px;overflow:hidden}\n.lp-sec-bt-coaching .btco-media img{width:100%;height:100%;object-fit:cover;display:block}\n.lp-sec-bt-coaching .btco-copy{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:20px;align-items:flex-start}\n.lp-sec-bt-coaching .btco-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:1.4;margin:0}\n.lp-sec-bt-coaching .btco-sub{color:var(--lp-primary);font-size:24px;font-weight:600;line-height:1.4;margin:0}\n.lp-sec-bt-coaching .btco-text{color:var(--lp-muted);font-size:16px;line-height:1.4;margin:0;white-space:pre-line}\n.lp-sec-bt-coaching .btco-btn{display:inline-flex;align-items:center;justify-content:center;background:var(--lp-primary);color:#fff;border-radius:16px;width:354px;max-width:100%;padding:16px 10px;font-size:20px;font-weight:700;line-height:1.4;text-decoration:none;filter:drop-shadow(0 3px 4.5px rgba(204,204,204,.4))}\n@media (max-width:1199px){.lp-sec-bt-coaching .btco-media{flex:0 0 404px;height:360px}}\n@media (max-width:575px){.lp-sec-bt-coaching{padding:24px 0}.lp-sec-bt-coaching .btco-grid{flex-direction:column}.lp-sec-bt-coaching .btco-media{flex:0 0 auto;width:100%;height:320px}.lp-sec-bt-coaching .btco-copy{align-items:center;text-align:center;gap:16px}.lp-sec-bt-coaching .btco-title{font-size:24px}.lp-sec-bt-coaching .btco-sub{font-size:20px}.lp-sec-bt-coaching .btco-btn{width:100%}}",
   "texts": {
    "en": {
     "title": "Personal Coaching",
@@ -558,15 +628,17 @@ BRAINTRADE_SECTIONS = [
     "cta": "Möt din mentor"
    }
   },
-  "assets": {}
+  "assets": {
+   "photo": "bundled:coaching-photo.jpg"
+  }
  },
  {
   "key": "bt-learn",
   "name": "BT / Learn & practice",
   "category": "braintrade",
   "position": 245,
-  "html": "<section class=\"lp-sec-bt-learn\">\n <div class=\"lp-wrap btl-grid\">\n  <div class=\"btl-copy\">\n   <h2 class=\"btl-title\" data-lp-text=\"title\">Learn and Practice</h2>\n   <p class=\"btl-sub\" data-lp-text=\"subtitle\">Join our Live Campus</p>\n   <p class=\"btl-text\" data-lp-rich=\"body\">All your courses, trainer sessions, and trading tools — accessible in one platform.</p>\n   <div class=\"btl-bullets\">\n    <!--lp-repeat:bullets--><p class=\"btl-bullet\" data-lp-text=\"label\">✓ Let us introduce you to the Financial Markets</p><!--/lp-repeat:bullets-->\n   </div>\n  </div>\n  <div class=\"btl-media\"><img data-lp-img=\"screenshot\" src=\"\" alt=\"\"></div>\n </div>\n</section>",
-  "css": ".lp-sec-bt-learn{background:var(--lp-bg);padding:56px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-learn .btl-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:44px;align-items:center}\n.lp-sec-bt-learn .btl-title{color:var(--lp-accent);font-size:1.7rem;font-weight:700;margin:0 0 6px}\n.lp-sec-bt-learn .btl-sub{color:var(--lp-primary);font-weight:600;font-size:1.05rem;margin:0 0 14px}\n.lp-sec-bt-learn .btl-text{color:var(--lp-muted);line-height:1.7;margin:0 0 18px;white-space:pre-line}\n.lp-sec-bt-learn .btl-bullet{color:var(--lp-accent);margin:.45rem 0;font-size:.95rem}\n.lp-sec-bt-learn .btl-media{border-radius:16px;overflow:hidden;background:#F8D8CC;min-height:260px}\n.lp-sec-bt-learn .btl-media img{width:100%;height:100%;object-fit:cover;display:block}\n@media (max-width:575px){.lp-sec-bt-learn .btl-grid{grid-template-columns:1fr}}",
+  "html": "<section class=\"lp-sec-bt-learn\">\n <div class=\"lp-wrap btl-grid\">\n  <div class=\"btl-copy\">\n   <div class=\"btl-head\">\n    <h2 class=\"btl-title\" data-lp-text=\"title\">Learn and Practice</h2>\n    <p class=\"btl-sub\" data-lp-text=\"subtitle\">Join our Live Campus</p>\n    <p class=\"btl-text\" data-lp-rich=\"body\">All your courses, trainer sessions, and trading tools — accessible in one platform.</p>\n   </div>\n   <div class=\"btl-bullets\">\n    <!--lp-repeat:bullets--><div class=\"btl-bullet\"><img class=\"btl-check\" data-lp-img=\"check\" src=\"\" alt=\"\"><span data-lp-text=\"label\">Let us introduce you to the Financial Markets</span></div><!--/lp-repeat:bullets-->\n   </div>\n  </div>\n  <div class=\"btl-media\"><img data-lp-img=\"screenshot\" src=\"\" alt=\"\"></div>\n </div>\n</section>",
+  "css": ".lp-sec-bt-learn{background:var(--lp-bg);padding:40px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-learn .btl-grid{display:flex;gap:30px;align-items:center}\n.lp-sec-bt-learn .btl-copy{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:30px}\n.lp-sec-bt-learn .btl-head{display:flex;flex-direction:column;gap:10px}\n.lp-sec-bt-learn .btl-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:1.4;margin:0}\n.lp-sec-bt-learn .btl-sub{color:var(--lp-primary);font-size:24px;font-weight:600;line-height:1.4;margin:0}\n.lp-sec-bt-learn .btl-text{color:var(--lp-muted);font-size:16px;line-height:1.4;margin:0;white-space:pre-line}\n.lp-sec-bt-learn .btl-bullets{display:flex;flex-direction:column;gap:2px}\n.lp-sec-bt-learn .btl-bullet{display:flex;align-items:center;gap:10px;color:var(--lp-muted);font-size:16px;line-height:1.4}\n.lp-sec-bt-learn .btl-check{width:15px;height:15px;flex:0 0 15px}\n.lp-sec-bt-learn .btl-media{flex:0 0 426px}\n.lp-sec-bt-learn .btl-media img{width:100%;height:auto;display:block}\n@media (max-width:1199px){.lp-sec-bt-learn .btl-media{flex:0 0 360px}}\n@media (max-width:575px){.lp-sec-bt-learn{padding:24px 0}.lp-sec-bt-learn .btl-grid{flex-direction:column-reverse;gap:24px}.lp-sec-bt-learn .btl-media{flex:0 0 auto;width:100%}.lp-sec-bt-learn .btl-copy{gap:24px}.lp-sec-bt-learn .btl-head{text-align:center;gap:12px}.lp-sec-bt-learn .btl-title{font-size:24px}.lp-sec-bt-learn .btl-sub{font-size:20px}.lp-sec-bt-learn .btl-bullet{align-items:flex-start}.lp-sec-bt-learn .btl-check{margin-top:3px}}",
   "texts": {
    "en": {
     "title": "Learn and Practice",
@@ -649,7 +721,10 @@ BRAINTRADE_SECTIONS = [
     "bullets.4.label": "Dra nytta av våra AI-drivna handelsverktyg"
    }
   },
-  "assets": {}
+  "assets": {
+   "screenshot": "bundled:learn-platform.png",
+   "check": "bundled:check.svg"
+  }
  },
  {
   "key": "bt-switch",
@@ -657,7 +732,7 @@ BRAINTRADE_SECTIONS = [
   "category": "braintrade",
   "position": 250,
   "html": "<section class=\"lp-sec-bt-switch\">\n <div class=\"lp-wrap btsw-grid\">\n  <div class=\"btsw-media\"><img data-lp-img=\"screenshot\" src=\"\" alt=\"\"></div>\n  <div class=\"btsw-copy\">\n   <h2 class=\"btsw-title\" data-lp-text=\"title\">Switch To Trader Mode</h2>\n   <p class=\"btsw-sub\" data-lp-text=\"subtitle\">Get ready to enter the world of trading</p>\n   <p class=\"btsw-text\" data-lp-rich=\"body\">Access educational resources, practice in a simulated environment, and trade independently when you choose.</p>\n  </div>\n </div>\n</section>",
-  "css": ".lp-sec-bt-switch{background:var(--lp-bg);padding:56px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-switch .btsw-grid{display:grid;grid-template-columns:1fr 1.1fr;gap:44px;align-items:center}\n.lp-sec-bt-switch .btsw-media{border-radius:16px;overflow:hidden;background:#F8D8CC;min-height:260px}\n.lp-sec-bt-switch .btsw-media img{width:100%;height:100%;object-fit:cover;display:block}\n.lp-sec-bt-switch .btsw-title{color:var(--lp-accent);font-size:1.7rem;font-weight:700;margin:0 0 6px}\n.lp-sec-bt-switch .btsw-sub{color:var(--lp-primary);font-weight:600;font-size:1.05rem;margin:0 0 14px}\n.lp-sec-bt-switch .btsw-text{color:var(--lp-muted);line-height:1.7;margin:0;white-space:pre-line}\n@media (max-width:575px){.lp-sec-bt-switch .btsw-grid{grid-template-columns:1fr}}",
+  "css": ".lp-sec-bt-switch{background:var(--lp-bg);padding:40px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-switch .btsw-grid{display:flex;gap:30px;align-items:center}\n.lp-sec-bt-switch .btsw-media{flex:0 0 416px}\n.lp-sec-bt-switch .btsw-media img{width:100%;height:auto;display:block}\n.lp-sec-bt-switch .btsw-copy{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:10px}\n.lp-sec-bt-switch .btsw-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:1.4;margin:0}\n.lp-sec-bt-switch .btsw-sub{color:var(--lp-primary);font-size:24px;font-weight:600;line-height:1.4;margin:0}\n.lp-sec-bt-switch .btsw-text{color:var(--lp-muted);font-size:16px;line-height:1.4;margin:0;white-space:pre-line}\n@media (max-width:1199px){.lp-sec-bt-switch .btsw-media{flex:0 0 360px}}\n@media (max-width:575px){.lp-sec-bt-switch{padding:24px 0}.lp-sec-bt-switch .btsw-grid{flex-direction:column;gap:24px}.lp-sec-bt-switch .btsw-media{flex:0 0 auto;width:100%}.lp-sec-bt-switch .btsw-copy{text-align:center;gap:12px}.lp-sec-bt-switch .btsw-title{font-size:24px}.lp-sec-bt-switch .btsw-sub{font-size:20px}}",
   "texts": {
    "en": {
     "title": "Switch To Trader Mode",
@@ -705,15 +780,17 @@ BRAINTRADE_SECTIONS = [
     "body": "Accede a recursos educativos, practica en un entorno simulado y opera por tu cuenta cuando quieras."
    }
   },
-  "assets": {}
+  "assets": {
+   "screenshot": "bundled:switch-platform.png"
+  }
  },
  {
   "key": "bt-faq",
   "name": "BT / FAQ",
   "category": "braintrade",
   "position": 255,
-  "html": "<section class=\"lp-sec-bt-faq\">\n <div class=\"lp-wrap btf-grid\">\n  <div class=\"btf-left\">\n   <h2 class=\"btf-title\" data-lp-text=\"title\">Frequently Asked Questions</h2>\n   <p class=\"btf-sub\" data-lp-rich=\"subtitle\">We are glad to help! Here are some of the most common questions.</p>\n   <div class=\"btf-media\"><img data-lp-img=\"photo\" src=\"\" alt=\"\"></div>\n  </div>\n  <div class=\"btf-list\">\n   <!--lp-repeat:faq--><div class=\"btf-item\" data-lp-acc><button class=\"faq-q\" type=\"button\"><span data-lp-text=\"q\">Do I need prior experience to start the courses?</span><span class=\"btf-x\">+</span></button><div class=\"faq-a btf-a\"><p data-lp-rich=\"a\">No prior experience is required to start the courses.</p></div></div><!--/lp-repeat:faq-->\n  </div>\n </div>\n</section>",
-  "css": ".lp-sec-bt-faq{background:var(--lp-bg);padding:56px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-faq .btf-grid{display:grid;grid-template-columns:1fr 1.25fr;gap:44px;align-items:start}\n.lp-sec-bt-faq .btf-title{color:var(--lp-accent);font-size:1.7rem;font-weight:700;margin:0 0 10px}\n.lp-sec-bt-faq .btf-sub{color:var(--lp-muted);line-height:1.6;margin:0 0 20px}\n.lp-sec-bt-faq .btf-media{border-radius:16px;overflow:hidden;background:#F8D8CC;min-height:220px}\n.lp-sec-bt-faq .btf-media img{width:100%;height:100%;object-fit:cover;display:block}\n.lp-sec-bt-faq .btf-item{background:var(--lp-card);border:1px solid #DDE1E6;border-radius:12px;margin-bottom:12px;overflow:hidden}\n.lp-sec-bt-faq .btf-item.open{border-color:var(--lp-primary)}\n.lp-sec-bt-faq .faq-q{width:100%;display:flex;justify-content:space-between;align-items:center;gap:14px;background:none;border:0;padding:16px 18px;font:inherit;font-weight:600;color:var(--lp-accent);cursor:pointer;text-align:left}\n.lp-sec-bt-faq .btf-x{color:var(--lp-primary);font-size:1.35rem;line-height:1;transition:transform .2s ease}\n.lp-sec-bt-faq .btf-item.open .btf-x{transform:rotate(45deg)}\n.lp-sec-bt-faq .btf-a{display:none;padding:0 18px 16px;color:var(--lp-muted);line-height:1.6}\n.lp-sec-bt-faq .btf-item.open .btf-a{display:block}\n.lp-sec-bt-faq .btf-a p{margin:0}\n@media (max-width:575px){.lp-sec-bt-faq .btf-grid{grid-template-columns:1fr}}",
+  "html": "<section class=\"lp-sec-bt-faq\">\n <div class=\"lp-wrap btf-grid\">\n  <div class=\"btf-left\">\n   <h2 class=\"btf-title\" data-lp-text=\"title\">Frequently Asked Questions</h2>\n   <p class=\"btf-sub\" data-lp-rich=\"subtitle\">We are glad to help! Here are some of the most common questions.</p>\n   <div class=\"btf-art\">\n    <span class=\"btf-frame\"></span>\n    <span class=\"btf-dot\"></span>\n    <div class=\"btf-media\"><img data-lp-img=\"photo\" src=\"\" alt=\"\"></div>\n    <img class=\"btf-star\" data-lp-img=\"star\" src=\"\" alt=\"\">\n    <img class=\"btf-squiggle\" data-lp-img=\"squiggle\" src=\"\" alt=\"\">\n   </div>\n  </div>\n  <div class=\"btf-list\">\n   <!--lp-repeat:faq--><div class=\"btf-item\" data-lp-acc><button class=\"faq-q\" type=\"button\"><span data-lp-text=\"q\">Do I need prior experience to start the courses?</span><span class=\"btf-x\" aria-hidden=\"true\"></span></button><div class=\"faq-a btf-a\"><p data-lp-rich=\"a\">No prior experience is required to start the courses.</p></div></div><!--/lp-repeat:faq-->\n  </div>\n </div>\n</section>",
+  "css": ".lp-sec-bt-faq{background:var(--lp-bg);padding:30px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-faq .btf-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:center}\n.lp-sec-bt-faq .btf-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:48px;margin:0 0 16px}\n.lp-sec-bt-faq .btf-sub{color:var(--lp-muted);font-size:16px;line-height:1.4;margin:0 0 16px}\n.lp-sec-bt-faq .btf-art{position:relative;height:389px}\n.lp-sec-bt-faq .btf-frame{position:absolute;left:5.77%;top:49px;width:91%;height:320px;border:1px solid var(--lp-primary);border-radius:70px}\n.lp-sec-bt-faq .btf-dot{position:absolute;left:91.85%;top:303px;width:48px;height:48px;border-radius:50%;background:var(--lp-primary)}\n.lp-sec-bt-faq .btf-media{position:absolute;left:2.38%;top:69px;width:91%;height:320px;border-radius:70px;overflow:hidden;background:#F8D8CC}\n.lp-sec-bt-faq .btf-media img{width:100%;height:100%;object-fit:cover;display:block}\n.lp-sec-bt-faq .btf-star{position:absolute;left:0;top:69px;width:47px;height:49px}\n.lp-sec-bt-faq .btf-squiggle{position:absolute;left:77.7%;top:0;width:21.51%;height:162px}\n.lp-sec-bt-faq .btf-list{display:flex;flex-direction:column;gap:10px}\n.lp-sec-bt-faq .btf-item{background:var(--lp-card);border:1px solid #DDE1E6;border-radius:16px;box-shadow:0 0 5px rgba(0,0,0,.1);overflow:hidden}\n.lp-sec-bt-faq .btf-item.open{border-color:var(--lp-primary)}\n.lp-sec-bt-faq .faq-q{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;background:none;border:0;padding:20px;font-family:inherit;font-size:18px;font-weight:500;line-height:1.4;color:var(--lp-accent);cursor:pointer;text-align:left}\n.lp-sec-bt-faq .btf-item.open .faq-q{padding-bottom:10px}\n.lp-sec-bt-faq .btf-x{flex:0 0 16px;position:relative;width:16px;height:16px}\n.lp-sec-bt-faq .btf-x::before,.lp-sec-bt-faq .btf-x::after{content:\"\";position:absolute;left:1px;right:1px;top:50%;height:2px;margin-top:-1px;background:var(--lp-accent)}\n.lp-sec-bt-faq .btf-x::after{transform:rotate(90deg);transition:transform .2s ease}\n.lp-sec-bt-faq .btf-item.open .btf-x::after{transform:rotate(0deg)}\n.lp-sec-bt-faq .btf-a{display:none;padding:0 46px 20px 20px;color:var(--lp-muted);font-size:16px;line-height:1.4}\n.lp-sec-bt-faq .btf-item.open .btf-a{display:block}\n.lp-sec-bt-faq .btf-a p{margin:0}\n@media (max-width:575px){.lp-sec-bt-faq{padding:24px 0}.lp-sec-bt-faq .btf-grid{grid-template-columns:1fr;gap:16px}.lp-sec-bt-faq .btf-title{font-size:24px;line-height:1.4;text-align:center;margin:0 0 8px}.lp-sec-bt-faq .btf-sub{text-align:center;margin:0 0 8px}.lp-sec-bt-faq .btf-art{height:auto}.lp-sec-bt-faq .btf-frame,.lp-sec-bt-faq .btf-dot,.lp-sec-bt-faq .btf-star,.lp-sec-bt-faq .btf-squiggle{display:none}.lp-sec-bt-faq .btf-media{position:relative;left:0;top:0;width:100%;height:246px;border-radius:24px}}",
   "texts": {
    "en": {
     "title": "Frequently Asked Questions",
@@ -908,15 +985,19 @@ BRAINTRADE_SECTIONS = [
     "faq.5.a": "…"
    }
   },
-  "assets": {}
+  "assets": {
+   "photo": "bundled:faq-photo.jpg",
+   "star": "bundled:faq-star.svg",
+   "squiggle": "bundled:faq-squiggle.svg"
+  }
  },
  {
   "key": "bt-testimonials",
   "name": "BT / Testimonials",
   "category": "braintrade",
   "position": 260,
-  "html": "<section class=\"lp-sec-bt-testimonials\">\n <div class=\"lp-wrap\">\n  <h2 class=\"btt-title\" data-lp-text=\"title\">A Word From Our Students</h2>\n  <p class=\"btt-sub\" data-lp-rich=\"subtitle\">Enough talk from our side. Here are the opinions that matter the most — your own.</p>\n  <div class=\"btt-grid\">\n   <!--lp-repeat:reviews--><div class=\"btt-card\"><div class=\"btt-head\"><img class=\"btt-avatar\" data-lp-img=\"photo\" src=\"\" alt=\"\"><div><p class=\"btt-name\" data-lp-text=\"name\">Jenny Wilson</p><p class=\"btt-role\" data-lp-text=\"role\">Customer Support Agent</p></div><span class=\"btt-mark\">”</span></div><p class=\"btt-quote\" data-lp-rich=\"quote\">BrainTrade really opened my eyes to how many opportunities show up in the markets every day.</p></div><!--/lp-repeat:reviews-->\n  </div>\n </div>\n</section>",
-  "css": ".lp-sec-bt-testimonials{background:var(--lp-bg);padding:56px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-testimonials .btt-title{color:var(--lp-accent);font-size:1.7rem;font-weight:700;margin:0 0 8px}\n.lp-sec-bt-testimonials .btt-sub{color:var(--lp-muted);margin:0 0 28px}\n.lp-sec-bt-testimonials .btt-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}\n.lp-sec-bt-testimonials .btt-card{background:var(--lp-card);border:1px solid #DDE1E6;border-radius:16px;padding:24px}\n.lp-sec-bt-testimonials .btt-head{display:flex;gap:12px;align-items:center;margin-bottom:14px}\n.lp-sec-bt-testimonials .btt-avatar{width:52px;height:52px;border-radius:999px;object-fit:cover;background:#F8D8CC}\n.lp-sec-bt-testimonials .btt-name{margin:0;font-weight:700;color:var(--lp-accent)}\n.lp-sec-bt-testimonials .btt-role{margin:2px 0 0;color:var(--lp-muted);font-size:.85rem}\n.lp-sec-bt-testimonials .btt-mark{margin-left:auto;color:var(--lp-primary);font-size:3rem;line-height:.6;font-weight:700}\n.lp-sec-bt-testimonials .btt-quote{color:var(--lp-muted);line-height:1.65;margin:0;font-size:.95rem}\n@media (max-width:575px){.lp-sec-bt-testimonials .btt-grid{grid-template-columns:1fr}}",
+  "html": "<section class=\"lp-sec-bt-testimonials\">\n <div class=\"lp-wrap btt-wrap\">\n  <div class=\"btt-top\">\n   <div class=\"btt-intro\">\n    <h2 class=\"btt-title\" data-lp-text=\"title\">A Word From Our Students</h2>\n    <p class=\"btt-sub\" data-lp-rich=\"subtitle\">Enough talk from our side. Here are the opinions that matter the most — your own.</p>\n   </div>\n   <div class=\"btt-controls\">\n    <span class=\"btt-dots\"><span class=\"btt-dot on\"></span><span class=\"btt-dot\"></span><span class=\"btt-dot\"></span></span>\n    <span class=\"btt-nav btt-prev\"><img data-lp-img=\"arrow\" src=\"\" alt=\"\"></span>\n    <span class=\"btt-nav btt-next\"><img data-lp-img=\"arrow2\" src=\"\" alt=\"\"></span>\n   </div>\n  </div>\n  <div class=\"btt-grid\">\n   <!--lp-repeat:reviews--><div class=\"btt-card\"><div class=\"btt-head\"><div class=\"btt-person\"><img class=\"btt-avatar\" data-lp-img=\"photo\" src=\"\" alt=\"\"><div class=\"btt-who\"><p class=\"btt-name\" data-lp-text=\"name\">Jenny Wilson</p><p class=\"btt-role\" data-lp-text=\"role\">Customer Support Agent</p></div></div><img class=\"btt-mark\" data-lp-img=\"mark\" src=\"\" alt=\"\"></div><p class=\"btt-quote\" data-lp-rich=\"quote\">BrainTrade really opened my eyes to how many opportunities show up in the markets every day.</p></div><!--/lp-repeat:reviews-->\n  </div>\n </div>\n</section>",
+  "css": ".lp-sec-bt-testimonials{background:var(--lp-bg);padding:40px 0;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-testimonials .btt-wrap{display:flex;flex-direction:column;gap:30px}\n.lp-sec-bt-testimonials .btt-top{display:flex;justify-content:space-between;align-items:center;gap:30px}\n.lp-sec-bt-testimonials .btt-intro{display:flex;flex-direction:column;gap:10px;flex:1 1 0;min-width:0}\n.lp-sec-bt-testimonials .btt-title{color:var(--lp-accent);font-size:34px;font-weight:500;line-height:48px;margin:0}\n.lp-sec-bt-testimonials .btt-sub{color:var(--lp-muted);font-size:16px;line-height:1.4;margin:0}\n.lp-sec-bt-testimonials .btt-controls{display:flex;align-items:center;gap:30px}\n.lp-sec-bt-testimonials .btt-dots{display:flex;gap:12px}\n.lp-sec-bt-testimonials .btt-dot{width:12px;height:12px;border-radius:50%;background:#C4C4C4}\n.lp-sec-bt-testimonials .btt-dot.on{background:var(--lp-primary)}\n.lp-sec-bt-testimonials .btt-nav{display:inline-flex;align-items:center;justify-content:center;background:var(--lp-card);border:1.5px solid #DDE1E6;border-radius:24px;padding:23px 53px}\n.lp-sec-bt-testimonials .btt-nav img{width:32px;height:32px;display:block}\n.lp-sec-bt-testimonials .btt-prev img{transform:scaleX(-1)}\n.lp-sec-bt-testimonials .btt-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:stretch}\n.lp-sec-bt-testimonials .btt-card{background:var(--lp-card);border:1px solid #DDE1E6;border-radius:16px;box-shadow:0 0 5px rgba(0,0,0,.1);padding:30px;display:flex;flex-direction:column;gap:10px;justify-content:center}\n.lp-sec-bt-testimonials .btt-head{display:flex;justify-content:space-between;align-items:center;gap:10px}\n.lp-sec-bt-testimonials .btt-person{display:flex;gap:10px;align-items:center;min-width:0}\n.lp-sec-bt-testimonials .btt-avatar{width:70px;height:70px;border-radius:50%;object-fit:cover;flex:0 0 70px;background:#CBBEBE}\n.lp-sec-bt-testimonials .btt-name{margin:0;color:var(--lp-accent);font-size:24px;font-weight:600;line-height:32px;letter-spacing:.05px}\n.lp-sec-bt-testimonials .btt-role{margin:0;color:var(--lp-muted);font-size:16px;line-height:24px}\n.lp-sec-bt-testimonials .btt-mark{width:39px;height:37px;flex:0 0 39px}\n.lp-sec-bt-testimonials .btt-quote{color:var(--lp-muted);font-size:14px;line-height:1.4;margin:0}\n@media (max-width:575px){.lp-sec-bt-testimonials{padding:24px 0}.lp-sec-bt-testimonials .btt-wrap{gap:24px}.lp-sec-bt-testimonials .btt-top{display:contents}.lp-sec-bt-testimonials .btt-intro{order:0;text-align:center}.lp-sec-bt-testimonials .btt-title{font-size:24px;line-height:1.4}.lp-sec-bt-testimonials .btt-grid{order:1;grid-template-columns:1fr;gap:16px}.lp-sec-bt-testimonials .btt-controls{order:2;width:100%;flex-wrap:wrap;gap:16px;justify-content:center}.lp-sec-bt-testimonials .btt-dots{flex:1 0 100%;justify-content:center}.lp-sec-bt-testimonials .btt-nav{flex:1 1 0;padding:16px 20px}}",
   "texts": {
    "en": {
     "title": "A Word From Our Students",
@@ -1039,15 +1120,21 @@ BRAINTRADE_SECTIONS = [
     "reviews.1.quote": "Ich war skeptisch, ob Trading überhaupt etwas für mich ist. Durch BrainTrade habe ich gemerkt, dass es in erster Linie um Wissen, Planung und Risikobewusstsein geht. Die Plattform bringt genau diese Themen klar und praxisnah rüber."
    }
   },
-  "assets": {}
+  "assets": {
+   "reviews.0.photo": "bundled:testimonial-1.png",
+   "reviews.1.photo": "bundled:testimonial-2.png",
+   "mark": "bundled:testimonial-quote.svg",
+   "arrow": "bundled:testimonial-arrow.svg",
+   "arrow2": "bundled:testimonial-arrow.svg"
+  }
  },
  {
   "key": "bt-footer",
   "name": "BT / Footer",
   "category": "braintrade",
   "position": 265,
-  "html": "<section class=\"lp-sec-bt-footer\">\n <div class=\"lp-wrap btft-inner\">\n  <nav class=\"btft-links\">\n   <a data-lp-link=\"privacy_href\" data-lp-text=\"link_privacy\" href=\"#\">Privacy Policy</a>\n   <a data-lp-link=\"contact_href\" data-lp-text=\"link_contact\" href=\"#\">Contact Us</a>\n   <a data-lp-link=\"terms_href\" data-lp-text=\"link_terms\" href=\"#\">Terms and Conditions</a>\n  </nav>\n  <p class=\"btft-legal\" data-lp-rich=\"legal\">BrainTrade (www.thebraintrade.com) is operated by RT Nexus Limited. Please read the terms, privacy policy and cookie policy before proceeding.</p>\n  <p class=\"btft-copy\" data-lp-text=\"copyright\">© 2026 All right reserved.</p>\n </div>\n</section>",
-  "css": ".lp-sec-bt-footer{background:var(--lp-bg);padding:40px 0 28px;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-footer .btft-inner{text-align:center}\n.lp-sec-bt-footer .btft-links{display:flex;justify-content:center;gap:28px;margin-bottom:18px;flex-wrap:wrap}\n.lp-sec-bt-footer .btft-links a{color:var(--lp-accent);text-decoration:none;font-size:.9rem;font-weight:500}\n.lp-sec-bt-footer .btft-legal{color:var(--lp-muted);font-size:.8rem;line-height:1.6;max-width:720px;margin:0 auto 10px}\n.lp-sec-bt-footer .btft-copy{color:var(--lp-muted);font-size:.78rem;margin:0}",
+  "html": "<section class=\"lp-sec-bt-footer\">\n <div class=\"lp-wrap btft-inner\">\n  <nav class=\"btft-links\">\n   <a data-lp-link=\"privacy_href\" data-lp-text=\"link_privacy\" href=\"#\">Privacy Policy</a>\n   <a data-lp-link=\"contact_href\" data-lp-text=\"link_contact\" href=\"#\">Contact Us</a>\n   <a data-lp-link=\"terms_href\" data-lp-text=\"link_terms\" href=\"#\">Terms and Conditions</a>\n  </nav>\n  <p class=\"btft-legal\" data-lp-rich=\"legal\">BrainTrade (www.thebraintrade.com) is operated by BT Nexus Limited. Please read the terms, privacy policy, and cookie policy before proceeding.</p>\n  <p class=\"btft-copy\" data-lp-text=\"copyright\">© 2026 All rights reserved.</p>\n </div>\n</section>",
+  "css": ".lp-sec-bt-footer{background:var(--lp-bg);padding:80px 0 40px;font-family:'Urbanist',var(--lp-font)}\n.lp-sec-bt-footer .btft-inner{display:flex;flex-direction:column;align-items:center;text-align:center}\n.lp-sec-bt-footer .btft-links{display:flex;flex-direction:column;align-items:center;gap:20px;margin:0 0 40px}\n.lp-sec-bt-footer .btft-links a{color:var(--lp-muted);font-size:16px;font-weight:400;line-height:1.5;text-decoration:underline}\n.lp-sec-bt-footer .btft-legal{color:var(--lp-muted);font-size:16px;line-height:1.7;margin:0}\n.lp-sec-bt-footer .btft-copy{color:var(--lp-muted);font-size:16px;line-height:1.7;margin:0}\n@media (max-width:575px){.lp-sec-bt-footer{padding:40px 0 24px}}",
   "texts": {
    "en": {}
   },

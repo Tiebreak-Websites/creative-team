@@ -48,6 +48,7 @@ import {
   downloadExportZip,
   getProject,
   importLpAsset,
+  listLpIcons,
   saveProject,
   uploadLpAsset,
   type Breakpoint,
@@ -1594,6 +1595,8 @@ function LayersTab({
   )
 }
 
+let lpIconsCache: { name: string; url: string }[] | null = null
+
 function AssetsTab({
   assets,
   selection,
@@ -1607,6 +1610,16 @@ function AssetsTab({
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const imgSelected = !!selection?.fields.some((f) => f.kind === 'img')
+  const [icons, setIcons] = useState<{ name: string; url: string }[]>(lpIconsCache ?? [])
+  useEffect(() => {
+    if (lpIconsCache) return
+    listLpIcons()
+      .then((i) => {
+        lpIconsCache = i
+        setIcons(i)
+      })
+      .catch(() => {})
+  }, [])
   return (
     <div className="space-y-3">
       <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/webp" aria-label="Upload an asset"
@@ -1618,6 +1631,31 @@ function AssetsTab({
         <b>Drag an image onto any image slot</b> on the page
         {imgSelected ? ' — or click it to fill the selected slot.' : ' (slots highlight green while dragging).'}
       </p>
+      {icons.length > 0 && (
+        <div>
+          <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Icon library
+          </p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {icons.map((ic) => (
+              <button
+                key={ic.url}
+                type="button"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/lp-asset', ic.url)
+                  e.dataTransfer.effectAllowed = 'copy'
+                }}
+                onClick={() => imgSelected && onAssign(ic.url)}
+                title={`${ic.name} — drag onto an image slot${imgSelected ? ' or click to fill the selected one' : ''}`}
+                className="cursor-grab rounded-lg border border-border bg-white p-1.5 transition-all hover:-translate-y-0.5 hover:border-primary/50 active:cursor-grabbing"
+              >
+                <img src={ic.url} alt={ic.name} loading="lazy" className="pointer-events-none aspect-square w-full object-contain" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {assets.length === 0 ? (
         <p className="p-2 text-center text-xs text-muted-foreground">
           No assets yet — attach a campaign in the top bar or upload an image.

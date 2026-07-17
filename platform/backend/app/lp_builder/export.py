@@ -556,6 +556,22 @@ def compose_page(project: dict, sections_map: Dict[str, dict], mode: str,
 # ---------------------------------------------------------------------------
 # Asset resolution
 # ---------------------------------------------------------------------------
+BUNDLED_DIR = Path(__file__).resolve().parent / "bundled_assets"
+_BUNDLED_RE = re.compile(r"^(?:bundled:|/api/tools/lp-builder/bundled/)([A-Za-z0-9_/-]+\.(?:png|jpe?g|webp|svg))$")
+
+
+def bundled_path(name: str) -> Optional[Path]:
+    """Safe lookup of a template-bundled asset (icons, mockups, photos)."""
+    if ".." in name or name.startswith(("/", "\\")):
+        return None
+    p = (BUNDLED_DIR / name).resolve()
+    try:
+        p.relative_to(BUNDLED_DIR.resolve())
+    except ValueError:
+        return None
+    return p if p.is_file() else None
+
+
 def resolve_asset_path(value: str) -> Optional[Path]:
     """Map a stored image value to a local file, when it is one of ours."""
     if not value:
@@ -567,6 +583,9 @@ def resolve_asset_path(value: str) -> Optional[Path]:
     if m:
         p = core.ASSETS_DIR / f"{m.group(1)}.png"
         return p if p.is_file() else None
+    m = _BUNDLED_RE.fullmatch(value)
+    if m:
+        return bundled_path(m.group(1))
     return None
 
 
@@ -574,6 +593,8 @@ def serve_url_for(value: str) -> str:
     """Canvas/preview resolver: asset ids -> serving URLs; everything else as-is."""
     if re.fullmatch(r"[a-f0-9]{32}", value):
         return f"/api/tools/lp-builder/assets/{value}.png"
+    if value.startswith("bundled:"):
+        return f"/api/tools/lp-builder/bundled/{value[8:]}"
     return value
 
 
@@ -583,10 +604,10 @@ def build_zip(project: dict, sections_map: Dict[str, dict]) -> bytes:
     def resolve_for_export(value: str) -> str:
         path = resolve_asset_path(value)
         data: Optional[bytes] = None
-        ext = "png"
         if path is not None:
             data = path.read_bytes()
-        elif value.startswith("/api/"):
+            ext = path.suffix.lstrip(".").lower() or "png"
+        elif value.startswith("/api/") or value.startswith("bundled:"):
             # a server URL we cannot map (e.g. campaign asset never imported) —
             # leave it out rather than shipping a broken absolute link
             return PLACEHOLDER_IMG

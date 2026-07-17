@@ -1,0 +1,49 @@
+<svg width="70" height="70" viewBox="0 0 70 70" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Benefits">
+<g id="Property 1=English" clip-path="url(#clip0_2389_2728)">
+<g id="Frame 48095973">
+<g id="Frame 48095929">
+<g id="Frame 48095912" filter="url(#filter0_d_2389_2728)">
+<rect x="-150" y="-30" width="370" height="242" rx="16" fill="white"/>
+<g id="Frame 48095928" clip-path="url(#clip1_2389_2728)">
+<g id="Group">
+<g id="Group_2">
+<path id="Vector" d="M18.1796 30.9082H13.8467" stroke="#070851" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_2" d="M50.5004 30.9172L46.2666 30.9262" stroke="#070851" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_3" d="M32.1868 12.586L32.1777 16.8198" stroke="#070851" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_4" d="M22.2514 40.8892L19.2246 43.9068" stroke="#070851" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_5" d="M45.2212 17.9097L42.1494 20.9815" stroke="#070851" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_6" d="M42.2041 40.8892L45.2308 43.9068" stroke="#070851" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_7" d="M19.2344 17.9097L22.3061 20.9815" stroke="#070851" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_8" d="M36.0243 47.3479H28.4307" stroke="#070851" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_9" d="M28.2416 43.6816V43.015C28.2416 38.1867 22.8818 36.9346 22.8818 30.8092C22.8818 25.6476 27.0706 21.4589 32.2321 21.4589C37.3937 21.4589 41.5824 25.6476 41.5824 30.8092C41.5824 36.9346 36.2226 38.1867 36.2226 43.015V43.6816H28.2506H28.2416Z" fill="#FF7532" stroke="#FF7532" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_10" d="M34.1686 51.0142H30.2861" stroke="#070851" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_11" d="M28.2416 43.6816V43.015C28.2416 38.1867 22.8818 36.9346 22.8818 30.8092C22.8818 25.6476 27.0706 21.4589 32.2321 21.4589C37.3937 21.4589 41.5824 25.6476 41.5824 30.8092C41.5824 36.9346 36.2226 38.1867 36.2226 43.015V43.6816" stroke="#070851" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<path id="Vector_12" d="M15.8368 64.4V52.6446C15.8368 50.6268 15.0262 48.7261 13.693 47.2218C9.32411 42.2674 6.89187 35.5654 7.64855 28.287C8.82859 16.8828 18.0348 7.59559 29.4299 6.34348C44.3382 4.70402 56.9493 16.3333 56.9493 30.9083C56.9493 31.4307 56.9313 31.9442 56.8953 32.4487C56.8503 33.1873 56.9673 33.926 57.3006 34.5926L62.9487 46.0237C63.5072 47.1587 62.8586 48.5189 61.6155 48.7892L58.0843 49.5638C57.2376 49.753 56.598 50.4646 56.5169 51.3294L55.7062 59.6258C55.445 62.3282 53.166 64.391 50.4546 64.391H39.8972C35.6635 64.391 32.2314 60.959 32.2314 56.7252V55.6172" stroke="#070851" stroke-width="2.05897" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+</g>
+<defs>
+<filter id="filter0_d_2389_2728" x="-155" y="-35" width="380" height="252" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset/>
+<feGaussianBlur stdDeviation="2.5"/>
+<feComposite in2="hardAlpha" operator="out"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.1 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_2389_2728"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_2389_2728" result="shape"/>
+</filter>
+<clipPath id="clip0_2389_2728">
+<rect width="1170" height="680" fill="white" transform="translate(-950 -170)"/>
+</clipPath>
+<clipPath id="clip1_2389_2728">
+<rect width="70" height="70" fill="white"/>
+</clipPath>
+</defs>
+</svg>

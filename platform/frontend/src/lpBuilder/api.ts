@@ -129,6 +129,13 @@ export async function listGoogleFonts(): Promise<GoogleFont[]> {
   return (await r.json()).fonts ?? []
 }
 
+/** Template icon library (bundled SVGs) — assignable to any image slot. */
+export async function listLpIcons(): Promise<{ name: string; url: string }[]> {
+  const r = await fetch(`${LPB}/icons`, { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Failed to load the icon library')
+  return (await r.json()).icons ?? []
+}
+
 export async function createSection(payload: {
   key: string
   name: string

@@ -356,6 +356,27 @@ def build_lp_builder_router() -> APIRouter:
         return Response(status_code=204)
 
     # ---- composition (canvas + preview share the ONE compositor) -------------
+    @router.get("/bundled/{name:path}")
+    def bundled_asset(name: str, _user: dict = Depends(require_user)):
+        """Template-bundled assets (icon library, section mockups/photos)."""
+        p = export.bundled_path(name)
+        if p is None:
+            raise HTTPException(status_code=404, detail="no such bundled asset")
+        media = {"svg": "image/svg+xml", "png": "image/png", "jpg": "image/jpeg",
+                 "jpeg": "image/jpeg", "webp": "image/webp"}.get(p.suffix.lstrip(".").lower(), "application/octet-stream")
+        return FileResponse(p, media_type=media, headers={"Cache-Control": "public, max-age=86400"})
+
+    @router.get("/icons")
+    def icon_library(_user: dict = Depends(require_user)):
+        """The BrainTrade icon library — bundled SVGs, assignable to any image slot."""
+        icons_dir = export.BUNDLED_DIR / "icons"
+        out = []
+        if icons_dir.is_dir():
+            for f in sorted(icons_dir.glob("*.svg")):
+                out.append({"name": f.stem.replace("-", " "),
+                            "url": f"/api/tools/lp-builder/bundled/icons/{f.name}"})
+        return {"icons": out}
+
     @router.get("/fonts")
     def google_fonts(_user: dict = Depends(require_user)):
         """The Google Fonts catalog for the page-font picker: [{family, category}].
