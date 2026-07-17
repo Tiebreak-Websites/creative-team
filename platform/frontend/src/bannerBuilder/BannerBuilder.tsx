@@ -34,7 +34,7 @@ import {
 } from './artDirection'
 import { loadBrand } from './brand'
 import { detectLocale } from './detectLocale'
-import { listBrands, type Brand } from './brandsApi'
+import { brandOptions, listBrands, type Brand } from './brandsApi'
 import { addCustomSize as addCustomSizeApi, getSizeConfig, type SizeConfig, type SizeGroup } from './sizesApi'
 import { useAuth } from '../auth/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -605,10 +605,12 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
     }
   }, [cards, localeAuto])
 
-  // Load brands once for the brand selector.
+  // Load brands once for the brand selector. brandOptions() keeps this a BRAND
+  // picker: academies belong here (an academy is a brand), white labels never
+  // do, and retired entities drop out.
   useEffect(() => {
     listBrands()
-      .then(setBrands)
+      .then((all) => setBrands(brandOptions(all)))
       .catch(() => {})
   }, [])
 

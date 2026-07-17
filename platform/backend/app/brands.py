@@ -60,6 +60,79 @@ if _LEGACY_BRANDS_PATH.exists() and not BRANDS_PATH.exists():
 _HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 _MAX_COLORS = 12
 
+# --- Entity model ------------------------------------------------------------
+# Three entity kinds, two roles. A *broker* is the product being sold — who the
+# customer transacts with. A *whitelabel* is a routing/regulatory surface that
+# fronts a brand (many-to-many, rendered "WL › Brand"). An *academy* sells
+# education instead of a broker account — structurally it behaves exactly like a
+# broker, and `kind` separates it only so admin and reporting can bucket it.
+#
+# "Brand" is the umbrella for the things being sold, not a kind of its own:
+#
+#     brand_options()      kind in (broker, academy)  an academy IS a brand
+#     whitelabel_options() kind == whitelabel         academies are NEVER WLs
+#     academy_options()    kind == academy            admin/reporting bucket only
+#
+# `kind` is the single source of truth: every picker, filter and validator
+# derives from it. Nothing infers the vocabulary from values found on existing
+# records — that turns a typo into a permanent option.
+ENTITY_KINDS = ("broker", "whitelabel", "academy")
+DEFAULT_KIND = "broker"
+# What a BRAND picker offers: the products being sold. A broker sells accounts,
+# an academy sells education — both are brands, so both belong here.
+BRAND_KINDS = ("broker", "academy")
+
+# This role was originally called 'brand'. Anything persisted under the old name
+# still loads as a broker, so a rename can't silently drop an entity out of every
+# bucket (an unknown kind matches no picker).
+_KIND_ALIASES = {"brand": "broker"}
+
+
+def _canon_kind(value: Any) -> str:
+    """Lower-case a kind and resolve any legacy alias. Unknown values pass
+    through unchanged so the caller can reject them."""
+    v = value.strip().lower() if isinstance(value, str) else ""
+    return _KIND_ALIASES.get(v, v)
+
+
+def normalise_name(name: Any) -> str:
+    """The ONE name normaliser: lowercase, then [\\s-]+ -> '-', then trim.
+
+    Every name comparison and every derived slug must route through this. When a
+    logo slug collapsed 'Digital-Spearhead'/'Digital Spearhead' but the colour
+    lookup didn't, cards rendered the wrong tint — one normaliser means the two
+    can never disagree.
+    """
+    if not isinstance(name, str):
+        return ""
+    return re.sub(r"[\s-]+", "-", name.strip().lower()).strip("-")
+
+
+# Every spelling of "no white label" that real data arrives with. Without this,
+# direct-brand records fall through to the neutral default instead of the brand
+# colour.
+_NO_WHITELABEL = {
+    "", "-", "--", "—", "–", "none", "no-wl", "no-white-label", "n/a", "na",
+    "direct", "no-whitelabel", "null",
+}
+
+
+def is_no_whitelabel(value: Any) -> bool:
+    """True when `value` is any of the many spellings of "no white label"."""
+    return normalise_name(value) in _NO_WHITELABEL
+
+
+def _validate_kind(value: Any) -> str:
+    if value is None:
+        return DEFAULT_KIND
+    kind = _canon_kind(value)
+    if kind not in ENTITY_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"'kind' must be one of {', '.join(ENTITY_KINDS)}",
+        )
+    return kind
+
 # Bundled brand assets (logos), committed under the app package so they ship in
 # the Docker image and survive the ephemeral cloud disk.
 _ASSETS = Path(__file__).resolve().parent / "assets" / "brands"
@@ -73,31 +146,136 @@ def _asset(*parts: str) -> Optional[str]:
         return None
 
 
-# --- Built-in brands ---------------------------------------------------------
-# Hard-coded, always-present brands. Unlike stored brands they survive restarts
-# and the ephemeral cloud disk, so a team brand is "just there". They appear in
-# the Brands tab and the run's brand selector exactly like stored brands, but
-# can't be edited or deleted. `swatches` carries human-readable colour roles for
-# the showcase card; `colors` stays the canonical palette fed to the art director.
+def _icon(slug: str) -> Optional[str]:
+    """An entity's registry ICON — the square mark shown in lists and cards.
+
+    Distinct from `logo_svg`, which is the wordmark composited onto banners:
+    these icons carry an opaque white plate, so they'd look wrong overlaid.
+    Returns None when the icon hasn't been supplied yet, which the UI renders as
+    a name-initial placeholder.
+    """
+    return _asset(slug, "icon.svg")
+
+
+# --- The registry ------------------------------------------------------------
+# The team's canonical entities, hard-coded so they survive restarts AND the
+# ephemeral cloud disk (each deploy ships a fresh image) — the vocabulary is
+# "just there" on every install, rather than something an admin must re-enter.
+# Admins can still register extra entities on top; those live in brands.json.
+#
+# `id` is deliberately the slug, i.e. normalise_name(name) — so the primary key
+# IS the normalised name, and an id lookup and a name lookup can't disagree.
+# Built-ins can be edited and retired (both stored as an override under the same
+# id); deleting one resets it to these shipped defaults.
+#
+# `colors` is the palette fed to the art director; `accent` is the single colour
+# that tints a card (see resolve_accent). Both are read off each supplied icon,
+# so nothing here is invented. `icon_svg` is None until an icon is supplied.
 BUILTIN_BRANDS: List[dict] = [
+    # --- Brokers: the product being sold ------------------------------------
+    {
+        "id": "200invest", "name": "200Invest", "kind": "broker",
+        "colors": ["#0050F9", "#303030"], "accent": "#0050F9",
+        "icon_svg": _icon("200invest"),
+    },
+    {
+        "id": "finansero", "name": "Finansero", "kind": "broker",
+        "colors": ["#00B6AB", "#2A2C2E"], "accent": "#00B6AB",
+        "icon_svg": _icon("finansero"),
+    },
+    {
+        "id": "tradeapp", "name": "TradeApp", "kind": "broker",
+        "colors": ["#05ADC9", "#75FBFD"], "accent": "#05ADC9",
+        "icon_svg": _icon("tradeapp"),
+    },
+    {
+        "id": "tradit", "name": "Tradit", "kind": "broker",
+        "colors": ["#04DE00", "#212121"], "accent": "#04DE00",
+        "icon_svg": _icon("tradit"),
+    },
+    {
+        "id": "warren-bowie-and-smith", "name": "Warren Bowie and Smith", "kind": "broker",
+        "colors": ["#FF861C", "#414141"], "accent": "#FF861C",
+        "icon_svg": _icon("warren-bowie-and-smith"),
+    },
+    {
+        "id": "zenstox", "name": "Zenstox", "kind": "broker",
+        "colors": ["#00B410"], "accent": "#00B410",
+        "icon_svg": _icon("zenstox"),
+    },
+
+    # --- White labels: marketing surfaces that route traffic to a brand -----
+    {
+        "id": "101mt", "name": "101mt", "kind": "whitelabel",
+        "colors": ["#03CD03", "#313131"], "accent": "#03CD03",
+        "icon_svg": _icon("101mt"),
+    },
+    {
+        "id": "benjo", "name": "Benjo", "kind": "whitelabel",
+        "colors": ["#FFCA05", "#3E3E3F"], "accent": "#FFCA05",
+        "icon_svg": _icon("benjo"),
+    },
+    {
+        "id": "dgsh", "name": "DGSH", "kind": "whitelabel",
+        "colors": ["#00ABF0", "#303092"], "accent": "#00ABF0",
+        "icon_svg": _icon("dgsh"),
+    },
+    {
+        "id": "marketing-vici", "name": "Marketing Vici", "kind": "whitelabel",
+        "colors": ["#73A2D4", "#383838"], "accent": "#73A2D4",
+        "icon_svg": _icon("marketing-vici"),
+    },
+    {
+        "id": "profinansez", "name": "Profinansez", "kind": "whitelabel",
+        "colors": ["#00D3D3"], "accent": "#00D3D3",
+        "icon_svg": _icon("profinansez"),
+    },
+    {
+        "id": "strong-trend", "name": "Strong Trend", "kind": "whitelabel",
+        "colors": ["#2BBDF2", "#1591CC"], "accent": "#2BBDF2",
+        "icon_svg": _icon("strong-trend"),
+    },
+    {
+        "id": "tradelg", "name": "TradeLG", "kind": "whitelabel",
+        "colors": ["#00B4EE", "#005DAC", "#414141"], "accent": "#00B4EE",
+        "icon_svg": _icon("tradelg"),
+    },
+    {
+        "id": "vici-marketing-ltd", "name": "Vici Marketing Ltd", "kind": "whitelabel",
+        "colors": ["#89D473", "#383838"], "accent": "#89D473",
+        "icon_svg": _icon("vici-marketing-ltd"),
+    },
+
+    # --- Academies: education brands. Picked like brokers; counted apart ----
     {
         "id": "braintrade",
         "name": "BrainTrade",
+        # A trading academy: it sells education, so it's bucketed separately for
+        # admin/reporting — but it stays selectable in every brand picker.
+        "kind": "academy",
         "colors": ["#FF7532", "#070851", "#F1F5F1"],
+        "accent": "#FF7532",
         "swatches": [
             {"hex": "#FF7532", "role": "Primary · CTA"},
             {"hex": "#070851", "role": "Background"},
             {"hex": "#F1F5F1", "role": "Warm white"},
         ],
+        "icon_svg": _icon("braintrade"),
         # The ORIGINAL full logo (wordmark + waves); older marks kept as files.
         "logo_svg": _asset("braintrade", "bt-original.svg") or _asset("braintrade", "bt2-l.svg"),
         # White-lettered variant served wherever the app shows the logo on dark.
         "logo_svg_dark": _asset("braintrade", "Braintrade_logo_white_text.svg"),
         # Landing-page design tokens the LP Builder reads on brand pick.
         "lp": {"bg": "#FBFBFB", "card": "#FFFFFF"},
-        "builtin": True,
+    },
+    {
+        "id": "fiversity", "name": "Fiversity", "kind": "academy",
+        "colors": ["#00AB5E"], "accent": "#00AB5E",
+        "icon_svg": _icon("fiversity"),
     },
 ]
+for _b in BUILTIN_BRANDS:
+    _b["builtin"] = True
 _BUILTIN_IDS = {b["id"] for b in BUILTIN_BRANDS}
 
 
@@ -136,6 +314,53 @@ def list_brands() -> List[dict]:
     builtins = [_merged_builtin(b, stored) for b in BUILTIN_BRANDS]
     rest = [b for b in stored if b.get("id") not in _BUILTIN_IDS]
     return [*builtins, *rest]
+
+
+def _kind_of(entity: dict) -> str:
+    return _canon_kind(entity.get("kind")) or DEFAULT_KIND
+
+
+def _is_active(entity: dict) -> bool:
+    return entity.get("active", True) is not False
+
+
+def brand_options(include_retired: bool = False) -> List[dict]:
+    """Everything selectable in a BRAND picker — brands AND academies.
+
+    An academy is a brand that sells education; it must be selectable wherever a
+    brand is. This is half of the asymmetry that defines the model.
+    """
+    return [b for b in list_brands()
+            if _kind_of(b) in BRAND_KINDS and (include_retired or _is_active(b))]
+
+
+def whitelabel_options(include_retired: bool = False) -> List[dict]:
+    """Everything selectable in a WHITE-LABEL picker — never an academy.
+
+    The other half of the asymmetry. Letting an academy front another brand here
+    would poison every picker, count and filter with a special case; if one
+    genuinely needs to, register it twice under distinct names so `kind` stays
+    unambiguous.
+    """
+    return [b for b in list_brands()
+            if _kind_of(b) == "whitelabel" and (include_retired or _is_active(b))]
+
+
+def academy_options(include_retired: bool = False) -> List[dict]:
+    """The academy admin/reporting bucket. NOT a structural role — these all
+    also appear in brand_options()."""
+    return [b for b in list_brands()
+            if _kind_of(b) == "academy" and (include_retired or _is_active(b))]
+
+
+def find_by_name(name: Any) -> Optional[dict]:
+    """Registry lookup by name, case- and separator-insensitive via the one
+    shared normaliser — so 'Digital-Spearhead' and 'Digital Spearhead' resolve
+    to the same entity."""
+    slug = normalise_name(name)
+    if not slug:
+        return None
+    return next((b for b in list_brands() if normalise_name(b.get("name")) == slug), None)
 
 
 def get_brand(brand_id: str) -> Optional[dict]:
@@ -196,12 +421,39 @@ def _clean_accent(value: Any) -> Optional[str]:
     return None
 
 
+def resolve_accent(entity: dict) -> Optional[str]:
+    """The ONE colour an entity contributes to a card tint / stripe.
+
+    The explicit accent wins, else the first palette colour. Callers layer the
+    white-label-beats-brand precedence on top of this (the WL is what the
+    visitor actually sees, so its colour wins); returning None here lets them
+    fall through to the next entity rather than to a neutral too early.
+    """
+    accent = _clean_accent(entity.get("accent"))
+    if accent:
+        return accent
+    colors = _clean_colors(entity.get("colors"))
+    return colors[0] if colors else None
+
+
 def _public(brand: dict) -> dict:
     """The Brand shape returned to clients (stable key order)."""
     out: dict = {
         "id": brand.get("id"),
         "name": brand.get("name", ""),
+        # Registry role — drives every picker, filter and bucket. Canonicalised,
+        # so a legacy 'brand' reaches clients as 'broker'. See ENTITY_KINDS.
+        "kind": _kind_of(brand),
+        # Retired entities stay readable so historical records keep rendering;
+        # they're filtered out of pickers, never deleted.
+        "active": brand.get("active", True) is not False,
+        # The resolved card colour (accent > first palette colour > none), so
+        # every client tints from the same value instead of re-deriving it.
+        "resolved_accent": resolve_accent(brand),
         "colors": brand.get("colors", []) or [],
+        # The square registry mark (lists/cards). Separate from logo_svg, which
+        # is the wordmark composited onto banners.
+        "icon_svg": brand.get("icon_svg"),
         "logo_svg": brand.get("logo_svg"),
         "logo_svg_dark": brand.get("logo_svg_dark"),
         # Brand-kit hints (all optional) folded into the art direction at run time.
@@ -242,7 +494,10 @@ def build_brands_router() -> APIRouter:
         brand = {
             "id": uuid.uuid4().hex,
             "name": name,
+            "kind": _validate_kind(payload.get("kind")),
+            "active": payload.get("active", True) is not False,
             "colors": _clean_colors(payload.get("colors")),
+            "icon_svg": _clean_logo(payload.get("icon_svg")),
             "logo_svg": _clean_logo(payload.get("logo_svg")),
             "logo_svg_dark": _clean_logo(payload.get("logo_svg_dark")),
             "font": _clean_text(payload.get("font")),
@@ -258,8 +513,14 @@ def build_brands_router() -> APIRouter:
         """Partial update: only the keys present in the body change."""
         if "name" in payload:
             b["name"] = _validate_name(payload.get("name"))
+        if "kind" in payload:
+            b["kind"] = _validate_kind(payload.get("kind"))
+        if "active" in payload:
+            b["active"] = payload.get("active") is not False
         if "colors" in payload:
             b["colors"] = _clean_colors(payload.get("colors"))
+        if "icon_svg" in payload:
+            b["icon_svg"] = _clean_logo(payload.get("icon_svg"))
         if "logo_svg" in payload:
             b["logo_svg"] = _clean_logo(payload.get("logo_svg"))
         if "logo_svg_dark" in payload:
@@ -319,4 +580,9 @@ def build_brands_router() -> APIRouter:
     return router
 
 
-__all__ = ["build_brands_router", "list_brands", "get_brand", "BRANDS_PATH"]
+__all__ = [
+    "build_brands_router", "list_brands", "get_brand", "BRANDS_PATH",
+    "ENTITY_KINDS", "DEFAULT_KIND", "BRAND_KINDS",
+    "normalise_name", "is_no_whitelabel", "resolve_accent", "find_by_name",
+    "brand_options", "whitelabel_options", "academy_options",
+]

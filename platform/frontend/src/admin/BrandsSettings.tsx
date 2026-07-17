@@ -1,17 +1,37 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertCircle, Check, Loader2, Pencil, Plus, RefreshCw, Trash2, Upload, X } from 'lucide-react'
+import {
+  AlertCircle,
+  Archive,
+  Check,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Upload,
+  X,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
-import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
+import { brandLogoSrc, brandLogoUri, useIsDark } from '@/lib/brandLogo'
 import { cn } from '@/lib/utils'
 import {
+  academyOptions,
   createBrand,
-  deleteBrand,
+  entityAccent,
+  ENTITY_KINDS,
+  KIND_HINT,
+  KIND_LABEL,
+  kindOf,
   listBrands,
+  NEUTRAL_ACCENT,
+  normaliseName,
   updateBrand,
+  whitelabelOptions,
   type Brand,
   type BrandInput,
+  type EntityKind,
 } from '../bannerBuilder/brandsApi'
 
 /** ~1.2MB cap on an uploaded logo — a data: URI is ~1.37x the file bytes and the
@@ -21,7 +41,10 @@ const MAX_LOGO_BYTES = 1_200_000
 interface BrandDraft {
   id?: string
   name: string
+  kind: EntityKind
+  active: boolean
   colors: string[]
+  icon_svg: string | null
   logo_svg: string | null
   logo_svg_dark: string | null
   font: string
@@ -31,7 +54,10 @@ interface BrandDraft {
 
 const EMPTY_DRAFT: BrandDraft = {
   name: '',
+  kind: 'broker',
+  active: true,
   colors: [],
+  icon_svg: null,
   logo_svg: null,
   logo_svg_dark: null,
   font: '',
@@ -39,12 +65,28 @@ const EMPTY_DRAFT: BrandDraft = {
   voice: '',
 }
 
+const draftOf = (b: Brand): BrandDraft => ({
+  id: b.id,
+  name: b.name,
+  kind: kindOf(b),
+  active: b.active !== false,
+  colors: b.colors ?? [],
+  icon_svg: b.icon_svg ?? null,
+  logo_svg: b.logo_svg ?? null,
+  logo_svg_dark: b.logo_svg_dark ?? null,
+  font: b.font ?? '',
+  accent: b.accent ?? null,
+  voice: b.voice ?? '',
+})
+
 /**
- * Brands catalog + editor (admin Settings surface — the whole surface is already
+ * Brand / White label / Academy registry (admin Settings surface — already
  * admin-gated in App.tsx, and every write is admin-gated on the backend too).
- * Admins can add brands, edit/delete the ones they created, and upload a logo
- * (SVG or PNG/JPG/WebP); built-in brands stay read-only. Saved brands are shared,
- * so every user can pick them when generating.
+ *
+ * This registry is the single source of truth: every picker and filter in the
+ * app derives from `kind`, and nothing infers the vocabulary from values found
+ * on existing records (which would turn a typo into a permanent option).
+ * Entities are RETIRED, never deleted, so historical records keep rendering.
  */
 export function BrandsSettings() {
   const [brands, setBrands] = useState<Brand[]>([])
@@ -67,15 +109,26 @@ export function BrandsSettings() {
     void refresh()
   }, [])
 
-  async function handleDelete(brand: Brand) {
-    if (!window.confirm(`Delete the brand “${brand.name}”? This can’t be undone.`)) return
+  /** Retire / restore. Retiring keeps the record so anything historical that
+   * references it still renders; it just leaves every picker. */
+  async function setActive(brand: Brand, active: boolean) {
     try {
-      await deleteBrand(brand.id)
+      await updateBrand(brand.id, { active })
       await refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
   }
+
+  // Buckets mirror the model exactly: an academy appears in its own bucket AND
+  // is selectable everywhere a broker is — brandOptions() includes it.
+  const live = brands.filter((b) => b.active !== false)
+  const buckets: { kind: EntityKind; items: Brand[] }[] = [
+    { kind: 'broker', items: live.filter((b) => kindOf(b) === 'broker') },
+    { kind: 'whitelabel', items: whitelabelOptions(live) },
+    { kind: 'academy', items: academyOptions(live) },
+  ]
+  const retired = brands.filter((b) => b.active === false)
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
@@ -83,22 +136,24 @@ export function BrandsSettings() {
         <div>
           <h2 className="font-display text-base font-semibold text-foreground">Brands</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            The brands available for campaigns — each with a palette, an optional logo, and brand-kit
-            hints (typography / accent / tone) that keep creative on-brand. Saved brands are shared
-            with everyone.
+            The registry every picker reads from. A <b className="font-semibold text-foreground">broker</b>{' '}
+            is the product being sold; a <b className="font-semibold text-foreground">white label</b> is a
+            surface that routes traffic to one; an{' '}
+            <b className="font-semibold text-foreground">academy</b> sells education — it picks like a
+            broker everywhere, and is grouped separately only for reporting.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button size="sm" onClick={() => setEditing({ ...EMPTY_DRAFT })}>
-            <Plus className="h-4 w-4" /> Add brand
+            <Plus className="h-4 w-4" /> Add entity
           </Button>
           <Button
             size="sm"
             variant="ghost"
             onClick={() => void refresh()}
             disabled={loading}
-            title="Refresh brands"
-            aria-label="Refresh brands"
+            title="Refresh"
+            aria-label="Refresh"
           >
             <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
           </Button>
@@ -112,41 +167,73 @@ export function BrandsSettings() {
         </div>
       )}
 
-      <div className="mt-5 space-y-3">
-        {loading ? (
-          <div className="flex items-center gap-2 rounded-xl border border-border bg-secondary/40 px-4 py-6 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading brands…
-          </div>
-        ) : brands.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-secondary/40 px-4 py-8 text-center text-sm text-muted-foreground">
-            No brands yet — add your first.
-          </div>
-        ) : (
-          brands.map((brand) => (
-            <BrandCard
-              key={brand.id}
-              brand={brand}
-              onEdit={() =>
-                setEditing({
-                  id: brand.id,
-                  name: brand.name,
-                  colors: brand.colors ?? [],
-                  logo_svg: brand.logo_svg ?? null,
-                  logo_svg_dark: brand.logo_svg_dark ?? null,
-                  font: brand.font ?? '',
-                  accent: brand.accent ?? null,
-                  voice: brand.voice ?? '',
-                })
-              }
-              onDelete={brand.builtin ? undefined : () => void handleDelete(brand)}
-            />
-          ))
-        )}
-      </div>
+      {loading ? (
+        <div className="mt-5 flex items-center gap-2 rounded-xl border border-border bg-secondary/40 px-4 py-6 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading registry…
+        </div>
+      ) : brands.length === 0 ? (
+        <div className="mt-5 rounded-xl border border-dashed border-border bg-secondary/40 px-4 py-8 text-center text-sm text-muted-foreground">
+          Nothing registered yet — add your first entity.
+        </div>
+      ) : (
+        <div className="mt-5 space-y-6">
+          {buckets.map(({ kind, items }) => (
+            <section key={kind}>
+              <div className="mb-2 flex items-baseline gap-2">
+                <h3 className="font-display text-sm font-semibold text-foreground">
+                  {kind === 'academy' ? 'Academies' : `${KIND_LABEL[kind]}s`}
+                </h3>
+                <span className="text-xs tabular-nums text-muted-foreground">{items.length}</span>
+                <span className="text-xs text-muted-foreground/80">{KIND_HINT[kind]}</span>
+              </div>
+              {items.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">
+                  None yet.
+                </p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {items.map((brand) => (
+                    <BrandCard
+                      key={brand.id}
+                      brand={brand}
+                      onEdit={() => setEditing(draftOf(brand))}
+                      onRetire={() => void setActive(brand, false)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          ))}
+
+          {retired.length > 0 && (
+            <section>
+              <div className="mb-2 flex items-baseline gap-2">
+                <h3 className="font-display text-sm font-semibold text-muted-foreground">Retired</h3>
+                <span className="text-xs tabular-nums text-muted-foreground">{retired.length}</span>
+                <span className="text-xs text-muted-foreground/80">
+                  Hidden from every picker; kept so historical records still render.
+                </span>
+              </div>
+              <div className="grid gap-3 opacity-60 sm:grid-cols-2 xl:grid-cols-3">
+                {retired.map((brand) => (
+                  <BrandCard
+                    key={brand.id}
+                    brand={brand}
+                    showKind
+                    onEdit={() => setEditing(draftOf(brand))}
+                    onRestore={() => void setActive(brand, true)}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
 
       {editing && (
         <BrandEditor
           draft={editing}
+          existing={brands}
           onClose={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null)
@@ -161,10 +248,13 @@ export function BrandsSettings() {
 /** The add/edit form, in a modal. Builds a BrandInput and POSTs/PUTs it. */
 function BrandEditor({
   draft,
+  existing,
   onClose,
   onSaved,
 }: {
   draft: BrandDraft
+  /** The whole registry — used to reject a duplicate name before saving. */
+  existing: Brand[]
   onClose: () => void
   onSaved: () => void | Promise<void>
 }) {
@@ -173,9 +263,13 @@ function BrandEditor({
   const [err, setErr] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const darkFileRef = useRef<HTMLInputElement>(null)
+  const iconFileRef = useRef<HTMLInputElement>(null)
   const patch = (p: Partial<BrandDraft>) => setD((cur) => ({ ...cur, ...p }))
 
-  function onLogoFile(file: File | undefined, field: 'logo_svg' | 'logo_svg_dark' = 'logo_svg') {
+  function onLogoFile(
+    file: File | undefined,
+    field: 'logo_svg' | 'logo_svg_dark' | 'icon_svg' = 'logo_svg',
+  ) {
     if (!file) return
     if (file.size > MAX_LOGO_BYTES) {
       setErr('That logo is too large — please use one under ~1.2 MB.')
@@ -193,12 +287,25 @@ function BrandEditor({
 
   async function save() {
     if (!d.name.trim()) {
-      setErr('A brand name is required.')
+      setErr('A name is required.')
+      return
+    }
+    // The registry is the vocabulary, so two entities must not normalise to the
+    // same name — otherwise findByName() can't tell them apart and the wrong
+    // colour resolves. Compares via the shared normaliser, so "Digital Spearhead"
+    // and "Digital-Spearhead" collide here rather than silently later.
+    const slug = normaliseName(d.name)
+    const clash = existing.find((b) => b.id !== d.id && normaliseName(b.name) === slug)
+    if (clash) {
+      setErr(`“${clash.name}” already uses that name — names must be unique in the registry.`)
       return
     }
     const input: BrandInput = {
       name: d.name.trim(),
+      kind: d.kind,
+      active: d.active,
       colors: d.colors,
+      icon_svg: d.icon_svg,
       logo_svg: d.logo_svg,
       logo_svg_dark: d.logo_svg_dark,
       font: d.font.trim() || null,
@@ -222,7 +329,7 @@ function BrandEditor({
     <Modal
       open
       onClose={onClose}
-      title={d.id ? 'Edit brand' : 'Add brand'}
+      title={d.id ? `Edit ${KIND_LABEL[d.kind].toLowerCase()}` : 'Add entity'}
       description="Name, palette and logo keep generated banners on-brand. The CTA stays auto high-contrast."
       className="max-w-lg"
       footer={
@@ -231,7 +338,7 @@ function BrandEditor({
             Cancel
           </Button>
           <Button size="sm" onClick={() => void save()} disabled={busy || !d.name.trim()}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save brand
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Save
           </Button>
         </>
       }
@@ -244,6 +351,47 @@ function BrandEditor({
             placeholder="e.g. Acme Capital"
             className="h-9"
           />
+        </Field>
+
+        <Field label="Type" hint="Decides which pickers this appears in.">
+          <div className="grid gap-1.5 sm:grid-cols-3">
+            {ENTITY_KINDS.map((k) => {
+              const on = d.kind === k
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => patch({ kind: k })}
+                  aria-pressed={on}
+                  className={cn(
+                    'rounded-lg border px-3 py-2 text-left transition-colors',
+                    on
+                      ? 'border-primary/60 bg-primary/10'
+                      : 'border-border bg-background hover:bg-secondary/60',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'block font-display text-sm font-semibold',
+                      on ? 'text-foreground' : 'text-muted-foreground',
+                    )}
+                  >
+                    {KIND_LABEL[k]}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+                    {KIND_HINT[k]}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          {d.kind === 'academy' && (
+            <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+              An academy is a brand — it stays selectable in every brand picker alongside the
+              brokers, and is never offered as a white label. If it genuinely needs to front
+              another brand, register it twice under distinct names.
+            </p>
+          )}
         </Field>
 
         <Field label="Palette" hint="Folded into the art direction so the design stays on-brand.">
@@ -281,6 +429,42 @@ function BrandEditor({
             >
               <Plus className="h-3.5 w-3.5" /> Colour
             </Button>
+          </div>
+        </Field>
+
+        <Field label="Icon" hint="The square mark shown in this registry. Not composited onto banners.">
+          <div className="flex items-center gap-3">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-white">
+              {brandLogoUri(d.icon_svg, false) ? (
+                <img src={brandLogoUri(d.icon_svg, false)} alt="" className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Icon
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <input
+                ref={iconFileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg"
+                className="hidden"
+                onChange={(e) => onLogoFile(e.target.files?.[0], 'icon_svg')}
+              />
+              <Button size="sm" variant="outline" onClick={() => iconFileRef.current?.click()}>
+                <Upload className="h-4 w-4" /> {d.icon_svg ? 'Replace icon' : 'Upload icon'}
+              </Button>
+              {d.icon_svg && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => patch({ icon_svg: null })}
+                >
+                  <X className="h-4 w-4" /> Remove icon
+                </Button>
+              )}
+            </div>
           </div>
         </Field>
 
@@ -408,108 +592,150 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 /**
- * A brand showcase card: logo, name (+ "Built-in" badge), palette swatches, and
- * brand-kit hints. Admin Edit / Delete controls appear for stored (non-built-in)
- * brands.
+ * One entity, sized to sit 2–3 across in the registry grid: accent stripe, icon,
+ * name over its registry slug, and a palette strip. The stripe is this entity's
+ * own colour — a card pairing a WL with a brand resolves precedence via
+ * resolveAccent() instead. Actions surface on hover (always on touch/keyboard).
  */
 function BrandCard({
   brand,
   onEdit,
-  onDelete,
+  onRetire,
+  onRestore,
+  showKind,
 }: {
   brand: Brand
   onEdit?: () => void
-  onDelete?: () => void
+  /** Retire (active=false) — the model never deletes. */
+  onRetire?: () => void
+  onRestore?: () => void
+  /** Retired cards mix kinds, so they label it; grouped sections don't need to. */
+  showKind?: boolean
 }) {
   const swatches =
     brand.swatches && brand.swatches.length
       ? brand.swatches
       : brand.colors.map((hex) => ({ hex, role: '' }))
+  const kind = kindOf(brand)
+  const accent = entityAccent(brand) ?? NEUTRAL_ACCENT
 
   return (
-    <div className="rounded-xl border border-border bg-background p-4 shadow-sm">
-      <div className="flex items-start gap-4">
-        <LogoPreview svg={brand.logo_svg} svgDark={brand.logo_svg_dark} className="h-20 w-20 shrink-0" />
+    <div className="group flex overflow-hidden rounded-xl border border-border bg-background shadow-sm transition-colors hover:border-foreground/20">
+      {/* The entity's resolved accent — the card tint the model calls for. */}
+      <span className="w-1 shrink-0" style={{ backgroundColor: accent }} aria-hidden />
+      <div className="flex min-w-0 flex-1 items-center gap-3 p-3">
+        <EntityIcon brand={brand} />
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <span className="truncate font-display text-sm font-semibold text-foreground">
-              {brand.name || 'Untitled brand'}
+              {brand.name || 'Untitled'}
             </span>
-            {brand.builtin && (
-              <span className="shrink-0 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-                Built-in
+            {showKind && (
+              <span className="shrink-0 rounded-full border border-border bg-secondary px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {KIND_LABEL[kind]}
               </span>
             )}
-            <span className="ml-auto flex shrink-0 items-center gap-1">
-              {onEdit && (
-                <Button size="sm" variant="ghost" onClick={onEdit} title="Edit brand" aria-label="Edit brand">
-                  <Pencil className="h-4 w-4" />
-                </Button>
-              )}
-              {onDelete && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={onDelete}
-                  title="Delete brand"
-                  aria-label="Delete brand"
-                  className="text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-            </span>
+          </div>
+          {/* The registry slug — what every lookup normalises to. */}
+          <div className="truncate font-mono text-[11px] text-muted-foreground">
+            {normaliseName(brand.name)}
           </div>
 
-          {swatches.length > 0 ? (
-            <div className="mt-2.5 flex flex-wrap gap-2">
+          {swatches.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
               {swatches.map((s, i) => (
                 <span
                   key={`${s.hex}-${i}`}
-                  title={s.hex}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card py-1 pl-1.5 pr-2.5"
-                >
-                  <span
-                    className="h-5 w-5 rounded-md border border-border"
-                    style={{ backgroundColor: s.hex }}
-                  />
-                  <span className="leading-tight">
-                    <span className="block font-mono text-[11px] font-medium text-foreground">
-                      {s.hex.toUpperCase()}
-                    </span>
-                    {s.role && <span className="block text-[10px] text-muted-foreground">{s.role}</span>}
-                  </span>
-                </span>
+                  title={s.role ? `${s.hex.toUpperCase()} · ${s.role}` : s.hex.toUpperCase()}
+                  className="h-3 w-3 rounded-full border border-border"
+                  style={{ backgroundColor: s.hex }}
+                />
               ))}
-            </div>
-          ) : (
-            <div className="mt-2 text-xs text-muted-foreground">No colours</div>
-          )}
-
-          {(brand.font || brand.accent || brand.voice) && (
-            <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-              {brand.font && (
-                <span>
-                  <span className="font-medium text-foreground/80">Type:</span> {brand.font}
-                </span>
-              )}
-              {brand.accent && (
-                <span className="inline-flex items-center gap-1">
-                  <span className="font-medium text-foreground/80">Accent:</span>
-                  <span className="h-3 w-3 rounded border border-border" style={{ backgroundColor: brand.accent }} />
-                  <span className="font-mono">{brand.accent.toUpperCase()}</span>
-                </span>
-              )}
-              {brand.voice && (
-                <span>
-                  <span className="font-medium text-foreground/80">Voice:</span> {brand.voice}
-                </span>
+              {!brand.icon_svg && (
+                <span className="ml-1 text-[10px] text-muted-foreground">No icon</span>
               )}
             </div>
           )}
         </div>
+
+        <div className="flex shrink-0 flex-col items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+          {onEdit && (
+            <IconAction onClick={onEdit} label="Edit">
+              <Pencil className="h-3.5 w-3.5" />
+            </IconAction>
+          )}
+          {onRestore && (
+            <IconAction onClick={onRestore} label="Restore">
+              <RotateCcw className="h-3.5 w-3.5" />
+            </IconAction>
+          )}
+          {onRetire && (
+            <IconAction
+              onClick={onRetire}
+              label="Retire — leaves every picker; historical records keep rendering"
+              danger
+            >
+              <Archive className="h-3.5 w-3.5" />
+            </IconAction>
+          )}
+        </div>
       </div>
+    </div>
+  )
+}
+
+/** A compact icon-only card action. */
+function IconAction({
+  onClick,
+  label,
+  danger,
+  children,
+}: {
+  onClick: () => void
+  label: string
+  danger?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={cn(
+        'rounded p-1 text-muted-foreground transition-colors',
+        danger ? 'hover:text-destructive' : 'hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+/**
+ * The registry ICON: an entity's square mark, or — until one is supplied — a
+ * tinted initial so the row still reads. Icons are shown as-authored (no
+ * dark-mode letter recolouring), since they carry their own plate.
+ */
+function EntityIcon({ brand }: { brand: Brand }) {
+  const src = brandLogoUri(brand.icon_svg, false)
+  const accent = entityAccent(brand) ?? NEUTRAL_ACCENT
+  if (!src) {
+    return (
+      <div
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-dashed border-border"
+        title="No icon yet"
+      >
+        <span className="font-display text-base font-semibold" style={{ color: accent }}>
+          {(brand.name || '?').trim().charAt(0).toUpperCase()}
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-border bg-white">
+      <img src={src} alt="" className="h-full w-full object-contain" />
     </div>
   )
 }
