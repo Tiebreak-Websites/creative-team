@@ -49,6 +49,10 @@ _SECRET_KEY_FILE = BACKEND_DIR / ".secret_key"
 
 # bcrypt via passlib; verify is constant-time.
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# A real bcrypt hash verified against when the email is unknown, so a failed
+# login runs one bcrypt-verify either way and can't be timed to enumerate
+# valid emails. (Hash of a random constant; nothing verifies True against it.)
+_DUMMY_HASH = _pwd.hash("no-such-user-timing-equalizer")
 
 log = logging.getLogger(__name__)
 
@@ -160,8 +164,11 @@ def _seed_legacy_admin() -> dict[str, dict]:
     plaintext = get_secret("ADMIN_PASSWORD")
     if plaintext:
         return {email: {"email": email, "role": "admin", "password_hash": _pwd.hash(plaintext)}}
-    if settings.COOKIE_SECURE:
-        return {}  # no weak default behind TLS — rely on PLATFORM_USERS / fail closed below
+    if settings.IS_PRODUCTION:
+        return {}  # no weak default in prod — rely on PLATFORM_USERS / fail closed below
+    log.warning("auth: using the INSECURE dev admin default (password 'parola'). "
+                "Set ADMIN_PASSWORD_HASH + PLATFORM_ENV=production (or PLATFORM_COOKIE_SECURE=true) "
+                "for any real deploy.")
     return {email: {"email": email, "role": "admin", "password_hash": _pwd.hash("parola")}}
 
 
@@ -175,7 +182,7 @@ def _seed_users() -> dict[str, dict]:
     """
     users = _seed_legacy_admin()
     users.update(_parse_users_env())
-    if settings.COOKIE_SECURE and not any(u["role"] == "admin" for u in users.values()):
+    if settings.IS_PRODUCTION and not any(u["role"] == "admin" for u in users.values()):
         raise RuntimeError(
             "Refusing to start in production: configure an admin via ADMIN_PASSWORD_HASH "
             "(or ADMIN_PASSWORD), or a PLATFORM_USERS entry with role 'admin'."
@@ -308,7 +315,10 @@ def build_auth_router() -> APIRouter:
                 detail="Too many failed sign-in attempts. Please wait a few minutes and try again.",
             )
         user = get_user(email)
-        if not user or not verify_password(password, user["password_hash"]):
+        # Always run one bcrypt-verify so an unknown email costs the same as a
+        # wrong password — no timing signal to enumerate valid accounts.
+        ok = verify_password(password, user["password_hash"] if user else _DUMMY_HASH)
+        if not user or not ok:
             _record_login_fail(key)
             # Blunt brute force with a small fixed delay; never reveal which
             # half (email vs password) was wrong.

@@ -117,20 +117,6 @@ export function createCampaign(payload: {
   return post('/campaigns', payload, 'Could not create the campaign')
 }
 
-export async function updateCampaign(
-  id: string,
-  patch: Partial<{ name: string; tag: string; market: string; reference: string }>,
-): Promise<CampaignInfo> {
-  const r = await fetch(`${LPM_URL}/campaigns/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(patch),
-  })
-  if (!r.ok) return fail(r, 'Could not update the campaign')
-  return r.json()
-}
-
 /** Deletes the campaign AND every generation inside it. */
 export async function deleteCampaign(id: string): Promise<void> {
   const r = await fetch(`${LPM_URL}/campaigns/${id}`, { method: 'DELETE', credentials: 'include' })

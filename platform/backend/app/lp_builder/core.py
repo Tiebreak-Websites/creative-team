@@ -79,10 +79,17 @@ def _now() -> str:
 # Sanitization + validation (sections are STRUCTURE + STYLE only)
 # ---------------------------------------------------------------------------
 _FORBIDDEN = (
-    re.compile(r"<\s*script", re.I),
-    re.compile(r"\son\w+\s*=", re.I),
+    # dangerous elements (script/iframe/object/embed/base/meta/link/form-action
+    # sinks) — any leading `<` + optional slash + name
+    re.compile(r"<\s*/?\s*(?:script|iframe|object|embed|base|meta|link|svg|foreignobject)\b", re.I),
+    # event handlers — allow whitespace OR `/` before the on* attribute so
+    # `<img/onerror=...>` is caught, not just `<img onerror=...>`
+    re.compile(r"[\s/]on\w+\s*=", re.I),
     re.compile(r"javascript\s*:", re.I),
-    re.compile(r"<\s*iframe", re.I),
+    re.compile(r"vbscript\s*:", re.I),
+    # data: URLs that can carry markup/script (data:image/* stays allowed)
+    re.compile(r"data:\s*text/html", re.I),
+    re.compile(r"data:\s*image/svg", re.I),
 )
 
 
@@ -92,7 +99,9 @@ def validate_section_html(html: str) -> Optional[str]:
         return "the section HTML is empty"
     for rx in _FORBIDDEN:
         if rx.search(html):
-            return "scripts, event handlers, javascript: URLs and iframes are not allowed in sections"
+            return ("scripts, event handlers, javascript:/data:text-html URLs, and "
+                    "script-bearing elements (iframe, object, embed, base, meta, svg…) "
+                    "are not allowed in sections")
     # Text slots must be LEAF elements (no nested tags) — the string
     # compositor replaces everything between '>' and the closing '</'.
     if re.search(r'data-lp-(?:text|rich)="[A-Za-z0-9_.-]+"[^>]*>[^<]*<(?!/)', html):

@@ -1,8 +1,7 @@
 # Platform backend dependencies. The banner engine itself is Python stdlib-only;
-# these are just the web layer + the AI-assist client.
+# these are just the web layer.
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30
-anthropic>=0.39
 pyjwt>=2.8
 passlib[bcrypt]>=1.7
 # passlib 1.7.x's bcrypt backend is incompatible with bcrypt 5.x

@@ -36,9 +36,19 @@ class Settings:
     # so the cookie still sets over plain localhost. Set true on a deploy.
     COOKIE_SECURE = _env("PLATFORM_COOKIE_SECURE", "false").lower() in ("1", "true", "yes", "on")
 
-    # Interactive API docs (/docs, /redoc, /openapi.json). Handy locally; turn
-    # OFF on a public deploy so an anonymous visitor only sees the login page.
-    ENABLE_DOCS = _env("PLATFORM_DOCS", "true").lower() in ("1", "true", "yes", "on")
+    # Production detection for auth hardening — INDEPENDENT of the cookie flag so
+    # a deploy that forgets PLATFORM_COOKIE_SECURE is still protected. True when
+    # PLATFORM_ENV says so OR TLS cookies are on. In production the weak 'parola'
+    # dev admin is refused, the app fails closed without a real admin, and the
+    # API docs default off. Local dev (neither set) stays zero-config.
+    ENV = _env("PLATFORM_ENV", "dev").strip().lower()
+    IS_PRODUCTION = COOKIE_SECURE or ENV in ("prod", "production", "staging")
+
+    # Interactive API docs (/docs, /redoc, /openapi.json). Handy locally; OFF by
+    # default in production so an anonymous visitor only sees the login page.
+    ENABLE_DOCS = _env(
+        "PLATFORM_DOCS", "false" if IS_PRODUCTION else "true"
+    ).lower() in ("1", "true", "yes", "on")
 
     # --- Built frontend (single-origin deploy) -----------------------------
     # Vite `npm run build` output. When this dir exists the backend serves the
@@ -48,12 +58,6 @@ class Settings:
     FRONTEND_DIST = Path(_env(
         "PLATFORM_FRONTEND_DIST", str(PLATFORM_DIR / "frontend" / "dist")
     ))
-
-    # --- Bundled Figma scripts (qa + translate, run as subprocesses) -------
-    # The qa/translate scripts resolve their shared <base>/qa/.cache dir from
-    # their own file location, so the qa/scripts + translate/scripts nesting
-    # under this base must be preserved (see figma_scripts/).
-    FIGMA_SCRIPTS_DIR = BACKEND_DIR / "figma_scripts"
 
     # --- Runtime artifacts -------------------------------------------------
     # Per-run working dirs (generated PNGs). Gitignored.
@@ -74,11 +78,6 @@ class Settings:
     # "xhigh"/Extended reasoning pass can run minutes; the old 150s default made it
     # silently fall back to the template brief. 300s lets High finish; raise for xhigh.
     DIRECTOR_TIMEOUT = int(_env("PLATFORM_DIRECTOR_TIMEOUT", "300"))
-
-    # --- AI-assist (optional) ---------------------------------------------
-    # Anthropic model for the creative-brief assist. Confirm the current id via
-    # the /claude-api skill before trusting; overridable by env.
-    BRIEF_MODEL = _env("PLATFORM_BRIEF_MODEL", "claude-sonnet-4-6")
 
     # Ordered .env search (mirrors the engine's ./ ../ ../../ ../../../ resolver).
     # Walking up several levels matters when running from a git worktree, where

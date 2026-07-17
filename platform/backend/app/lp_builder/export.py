@@ -267,6 +267,39 @@ def _esc(s: str) -> str:
     return html_mod.escape(str(s or ""), quote=False)
 
 
+def _attr(s: str) -> str:
+    """Escape for an HTML attribute value (quotes included) — attributes are
+    filled inside double quotes, so a stray `"` would otherwise break out."""
+    return html_mod.escape(str(s or ""), quote=True)
+
+
+# Link/image/form URLs come from project editors; only these schemes may reach
+# the published page. Anything else (javascript:, data:text/html, vbscript:) is
+# dropped so an injected href/src cannot execute on the exported LP.
+_URL_OK = re.compile(r"^(?:https?:|mailto:|tel:|/|#|\.{0,2}/)", re.I)
+
+
+def _safe_url(v: str) -> str:
+    v = str(v or "").strip()
+    if not v:
+        return ""
+    # data: is allowed ONLY for images (base64 rasters the builder itself emits)
+    if v.lower().startswith("data:image/"):
+        return v
+    return v if _URL_OK.match(v) else ""
+
+
+# CSS values are interpolated raw into <style>/styles.css. Reject anything that
+# could close the declaration/block or start a new at-rule/url() — that is how a
+# prop/token/font value would break out into arbitrary markup or CSS.
+_CSS_BAD = re.compile(r"""[<>{}\\"';]|url\s*\(|@import|expression\s*\(|/\*|\*/""", re.I)
+
+
+def _css_val(v: str) -> str:
+    v = str(v or "").strip()
+    return "" if _CSS_BAD.search(v) else v
+
+
 def _texts_for(tpl: dict, lang: str) -> Dict[str, str]:
     t = dict((tpl.get("texts") or {}).get("en") or {})
     if lang != "en":
@@ -354,8 +387,8 @@ def compose_section(tpl: dict, inst: dict, lang: str, tokens: dict,
                 raw = (tpl.get("assets") or {}).get(f["key"]) or (tpl.get("assets") or {}).get(base) or ""
             if raw == "token:logo":
                 raw = tokens.get("logo") or ""
-            url = resolve_img(raw) if raw else ""
-            html = _fill_attr(html, "data-lp-img", f["key"], "src", url or PLACEHOLDER_IMG)
+            url = _safe_url(resolve_img(raw)) if raw else ""
+            html = _fill_attr(html, "data-lp-img", f["key"], "src", _attr(url or PLACEHOLDER_IMG))
             # Per-breakpoint art direction: a mobile-specific image wraps the
             # <img> in <picture> with a <source> on the SAME cutoff the prop
             # overrides use (575px), so canvas mobile view and real phones
@@ -363,17 +396,18 @@ def compose_section(tpl: dict, inst: dict, lang: str, tokens: dict,
             mobile_raw = (inst.get("images_mobile") or {}).get(f["key"])
             if mobile_raw:
                 murl = resolve_img(mobile_raw)
+                murl = _safe_url(murl)
                 if murl:
                     key_esc = re.escape(f["key"])
                     html = re.sub(
                         rf'(<img\b[^>]*\bdata-lp-img="{key_esc}"[^>]*>)',
                         lambda m: (f'<picture><source media="(max-width:575px)" '
-                                   f'srcset="{_esc(murl)}">{m.group(1)}</picture>'),
+                                   f'srcset="{_attr(murl)}">{m.group(1)}</picture>'),
                         html, count=1)
         elif f["kind"] == "link":
             href = (inst.get("links") or {}).get(f["key"])
             if href:
-                html = _fill_attr(html, "data-lp-link", f["key"], "href", _esc(href))
+                html = _fill_attr(html, "data-lp-link", f["key"], "href", _attr(_safe_url(href)))
     html = _fill_texts(html, text_vals, rich=False)
     html = _fill_texts(html, rich_vals, rich=True)
 
@@ -395,6 +429,11 @@ def overrides_css(project: dict) -> str:
                     if p == "hidden":
                         if v:
                             decls.append("display:none !important")
+                        continue
+                    # Every value is editor-supplied — sanitize so it cannot
+                    # close the declaration/<style> or start an at-rule/url().
+                    v = _css_val(v)
+                    if not v:
                         continue
                     if p == "padY":
                         decls.append(f"padding-top:{v} !important")
@@ -427,7 +466,8 @@ def overrides_css(project: dict) -> str:
 
 def tokens_css(tokens: dict) -> str:
     t = {**core.DEFAULT_TOKENS, **(tokens or {})}
-    return (":root{" + ";".join(f"--lp-{k}:{v}" for k, v in t.items() if k != "logo" and v) + "}")
+    return (":root{" + ";".join(f"--lp-{k}:{_css_val(v)}" for k, v in t.items()
+                                 if k != "logo" and _css_val(v)) + "}")
 
 
 _GOOGLE_FONTS = ("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800"
@@ -460,8 +500,8 @@ def compose_page(project: dict, sections_map: Dict[str, dict], mode: str,
     body_html = "\n".join(body_parts)
     # wire the signup form(s)
     form = project.get("form") or {}
-    action = _esc(form.get("action_url") or "")
-    success = _esc(form.get("success_url") or "")
+    action = _attr(_safe_url(form.get("action_url") or ""))
+    success = _attr(_safe_url(form.get("success_url") or ""))
     body_html = body_html.replace(
         "<form ", f'<form action="{action}" data-success-url="{success}" method="post" ')
 
@@ -472,7 +512,9 @@ def compose_page(project: dict, sections_map: Dict[str, dict], mode: str,
     # template CSS that names its own family (e.g. BrainTrade's Urbanist) —
     # that is the point of the page-level picker. Empty font_family keeps the
     # old behavior (fixed bundle when fonts == "google", else system stack).
-    family = (project.get("font_family") or "").strip()
+    # Family is interpolated into url('...') and '...' — restrict to the safe
+    # Google-family charset so a quote/paren can't break out of either.
+    family = re.sub(r"[^A-Za-z0-9 _-]", "", (project.get("font_family") or "").strip())
     if family:
         noto = {"th": "Noto Sans Thai", "ja": "Noto Sans JP", "zh": "Noto Sans SC",
                 "ar": "Noto Sans Arabic"}.get(project.get("language") or "")

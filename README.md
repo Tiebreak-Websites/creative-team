@@ -7,15 +7,13 @@ React (Vite) frontend.
 ## Tools
 
 - **Banner Builder** — generate on-brand ad banners with OpenAI `gpt-image-2`; multi-concept, multi-size, download as PNG.
-- **LP Builder** — landing-page generation (in progress).
+- **LP Builder** — section-based landing-page builder (templates, per-breakpoint editing, ZIP export) plus **LP Materials** (campaign asset generation).
 
 Admins also get a **Disk Manager** (opened from the header storage gauge) to browse, sort (by date / size / name, in gallery or list view), and delete generated banners — single, whole batches, or a multi-selected mix — straight off the persistent disk, freeing storage for everyone. Every batch is labelled with who generated it.
 
-The backend also bundles Figma helpers (QA, Creative Summary, Translate) used via the companion Figma plugin; they aren't surfaced in the current two-tool UI.
-
 ## Run it locally
 
-Prereqs: **Python 3**, **Node 18+**, and a `.env` (copy `.env.example`). `OPENAI_API_KEY` powers the Banner Builder; `FIGMA_API_KEY` + `ANTHROPIC_API_KEY` enable the Figma tools.
+Prereqs: **Python 3**, **Node 18+**, and a `.env` (copy `.env.example`). `OPENAI_API_KEY` powers the Banner Builder and LP Materials.
 
 **Backend** (terminal 1):
 ```bash
@@ -38,11 +36,10 @@ npm run dev        # http://localhost:5173
 
 | Path | What it is |
 | --- | --- |
-| [`platform/backend`](platform/backend) | FastAPI app + tool plugins; the bundled banner engine (`app/banner_engine/`) and Figma scripts (`figma_scripts/`) |
+| [`platform/backend`](platform/backend) | FastAPI app + tool plugins; the bundled banner engine (`app/banner_engine/`) and LP builder (`app/lp_builder/`) |
 | [`platform/frontend`](platform/frontend) | React app — top nav (Banner Builder + LP Builder), light/dark theme, PWA |
-| [`platform/figma-plugin`](platform/figma-plugin) | Companion Figma plugin that writes results (summaries, translated pages) onto the canvas |
 
-See [`platform/README.md`](platform/README.md) for the architecture + how to add a new tool, and [`platform/figma-plugin/README.md`](platform/figma-plugin/README.md) to install the plugin.
+See [`platform/README.md`](platform/README.md) for the architecture + how to add a new tool.
 
 ## Deploy
 
