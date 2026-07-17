@@ -33,11 +33,3 @@ export function loadBrand(): BrandDefaults {
     return EMPTY_BRAND
   }
 }
-
-export function saveBrand(b: BrandDefaults): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(b))
-  } catch {
-    /* best-effort (private mode / quota) */
-  }
-}

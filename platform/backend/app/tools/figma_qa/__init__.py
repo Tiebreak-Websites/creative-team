@@ -1,1 +1,0 @@
-"""Figma QA tool package."""

@@ -58,11 +58,21 @@
   * {
     @apply border-border;
   }
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
   html {
     background-color: hsl(var(--background));
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    /* 14px app base (the UI was built against this) — Tailwind's text-*
+       utilities set their own sizes; this only backs unclassed text. */
+    font-size: 14px;
+    line-height: 1.5;
     text-rendering: optimizeLegibility;
   }
   ::selection {

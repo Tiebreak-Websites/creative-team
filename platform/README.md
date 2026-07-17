@@ -14,7 +14,7 @@ See `docs/feature-product-split-banner-edit-lp-materials.md` for the full featur
 
 ## Run it locally
 
-You need **Python 3** and **Node 18+**, and an `OPENAI_API_KEY` in the repo-root `.env` (copy `.env.example`). `ANTHROPIC_API_KEY` is optional (only the Banner Builder's "Generate with AI" button uses it).
+You need **Python 3** and **Node 18+**, and an `OPENAI_API_KEY` in the repo-root `.env` (copy `.env.example`) for the Banner Builder and LP Materials image generation.
 
 **Backend** (terminal 1):
 ```bash
@@ -42,7 +42,7 @@ Open http://localhost:5173 and pick **Banner Builder**.
 | `PLATFORM_HOST` / `PLATFORM_PORT` | `127.0.0.1` / `8000` | Backend bind address |
 | `PLATFORM_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Allowed frontend origins (deploy: set your URL) |
 | `PLATFORM_OPENAI_CONCURRENCY` | `6` | Hard ceiling on concurrent OpenAI calls across all runs/users |
-| `PLATFORM_BRIEF_MODEL` | `claude-sonnet-4-6` | Model for the AI-assist brief |
+| `PLATFORM_ENV` | `dev` | Set to `production` on a deploy — refuses the weak dev admin default, fails closed without a real admin, and turns API docs off (independent of `PLATFORM_COOKIE_SECURE`) |
 | `PLATFORM_ENGINE_DIR` | `<repo>/.claude/scripts/banner-openai` | Where the banner engine lives |
 | `PLATFORM_ARTIFACT_DIR` | `platform/backend/.runs` | Per-run PNG workspace (gitignored) |
 | `VITE_API_BASE` (frontend) | `/api` | API base; set to a full URL for a deployed backend |
@@ -84,9 +84,8 @@ cd ../../../platform/frontend && npm run build
 ```
 React (Vite) dashboard          FastAPI backend                       Banner engine (reused in place)
 ────────────────────            ───────────────                       ───────────────────────────────
-Sidebar  ──GET /api/tools─────►  ToolRegistry (plugins self-register)
+Nav      ──GET /api/tools─────►  ToolRegistry (plugins self-register)
 Banner   ──POST .../run────────► banner_builder plugin ──► runner.py ──► engine_core.generate_png()
-  AI     ──POST .../suggest────► brief.py ──Claude API──► validate/repair via prompts.py
   poll   ──GET .../runs/{id}───► RunStore + ThreadPool + global OpenAI semaphore
   view   ──GET .../*.png,.zip──► .runs/{id}/*.png
 ```
@@ -99,8 +98,8 @@ Key files:
 | `app/registry.py` | `ToolRegistry`, `/api/tools` listing, dynamic router mounting |
 | `app/engine.py` | Adapter that imports the in-place banner engine (`prompts.py`, `engine_core.py`) |
 | `app/runner.py` | Banner job runner — RunStore, two-phase master→recompose, global semaphore |
-| `app/tools/banner_builder/` | The first plugin: `plugin.py` (registration) + `runs_router.py` (routes) + `brief.py` (AI-assist) |
-| `app/tools/teasers.py` | Registers coming-soon / desktop-only tools so the nav shows the full toolbelt |
+| `app/tools/banner_builder/` | The Banner Builder plugin: `plugin.py` (registration) + `runs_router.py` (routes) |
+| `app/lp_builder/`, `app/lp_materials.py`, `app/feedback.py` | LP Builder (sections/compose/export), LP Materials (campaign asset generation), and the suggestions widget store |
 
 The banner engine itself was lightly refactored to give the web layer a clean seam without breaking the `/banner-openai` slash command: the OpenAI gen/edit core was extracted into `engine_core.py` (imported by both `run.py` and this backend), and `prompts.validate_manifest` gained an optional `require_submit_url` kwarg (default preserves CLI behavior). See `test_engine_core.py` for the regression guard.
 
@@ -179,5 +178,3 @@ The Banner Builder ships a **custom UI** (`custom_ui=True`). Most future tools a
    ```
 4. **Custom UI (optional)** — set `custom_ui=True` and add a React component under `frontend/src/<yourTool>/`, branched in `frontend/src/App.tsx`. Skip this for generic-form tools.
 5. **Docs (required)** — per `CLAUDE.md`, update this file and the root `README.md` Platform section in the same PR.
-
-Tools that can't run headless (need Figma/Higgsfield MCP, or local Git) register as `status="desktop-only"`; planned-but-unbuilt ones use `status="coming-soon"`. Both appear in the nav as teasers with no run route — see `app/tools/teasers.py`.
