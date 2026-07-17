@@ -16,13 +16,13 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
+import { brandLogoSrc, brandLogoUri, useIsDark } from '@/lib/brandLogo'
 import { flagUrl } from '@/lib/flags'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, formatUserName } from '@/lib/utils'
 import { useAuth } from '../auth/AuthContext'
-import { listBrands, type Brand } from '../bannerBuilder/brandsApi'
+import { ENTITY_KINDS, KIND_LABEL, listBrands, type Brand, type EntityKind } from '../bannerBuilder/brandsApi'
 import { AdminTemplates } from './AdminTemplates'
 import { Builder } from './Builder'
 import {
@@ -444,7 +444,7 @@ function CardAction({
 // ---------------------------------------------------------------------------
 // Modals
 // ---------------------------------------------------------------------------
-function ModalShell({ label, children, onClose }: { label: string; children: React.ReactNode; onClose: () => void }) {
+function ModalShell({ label, children, onClose, maxWidth = 'max-w-xl' }: { label: string; children: React.ReactNode; onClose: () => void; maxWidth?: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     document.addEventListener('keydown', onKey)
@@ -459,7 +459,7 @@ function ModalShell({ label, children, onClose }: { label: string; children: Rea
       <button type="button" aria-hidden tabIndex={-1} onClick={onClose}
               className="absolute inset-0 cursor-default bg-blue-950/70 backdrop-blur-md animate-fade-in" />
       <div role="dialog" aria-modal="true" aria-label={label}
-           className="relative z-10 w-full max-w-xl animate-scale-in rounded-3xl border border-border bg-card p-7 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.9)]">
+           className={cn('relative z-10 max-h-[92vh] w-full animate-scale-in overflow-y-auto rounded-3xl border border-border bg-card p-7 shadow-[0_40px_120px_-20px_rgba(0,0,0,0.9)]', maxWidth)}>
         {children}
       </div>
     </div>,
@@ -490,10 +490,18 @@ function NewLpModal({
   const dark = useIsDark()
 
   useEffect(() => {
-    listBrands().then(setBrands).catch(() => {})
+    // Only active entities are offered — retired ones stay on old pages but
+    // can't back a new one.
+    listBrands().then((all) => setBrands(all.filter((b) => b.active !== false))).catch(() => {})
   }, [])
 
-  const canCreate = name.trim() && mondayId.trim() && !saving
+  // Monday ID must be EXACTLY the placeholder's length — not fewer, not more.
+  const mondayValid = mondayId.length === MONDAY_LEN
+  const canCreate = name.trim() && mondayValid && !saving
+  // Active brands grouped by registry kind (broker / white label / academy),
+  // all visible. Records without a kind default to broker.
+  const kindOf = (b: Brand): EntityKind =>
+    b.kind && (ENTITY_KINDS as string[]).includes(b.kind) ? b.kind : 'broker'
 
   async function create() {
     if (!canCreate) return
@@ -516,7 +524,7 @@ function NewLpModal({
   }
 
   return (
-    <ModalShell label="New landing page" onClose={onClose}>
+    <ModalShell label="New landing page" onClose={onClose} maxWidth="max-w-3xl">
       <div className="mb-5 flex items-center justify-between">
         <div>
           <h3 className="font-display text-xl font-bold tracking-tight">New landing page</h3>
@@ -535,39 +543,65 @@ function NewLpModal({
                    placeholder="e.g. BrainTrade MY · July" aria-label="Landing page name" className="h-11 text-base" />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-muted-foreground">Monday ID</span>
+            <span className="mb-1 flex items-center justify-between text-xs font-medium text-muted-foreground">
+              <span>Monday ID <span className="text-destructive">*</span></span>
+              <span className={cn('tabular-nums', mondayId.length > 0 && !mondayValid && 'font-semibold text-destructive')}>
+                {mondayId.length}/{MONDAY_LEN}
+              </span>
+            </span>
             <Input
               value={mondayId}
-              onChange={(e) => setMondayId(e.target.value.replace(/\D/g, '').slice(0, 20))}
+              onChange={(e) => setMondayId(e.target.value.replace(/\D/g, '').slice(0, MONDAY_LEN))}
               inputMode="numeric"
-              placeholder="3079506872"
+              placeholder={MONDAY_PLACEHOLDER}
               aria-label="Monday ID"
-              className="h-11 w-full text-base tabular-nums sm:w-44"
+              aria-invalid={mondayId.length > 0 && !mondayValid}
+              className={cn('h-11 w-full text-base tabular-nums sm:w-44',
+                            mondayId.length > 0 && !mondayValid && 'border-destructive focus-visible:border-destructive')}
             />
+            {mondayId.length > 0 && !mondayValid && (
+              <span className="mt-1 block text-[11px] text-destructive">Must be exactly {MONDAY_LEN} digits.</span>
+            )}
           </label>
         </div>
 
-        {/* Brand — pick by logo (theme-aware: white lettering on dark, dark on light) */}
+        {/* Brand — thumbnails grouped by registry kind (broker / white label /
+            academy); every active entity is visible. */}
         <div>
           <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Brand</span>
-          <div className="grid max-h-40 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
-            <BrandChoice active={brandId === ''} onClick={() => setBrandId('')} label="No brand" />
-            {brands.map((b) => (
-              <BrandChoice
-                key={b.id}
-                active={brandId === b.id}
-                onClick={() => setBrandId(b.id)}
-                label={b.name}
-                logo={brandLogoSrc(b, dark) || undefined}
-              />
-            ))}
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              <BrandChoice active={brandId === ''} onClick={() => setBrandId('')} label="No brand" />
+            </div>
+            {ENTITY_KINDS.map((kind) => {
+              const items = brands.filter((b) => kindOf(b) === kind)
+              if (!items.length) return null
+              return (
+                <div key={kind}>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {kind === 'academy' ? 'Academies' : `${KIND_LABEL[kind]}s`}
+                  </p>
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                    {items.map((b) => (
+                      <BrandChoice
+                        key={b.id}
+                        active={brandId === b.id}
+                        onClick={() => setBrandId(b.id)}
+                        label={b.name}
+                        thumb={brandLogoUri(b.icon_svg, false) || brandLogoSrc(b, dark) || undefined}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
 
-        {/* Language — pick by country flag + name */}
+        {/* Language — every language visible, pick by country flag + name */}
         <div>
           <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Language</span>
-          <div className="grid max-h-44 grid-cols-2 gap-1.5 overflow-y-auto sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
             {languages.map((l) => {
               const active = language === l.code
               const flag = flagUrl(l.code)
@@ -606,17 +640,23 @@ function NewLpModal({
   )
 }
 
-/** A brand choice tile in the New-LP modal — its logo (theme-aware) or name. */
+/** Monday ID is a fixed-length numeric id (the placeholder is the source of
+ * truth for how many digits are required). */
+const MONDAY_PLACEHOLDER = '3079506872'
+const MONDAY_LEN = MONDAY_PLACEHOLDER.length
+
+/** A brand choice tile in the New-LP modal — its square thumbnail (icon) with a
+ * small name caption, or just the name when there's no thumbnail. */
 function BrandChoice({
   active,
   onClick,
   label,
-  logo,
+  thumb,
 }: {
   active: boolean
   onClick: () => void
   label: string
-  logo?: string
+  thumb?: string
 }) {
   return (
     <button
@@ -625,15 +665,20 @@ function BrandChoice({
       aria-pressed={active}
       title={label}
       className={cn(
-        'flex h-16 flex-col items-center justify-center gap-1 rounded-xl border px-2 transition-all',
+        'flex flex-col items-center justify-center gap-1 rounded-xl border p-2 transition-all',
         active ? 'border-primary bg-primary/10 ring-1 ring-primary/40'
                : 'border-border hover:border-foreground/30 hover:bg-accent',
       )}
     >
-      {logo ? (
-        <img src={logo} alt={label} className="max-h-8 max-w-full object-contain" />
+      {thumb ? (
+        <>
+          <span className="grid h-11 w-full place-items-center">
+            <img src={thumb} alt={label} className="max-h-11 max-w-full object-contain" />
+          </span>
+          <span className="w-full truncate text-center text-[10px] leading-tight text-muted-foreground">{label}</span>
+        </>
       ) : (
-        <span className="truncate text-xs font-medium">{label}</span>
+        <span className="grid h-11 place-items-center truncate text-xs font-medium">{label}</span>
       )}
     </button>
   )
