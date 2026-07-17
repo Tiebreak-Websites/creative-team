@@ -5,6 +5,7 @@ import {
   Image as ImageIcon,
   Images,
   LayoutTemplate,
+  Mail,
   PanelsTopLeft,
   PenLine,
   RefreshCw,
@@ -20,6 +21,7 @@ import { BannerEdit } from './bannerBuilder/BannerEdit'
 import { HelpModal, type HelpTool } from './bannerBuilder/HelpModal'
 import { LPBuilder } from './lpBuilder/LPBuilder'
 import { LPMaterials } from './lpMaterials/LPMaterials'
+import { EmailBuilder } from './emailBuilder/EmailBuilder'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { Login } from './auth/Login'
 import { UserMenu } from './auth/UserMenu'
@@ -186,7 +188,7 @@ function Tab({
 // The two PRODUCTS in the header switcher, each with its own sub-tools shown
 // in the header nav. The last product+tool persists and lives in the URL
 // (?app=&tool=) so a refresh or deep-link restores the exact workspace.
-type ProductId = 'banner' | 'lp'
+type ProductId = 'banner' | 'lp' | 'email'
 type ToolIcon = ComponentType<{ className?: string }>
 const PRODUCTS: {
   id: ProductId
@@ -195,6 +197,8 @@ const PRODUCTS: {
   nav: string
   navShort: string
   icon: ToolIcon
+  /** No working tools yet — the product renders a placeholder and has no help entry. */
+  soon?: boolean
   tools: { id: string; label: string; icon: ToolIcon }[]
 }[] = [
   {
@@ -218,6 +222,15 @@ const PRODUCTS: {
       { id: 'builder', label: 'Builder', icon: LayoutTemplate },
       { id: 'materials', label: 'Materials', icon: Images },
     ],
+  },
+  {
+    id: 'email',
+    label: 'Email Builder',
+    nav: 'Emails',
+    navShort: 'Emails',
+    icon: Mail,
+    soon: true,
+    tools: [{ id: 'builder', label: 'Builder', icon: LayoutTemplate }],
   },
 ]
 
@@ -320,54 +333,10 @@ function Workspace() {
           panes, so header dropdowns (e.g. the user menu, which hangs below the
           64px header into <main>'s territory) paint on top of everything. */}
       <header className="relative z-50 flex h-16 shrink-0 items-center gap-2 bg-card/70 px-3 backdrop-blur-md sm:gap-3 sm:px-5">
-        {/* Brand mark only — switching tools happens in the segmented control next to it. */}
+        {/* Brand mark only — categories live in their own bar below the header. */}
         <div className="flex shrink-0 items-center" title="Internovus — Creative Builder">
           <Logo className="h-7 w-auto sm:h-8" />
         </div>
-        <div className="h-6 w-px shrink-0 bg-border" aria-hidden />
-
-        {/* Product switcher: both tools always visible, one click to swap. */}
-        <div
-          role="group"
-          aria-label="Switch tool"
-          className="flex shrink-0 items-center gap-0.5 rounded-lg border border-border bg-secondary/60 p-0.5"
-        >
-          {PRODUCTS.map((p) => {
-            const active = p.id === product.id
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => goProduct(p)}
-                title={p.label}
-                aria-pressed={active}
-                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 font-display text-sm transition-[background-color,color,box-shadow] active:scale-95 ${
-                  active
-                    ? 'bg-card font-semibold text-foreground shadow-sm ring-1 ring-border'
-                    : 'font-medium text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <p.icon className={`h-4 w-4 shrink-0 ${active ? 'text-primary' : ''}`} />
-                <span className="hidden md:inline 2xl:hidden">{p.navShort}</span>
-                <span className="hidden 2xl:inline">{p.nav}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Sub-tools of the active product */}
-        <nav className="flex items-center gap-1" aria-label={`${product.label} tools`}>
-          {product.tools.map((t) => (
-            <Tab
-              key={t.id}
-              active={inTool && ws.tool === t.id}
-              onClick={() => goTool(product.id, t.id)}
-            >
-              <t.icon className="h-4 w-4" />
-              <span className="hidden sm:inline">{t.label}</span>
-            </Tab>
-          ))}
-        </nav>
 
         <div className="ml-auto flex items-center gap-2">
           <StorageBadge
@@ -392,7 +361,7 @@ function Workspace() {
           <span className="hidden sm:inline-flex">
             <InstallButton />
           </span>
-          {inTool && (
+          {inTool && !product.soon && (
             <Button
               variant="ghost"
               size="icon"
@@ -407,6 +376,67 @@ function Workspace() {
           <UserMenu />
         </div>
       </header>
+
+      {/* Category bar — the primary nav. Out of the header so the labels can be
+          full-size and always visible; z-40 keeps it under the header's menus.
+          Scrolls horizontally rather than collapsing to icons on narrow screens. */}
+      <div className="relative z-40 flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/40 px-3 backdrop-blur-md sm:px-5">
+        <nav
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+          aria-label="Categories"
+        >
+          {PRODUCTS.map((p) => {
+            const active = p.id === product.id
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => goProduct(p)}
+                aria-current={active ? 'page' : undefined}
+                className={`relative inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 font-display text-[15px] transition-colors active:scale-95 sm:px-4 ${
+                  active
+                    ? 'font-semibold text-foreground'
+                    : 'font-medium text-muted-foreground hover:bg-secondary/60 hover:text-foreground'
+                }`}
+              >
+                <p.icon className={`h-[18px] w-[18px] shrink-0 ${active ? 'text-primary' : ''}`} />
+                <span>{p.nav}</span>
+                {p.soon && (
+                  <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Soon
+                  </span>
+                )}
+                {active && (
+                  <span
+                    className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary"
+                    aria-hidden
+                  />
+                )}
+              </button>
+            )
+          })}
+        </nav>
+
+        {/* Sub-tools of the active category. A category with a single tool has
+            nothing to switch between, so the row is omitted entirely. */}
+        {product.tools.length > 1 && (
+          <nav
+            className="flex shrink-0 items-center gap-1"
+            aria-label={`${product.label} tools`}
+          >
+            {product.tools.map((t) => (
+              <Tab
+                key={t.id}
+                active={inTool && ws.tool === t.id}
+                onClick={() => goTool(product.id, t.id)}
+              >
+                <t.icon className="h-4 w-4" />
+                <span className="hidden sm:inline">{t.label}</span>
+              </Tab>
+            ))}
+          </nav>
+        )}
+      </div>
 
       <main className="min-h-0 flex-1 overflow-hidden">
         {view === 'settings' ? (
@@ -427,6 +457,8 @@ function Workspace() {
           <div className="h-full overflow-y-auto">
             <DiskManager />
           </div>
+        ) : ws.app === 'email' ? (
+          <EmailBuilder />
         ) : ws.app === 'lp' ? (
           ws.tool === 'materials' ? <LPMaterials /> : <LPBuilder />
         ) : ws.tool === 'edit' ? (
@@ -446,6 +478,9 @@ function Workspace() {
         )}
       </main>
       <FeedbackWidget />
+      {/* Products with no tools yet have no HelpModal entry — keep it unmounted
+          so switching to one while help is open can't index TITLES by their id. */}
+      {!product.soon && (
       <HelpModal
         open={helpOpen}
         onClose={() => setHelpOpen(false)}
@@ -459,6 +494,7 @@ function Workspace() {
               : 'lp-builder') as HelpTool
         }
       />
+      )}
     </div>
   )
 }

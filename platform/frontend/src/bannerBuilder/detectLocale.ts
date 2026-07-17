@@ -13,6 +13,11 @@ const STOP: Record<string, string[]> = {
   pl: ['i', 'w', 'na', 'nie', 'to', 'jest', 'się', 'że', 'do', 'z', 'dla', 'przez', 'oraz'],
   sv: ['och', 'att', 'det', 'är', 'en', 'ett', 'som', 'på', 'för', 'med', 'inte', 'har', 'till'],
   en: ['the', 'and', 'of', 'to', 'in', 'is', 'for', 'with', 'you', 'your', 'a', 'on', 'we'],
+  fr: ['le', 'les', 'des', 'du', 'et', 'une', 'pour', 'vous', 'avec', 'sur', 'dans', 'est', 'que', 'plus', 'votre', 'nos', 'aux', 'ce', 'cette'],
+  // 'i' is omitted — it collides with Polish, which uses it as "and".
+  no: ['og', 'på', 'for', 'med', 'til', 'er', 'som', 'av', 'den', 'det', 'ikke', 'du', 'din', 'har', 'kan', 'vi', 'dag'],
+  ms: ['dan', 'yang', 'untuk', 'dengan', 'ini', 'anda', 'di', 'ke', 'dari', 'adalah', 'pada', 'akan', 'tidak', 'boleh', 'kami'],
+  vi: ['và', 'của', 'cho', 'với', 'là', 'các', 'được', 'bạn', 'này', 'trong', 'có', 'không', 'để', 'ngay'],
 }
 
 // Ordered: check kana before generic CJK so Japanese isn't mistaken for Chinese.
@@ -39,12 +44,16 @@ export function detectLocale(text: string): string | null {
   for (const [loc, list] of Object.entries(STOP)) {
     scores[loc] = list.reduce((n, w) => n + (set.has(w) ? 1 : 0), 0)
   }
-  // Diacritic / punctuation nudges.
+  // Diacritic / punctuation nudges. Each one must be near-exclusive to its
+  // language: 'ç' is shared with French, so only ã/õ nudge Portuguese, and
+  // Norwegian rides on æ/ø since it shares å with Swedish.
   if (/[ñ¿¡]/i.test(t)) scores['es-419'] += 2
-  if (/[ãõ]/i.test(t) || /ç/i.test(t)) scores['pt'] += 2
+  if (/[ãõ]/i.test(t)) scores['pt'] += 2
   if (/[äöüß]/i.test(t)) scores['de'] += 1.5
   if (/[łąężźśćń]/i.test(t)) scores['pl'] += 2
   if (/[åä]/i.test(t)) scores['sv'] += 1
+  if (/[æø]/i.test(t)) scores['no'] += 2
+  if (/[ơưđ]/i.test(t)) scores['vi'] += 2
 
   let best = 'en'
   let bestScore = 0
