@@ -274,6 +274,23 @@ def build_lp_builder_router() -> APIRouter:
                              | {"sections": len(p.get("sections") or []),
                                 "cover_url": _cover_url(p)} for p in ps]}
 
+    def _seed_sections(brand_id: str) -> list:
+        """A new project starts with the brand's full template laid out in Figma
+        order (its sections are the ones whose category matches the brand), so
+        the page opens ready-to-edit instead of blank. Texts render in the
+        project's language via the compositor's per-language fallback."""
+        if not brand_id:
+            return []
+        with core.lock():
+            smap = dict(core.sections())
+        picked = [s for s in smap.values()
+                  if s.get("enabled", True) and (s.get("category") or "").lower() == brand_id.lower()]
+        picked.sort(key=lambda s: s.get("position", 999))
+        return [{"iid": core.new_asset_id()[:8], "template_key": s["key"],
+                 "texts": {}, "images": {}, "images_mobile": {},
+                 "links": {}, "repeats": {}, "props": {}}
+                for s in picked]
+
     @router.post("/projects", status_code=201)
     def create_project(payload: dict = Body(default={}), user: dict = Depends(require_user)):
         name = _clean_str(payload.get("name"), 120)
@@ -282,13 +299,14 @@ def build_lp_builder_router() -> APIRouter:
         lang = _clean_str(payload.get("language"), 8) or "en"
         if lang not in {l["code"] for l in core.languages()}:
             raise HTTPException(status_code=422, detail=f"unknown language '{lang}'")
+        brand_id = _clean_str(payload.get("brand_id"), 64)
         p = {
             "id": core.new_project_id(), "name": name,
-            "brand_id": _clean_str(payload.get("brand_id"), 64),
+            "brand_id": brand_id,
             "language": lang,
             "monday_id": re.sub(r"\D", "", str(payload.get("monday_id") or ""))[:20],
             "campaign_id": _clean_str(payload.get("campaign_id"), 64),
-            "sections": [], "tokens": dict(payload.get("tokens") or {}),
+            "sections": _seed_sections(brand_id), "tokens": dict(payload.get("tokens") or {}),
             "form": {"action_url": "", "success_url": ""}, "fonts": "system",
             "font_family": "",
             "meta_title": "", "meta_description": "",
