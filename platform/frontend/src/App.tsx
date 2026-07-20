@@ -237,9 +237,8 @@ const PRODUCTS: {
     nav: 'CRM',
     navShort: 'CRM',
     icon: Mail,
-    blurb: 'Campaign emails for the CRM team. In the works — take a peek.',
+    blurb: 'Build campaign emails that render everywhere, from your brand templates.',
     accent: '#0D9488',
-    soon: true,
     tools: [{ id: 'builder', label: 'Builder', icon: LayoutTemplate }],
   },
 ]
