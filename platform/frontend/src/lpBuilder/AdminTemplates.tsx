@@ -65,35 +65,57 @@ function FlagPills({ items, empty }: { items: PillItem[]; empty: string }) {
   )
 }
 
-/** A category heading: the brand, how many blocks it owns, and the reach it was
- * given in Settings > Brands. Read-only here on purpose — one place to edit. */
-function GroupHeading({
-  cat,
-  count,
-  reach,
-}: {
-  cat: string
-  count: number
-  reach: { langs: PillItem[]; markets: PillItem[] } | null
-}) {
+/** A category heading: the brand and how many blocks it owns. The brand's
+ * languages/markets live in the side panel — inline they wrapped over three
+ * rows and pushed the blocks themselves below the fold. */
+function GroupHeading({ cat, count }: { cat: string; count: number }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+    <div className="flex items-baseline gap-2 border-b border-border pb-1.5">
       <h2 className="font-display text-sm font-semibold text-foreground">{CATEGORY_LABEL[cat] ?? cat}</h2>
       <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
         {count}
       </span>
-      {reach && (
-        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="flex items-center gap-1">
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">Languages</span>
-            <FlagPills items={reach.langs} empty="none set" />
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">Markets</span>
-            <FlagPills items={reach.markets} empty="none set" />
-          </span>
-        </span>
-      )}
+    </div>
+  )
+}
+
+/** Where a brand's blocks are allowed to go. Read-only: the single place these
+ * are edited is Settings > Brands, and duplicating that control here would just
+ * create two answers to the same question. */
+function BrandReachPanel({ brands }: { brands: { cat: string; langs: PillItem[]; markets: PillItem[] }[] }) {
+  if (!brands.length) return null
+  return (
+    <div className="rounded-xl border border-border bg-card p-3">
+      <h3 className="font-display text-xs font-bold uppercase tracking-wide text-muted-foreground">Brand reach</h3>
+      <div className="mt-3 space-y-4">
+        {brands.map((b) => (
+          <div key={b.cat}>
+            <p className="mb-2 font-display text-sm font-semibold text-foreground">
+              {CATEGORY_LABEL[b.cat] ?? b.cat}
+            </p>
+            <Reach label="Languages" items={b.langs} />
+            {/* A rule, not just spacing: languages and markets are different
+                lists that often overlap (Italian / Italy), and a gap alone let
+                them read as one run of flags. */}
+            <div className="my-2.5 border-t border-border" />
+            <Reach label="Target markets" items={b.markets} />
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 border-t border-border pt-2 text-[10px] leading-snug text-muted-foreground">
+        Set in Settings › Brands.
+      </p>
+    </div>
+  )
+}
+
+function Reach({ label, items }: { label: string; items: PillItem[] }) {
+  return (
+    <div>
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+        {label} <span className="tabular-nums">{items.length}</span>
+      </p>
+      <FlagPills items={items} empty="none set" />
     </div>
   )
 }
@@ -296,6 +318,18 @@ export function AdminTemplates({
     }
   }
 
+  // One entry per brand group on screen; 'Elements' and friends have no brand
+  // in the registry and simply don't appear.
+  const panelBrands = useMemo(() => {
+    const cats = [...new Set(grouped.filter((g) => g.heading !== undefined).map((g) => g.heading!))]
+    const out: { cat: string; langs: PillItem[]; markets: PillItem[] }[] = []
+    for (const cat of cats) {
+      const r = reachOf(cat)
+      if (r) out.push({ cat, langs: r.langs, markets: r.markets })
+    }
+    return out
+  }, [grouped, brands, languages])
+
   const setActive = (s: SectionDef, on: boolean) =>
     updateSection(s.key, { enabled: on }).then(onChanged).catch((err) => onError(err.message))
 
@@ -363,6 +397,11 @@ export function AdminTemplates({
         </div>
       </div>
 
+      {/* Blocks left, brand context right. The reach lists are reference data
+          you glance at, not something you read top-to-bottom, so they sit
+          beside the library instead of pushing it below the fold. */}
+      <div className="items-start gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_236px]">
+        <div className="min-w-0">
       {view === 'grid' ? (
         <div
           ref={gridRef}
@@ -376,7 +415,7 @@ export function AdminTemplates({
             const s = g.s!
             return g.heading !== undefined ? (
               <div key={`h-${g.heading}`} className="col-span-full mb-1 mt-4 first:mt-0">
-                <GroupHeading cat={g.heading} count={g.count!} reach={reachOf(g.heading)} />
+                <GroupHeading cat={g.heading} count={g.count!} />
               </div>
             ) : (
             <div
@@ -430,7 +469,7 @@ export function AdminTemplates({
           const s = g.s!
           return g.heading !== undefined ? (
               <div key={`h-${g.heading}`} className="mb-1 mt-4 first:mt-0">
-                <GroupHeading cat={g.heading} count={g.count!} reach={reachOf(g.heading)} />
+                <GroupHeading cat={g.heading} count={g.count!} />
               </div>
             ) : (
           <div key={s.key} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2 shadow-sm">
@@ -529,7 +568,12 @@ export function AdminTemplates({
           </div>
         </section>
       )}
+        </div>
 
+        <aside className="mt-6 animate-fade-up lg:sticky lg:top-8 lg:mt-0" style={{ animationDelay: '120ms' }}>
+          <BrandReachPanel brands={panelBrands} />
+        </aside>
+      </div>
     </div>
   )
 }
