@@ -192,6 +192,24 @@ def build_email_builder_router() -> APIRouter:
         project = _with_brand_logo(project, entity)
         return export.compose_email(project, blocks_map, _asset_url, entity)
 
+    @router.get("/campaigns/{cid}/thumb")
+    def campaign_thumb(cid: str, _user: dict = Depends(require_user)):
+        """Composed HTML for a dashboard card thumbnail.
+
+        A separate route rather than folding HTML into the list response: a
+        dashboard of 40 campaigns would carry 40 composed emails in one payload
+        whether or not the cards are on screen. One call per card, and the
+        client caches on updated_at.
+        """
+        with core.lock():
+            c = core.campaigns().get(cid)
+            blocks_map = dict(core.blocks())
+        if not c:
+            raise HTTPException(404, "Campaign not found.")
+        entity = _entity_for(c)
+        out = export.compose_email(_with_brand_logo(c, entity), blocks_map, _asset_url, entity)
+        return {"html": out["html"]}
+
     # ------------------------------------------------------------ assets
     @router.post("/assets")
     async def upload_asset(file: UploadFile = File(...), _user: dict = Depends(require_user)):

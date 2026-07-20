@@ -33,10 +33,18 @@ export function brandLogoUri(svg?: string | null, dark?: boolean): string {
 /** The right logo for the current theme: an explicit dark-theme logo wins;
  * otherwise the light logo gets its letters recolored as a fallback. */
 export function brandLogoSrc(
-  brand: { logo_svg?: string | null; logo_svg_dark?: string | null } | null | undefined,
+  brand:
+    | { logo_svg?: string | null; logo_svg_dark?: string | null; icon_svg?: string | null }
+    | null
+    | undefined,
   dark: boolean,
 ): string {
   if (!brand) return ''
   if (dark && brand.logo_svg_dark) return brandLogoUri(brand.logo_svg_dark, false)
-  return brandLogoUri(brand.logo_svg, dark)
+  // Fall back to the square mark. Only a handful of entities actually have a
+  // wordmark — most carry only icon_svg — and returning '' here put an <img
+  // src=""> on screen, which renders as a broken-image icon next to the brand
+  // name. A square mark is a worse lockup than a wordmark and a much better
+  // one than a broken image.
+  return brandLogoUri(brand.logo_svg, dark) || brandLogoUri(brand.icon_svg, dark)
 }

@@ -5,13 +5,13 @@
 // are different products carrying different compliance footers.
 
 import { useEffect, useMemo, useState } from 'react'
-import { FilePlus2, Loader2, Mail, Trash2, X } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { flagUrl } from '@/lib/flags'
 import { listSections, type Language } from '@/lpBuilder/api'
 import { ENTITY_KINDS, KIND_LABEL, kindOf, listBrands, type Brand } from '@/bannerBuilder/brandsApi'
+import { Dashboard } from './Dashboard'
 import { Editor } from './Editor'
 import {
   createCampaign, deleteCampaign, getCampaign, listBlocks, listCampaigns,
@@ -27,7 +27,9 @@ export function EmailBuilder() {
   const [brands, setBrands] = useState<Brand[]>([])
   const [languages, setLanguages] = useState<Language[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [creating, setCreating] = useState(false)
+  // null = closed; otherwise the brand id the folder was opened from, so a
+  // campaign created inside a folder lands in that folder.
+  const [creating, setCreating] = useState<string | null>(null)
 
   const refresh = () => listCampaigns().then(setCampaigns).catch((e) => setError(e.message))
 
@@ -64,51 +66,23 @@ export function EmailBuilder() {
   return (
     <div className="h-full overflow-y-auto">
       <ErrorBar message={error} onClose={() => setError(null)} />
-      <div className="mx-auto max-w-6xl px-6 py-8">
-        <div className="mb-6 flex items-start gap-3 animate-fade-up">
-          <div>
-            <h1 className="font-display text-2xl font-bold tracking-tight">CRM Emails</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Campaign emails built to render in Outlook and Gmail, with the risk warning
-              set from each brand's regulation.
-            </p>
-          </div>
-          <Button className="ml-auto shrink-0" onClick={() => setCreating(true)}>
-            <FilePlus2 className="h-4 w-4" /> New campaign
-          </Button>
-        </div>
+      <Dashboard
+        campaigns={campaigns}
+        brands={brands}
+        languages={languages}
+        onOpen={open}
+        onCreate={(brandId) => setCreating(brandId)}
+        onChanged={refresh}
+        onError={setError}
+      />
 
-        {campaigns === null ? (
-          <div className="flex items-center gap-2 p-8 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-          </div>
-        ) : campaigns.length === 0 ? (
-          <div className="animate-fade-up rounded-2xl border border-dashed border-border p-12 text-center">
-            <Mail className="mx-auto h-7 w-7 text-muted-foreground" />
-            <p className="mt-3 text-sm font-medium">No campaigns yet</p>
-            <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
-              A new campaign starts with the standard layout — logo, hero, headline, body,
-              CTA and a compliance footer — ready to fill in.
-            </p>
-          </div>
-        ) : (
-          <CampaignGroups
-            campaigns={campaigns}
-            brands={brands}
-            languages={languages}
-            onOpen={open}
-            onDeleted={refresh}
-            onError={setError}
-          />
-        )}
-      </div>
-
-      {creating && (
+      {creating !== null && (
         <CreateModal
           brands={brands}
           languages={languages}
-          onClose={() => setCreating(false)}
-          onCreated={(c) => { setCreating(false); setView({ kind: 'editor', campaign: c }) }}
+          initialBrandId={creating}
+          onClose={() => setCreating(null)}
+          onCreated={(c) => { setCreating(null); setView({ kind: 'editor', campaign: c }) }}
           onError={setError}
         />
       )}
@@ -128,127 +102,20 @@ function ErrorBar({ message, onClose }: { message: string | null; onClose: () =>
   )
 }
 
-/** Grouped by entity kind, mirroring the LP folder view. */
-function CampaignGroups({
-  campaigns, brands, languages, onOpen, onDeleted, onError,
-}: {
-  campaigns: CampaignSummary[]
-  brands: Brand[]
-  languages: Language[]
-  onOpen: (id: string) => void
-  onDeleted: () => void
-  onError: (m: string) => void
-}) {
-  const brandById = useMemo(
-    () => Object.fromEntries(brands.map((b) => [b.id, b])) as Record<string, Brand>,
-    [brands],
-  )
-
-  const groups = useMemo(() => {
-    const out: { label: string; items: CampaignSummary[] }[] = []
-    for (const kind of ENTITY_KINDS) {
-      const items = campaigns.filter((c) => {
-        const b = brandById[c.brand_id]
-        return b && kindOf(b) === kind
-      })
-      if (items.length) out.push({ label: KIND_LABEL[kind], items })
-    }
-    const orphans = campaigns.filter((c) => !brandById[c.brand_id])
-    if (orphans.length) out.push({ label: 'No brand', items: orphans })
-    return out
-  }, [campaigns, brandById])
-
-  return (
-    <div className="space-y-6">
-      {groups.map((g) => (
-        <section key={g.label}>
-          <div className="mb-2 flex items-baseline gap-2 border-b border-border pb-1.5">
-            <h2 className="font-display text-sm font-semibold">{g.label}</h2>
-            <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
-              {g.items.length}
-            </span>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {g.items.map((c) => (
-              <CampaignCard
-                key={c.id}
-                c={c}
-                brand={brandById[c.brand_id]}
-                languages={languages}
-                onOpen={() => onOpen(c.id)}
-                onDeleted={onDeleted}
-                onError={onError}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  )
-}
-
-function CampaignCard({
-  c, brand, languages, onOpen, onDeleted, onError,
-}: {
-  c: CampaignSummary
-  brand?: Brand
-  languages: Language[]
-  onOpen: () => void
-  onDeleted: () => void
-  onError: (m: string) => void
-}) {
-  const [busy, setBusy] = useState(false)
-  const lang = languages.find((l) => l.code === c.language)
-  const url = flagUrl(c.language)
-
-  return (
-    <div className="group overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
-      <button type="button" onClick={onOpen} className="block w-full p-3 text-left">
-        <p className="truncate font-display text-sm font-semibold" title={c.name}>{c.name}</p>
-        <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={c.subject}>
-          {c.subject || <span className="italic">No subject line yet</span>}
-        </p>
-        <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-          {url && <img src={url} alt="" className="h-3 w-[18px] rounded-[2px] object-cover ring-1 ring-inset ring-black/10" />}
-          <span>{lang?.label ?? c.language.toUpperCase()}</span>
-          <span>·</span>
-          <span>{c.blocks} blocks</span>
-          {brand && <><span>·</span><span className="truncate">{brand.name}</span></>}
-        </p>
-      </button>
-      <div className="flex items-center gap-1 border-t border-border px-2 py-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-        <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
-          by {c.created_by || 'unknown'}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={busy}
-          title={`Delete ${c.name}`}
-          onClick={() => {
-            if (!window.confirm(`Delete "${c.name}"? This cannot be undone.`)) return
-            setBusy(true)
-            deleteCampaign(c.id).then(onDeleted).catch((e) => onError(e.message)).finally(() => setBusy(false))
-          }}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </div>
-  )
-}
-
 function CreateModal({
-  brands, languages, onClose, onCreated, onError,
+  brands, languages, initialBrandId, onClose, onCreated, onError,
 }: {
   brands: Brand[]
   languages: Language[]
+  /** Preselected when the modal was opened from inside a brand's folder — a
+   *  campaign started in a folder should land in that folder. */
+  initialBrandId: string
   onClose: () => void
   onCreated: (c: Campaign) => void
   onError: (m: string) => void
 }) {
   const [name, setName] = useState('')
-  const [brandId, setBrandId] = useState('')
+  const [brandId, setBrandId] = useState(initialBrandId)
   const [language, setLanguage] = useState('en')
   const [subject, setSubject] = useState('')
   const [busy, setBusy] = useState(false)

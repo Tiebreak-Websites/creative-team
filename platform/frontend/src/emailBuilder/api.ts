@@ -140,6 +140,14 @@ export async function composeEmail(campaign: Campaign): Promise<Composed> {
   return r.json()
 }
 
+/** Composed HTML for a dashboard card thumbnail. Its own route so the list
+ *  response doesn't carry a composed email per campaign. */
+export async function campaignThumb(id: string): Promise<string> {
+  const r = await fetch(`${EB}/campaigns/${id}/thumb`, { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Could not render the thumbnail')
+  return (await r.json()).html ?? ''
+}
+
 export async function uploadEmailAsset(file: File): Promise<{ id: string; url: string }> {
   const fd = new FormData()
   fd.append('file', file)

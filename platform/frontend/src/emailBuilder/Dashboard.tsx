@@ -1,0 +1,364 @@
+// CRM Emails dashboard — the same shelf the LP Builder opens onto.
+//
+// Folders per brand first, then the campaigns inside one. Deliberately the
+// SAME components (FolderGrid, the card shape, CopyId, LangChip) rather than
+// lookalikes: someone who has used Landing Pages should not have to relearn
+// this screen, and two copies of a folder drift apart.
+
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowLeft, Check, Copy, FilePlus2, Loader2, Mail, Search, Trash2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { cn, formatUserName } from '@/lib/utils'
+import { flagUrl } from '@/lib/flags'
+import { brandLogoSrc, brandLogoUri, useIsDark } from '@/lib/brandLogo'
+import { FolderGrid, type FolderItem } from '@/components/FolderGrid'
+import type { Language } from '@/lpBuilder/api'
+import {
+  ENTITY_KINDS, KIND_HINT, KIND_LABEL, kindOf, type Brand,
+} from '@/bannerBuilder/brandsApi'
+import { campaignThumb, deleteCampaign, type CampaignSummary } from './api'
+
+/** Composed-HTML cache keyed by campaign + last edit, so returning to the
+ *  dashboard doesn't recompose every card. */
+const thumbCache = new Map<string, string>()
+
+/** Most recent updated_at, or ''. Written out rather than using .at(-1):
+ *  the project's TS target predates it. */
+function latestOf(items: { updated_at: string }[]): string {
+  const sorted = items.map((i) => i.updated_at).sort()
+  return sorted.length ? sorted[sorted.length - 1] : ''
+}
+
+export function Dashboard({
+  campaigns,
+  brands,
+  languages,
+  onOpen,
+  onCreate,
+  onChanged,
+  onError,
+}: {
+  campaigns: CampaignSummary[] | null
+  brands: Brand[]
+  languages: Language[]
+  onOpen: (id: string) => void
+  onCreate: (brandId: string) => void
+  onChanged: () => void
+  onError: (m: string) => void
+}) {
+  const dark = useIsDark()
+  /** null = the folder shelf; a brand id = inside that folder; '' = "Other". */
+  const [folder, setFolder] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+
+  const brandById = useMemo(
+    () => Object.fromEntries(brands.map((b) => [b.id, b])) as Record<string, Brand>,
+    [brands],
+  )
+
+  // Every kind gets folders, white labels included — a white label sends its
+  // own mail, so it owns its own shelf space.
+  const buckets = useMemo(() => {
+    const list = campaigns ?? []
+    return ENTITY_KINDS.map((kind) => {
+      const items: FolderItem[] = brands
+        .filter((b) => kindOf(b) === kind)
+        .map((b) => {
+          const mine = list.filter((c) => c.brand_id === b.id)
+          return {
+            id: b.id,
+            name: b.name,
+            brand: b,
+            count: mine.length,
+            latest: latestOf(mine),
+          }
+        })
+      return { kind, items }
+    }).filter((g) => g.items.length)
+  }, [brands, campaigns])
+
+  const orphans = useMemo(
+    () => (campaigns ?? []).filter((c) => !brandById[c.brand_id]),
+    [campaigns, brandById],
+  )
+
+  if (campaigns === null) {
+    return (
+      <div className="flex items-center gap-2 p-8 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      </div>
+    )
+  }
+
+  // ------------------------------------------------------------- inside a folder
+  if (folder !== null) {
+    const brand = brandById[folder]
+    const inFolder = campaigns.filter((c) =>
+      folder === '' ? !brandById[c.brand_id] : c.brand_id === folder)
+    const visible = query
+      ? inFolder.filter((c) =>
+          (c.name + ' ' + c.subject).toLowerCase().includes(query.toLowerCase()))
+      : inFolder
+
+    return (
+      <div className="mx-auto max-w-6xl px-6 py-8">
+        <div className="mb-5 flex items-center gap-3 animate-fade-up">
+          <Button variant="ghost" size="icon" onClick={() => { setFolder(null); setQuery('') }}
+                  title="Back to folders" aria-label="Back to folders">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="min-w-0">
+            {brand ? (
+              <img src={brandLogoSrc(brand, dark)} alt={brand.name}
+                   className="h-7 max-w-[200px] object-contain object-left" />
+            ) : (
+              <h1 className="font-display text-xl font-bold">Other</h1>
+            )}
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Campaign emails in the {brand?.name ?? 'Other'} folder.
+            </p>
+          </div>
+          <Button className="ml-auto shrink-0" onClick={() => onCreate(folder)}>
+            <FilePlus2 className="h-4 w-4" /> New campaign
+          </Button>
+        </div>
+
+        {inFolder.length > 3 && (
+          <div className="relative mb-4">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)}
+                   className="h-10 pl-9" placeholder="Search campaigns…" />
+          </div>
+        )}
+
+        {visible.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border p-12 text-center">
+            <Mail className="mx-auto h-7 w-7 text-muted-foreground" />
+            <p className="mt-3 text-sm font-medium">
+              {query ? 'Nothing matches your search.' : 'This folder is empty'}
+            </p>
+            {!query && (
+              <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
+                A new campaign starts with the standard layout — logo, hero, headline,
+                body, CTA and a compliance footer.
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            {visible.map((c, i) => (
+              <CampaignCard
+                key={c.id} c={c} languages={languages} index={i}
+                onOpen={() => onOpen(c.id)} onChanged={onChanged} onError={onError}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // --------------------------------------------------------------- folder shelf
+  const total = campaigns.length
+  return (
+    <div className="mx-auto max-w-6xl px-6 py-8">
+      <div className="mb-6 flex items-start gap-3 animate-fade-up">
+        <div>
+          <h1 className="font-display text-2xl font-bold tracking-tight">CRM Emails</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            One folder per brand — pick one to see its campaigns.
+          </p>
+        </div>
+        <Button className="ml-auto shrink-0" onClick={() => onCreate('')}>
+          <FilePlus2 className="h-4 w-4" /> New campaign
+        </Button>
+      </div>
+
+      <div className="mb-5 grid grid-cols-3 gap-3 animate-fade-up">
+        <Stat value={total} label={total === 1 ? 'Campaign' : 'Campaigns'} />
+        <Stat value={buckets.reduce((n, g) => n + g.items.length, 0)} label="Folders" />
+        <Stat value={new Set(campaigns.map((c) => c.language)).size} label="Languages in use" />
+      </div>
+
+      <div className="space-y-6">
+        {buckets.map(({ kind, items }) => (
+          <section key={kind}>
+            <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
+              <h2 className="font-display text-sm font-semibold">{KIND_LABEL[kind]}</h2>
+              <span className="text-[11px] tabular-nums text-muted-foreground">{items.length}</span>
+              <span className="text-[11px] text-muted-foreground">{KIND_HINT[kind]}</span>
+            </div>
+            <FolderGrid folders={items} dark={dark} noun="email"
+                        onOpen={(id) => setFolder(id)} />
+          </section>
+        ))}
+
+        {orphans.length > 0 && (
+          <section>
+            <div className="mb-2 flex items-baseline gap-2">
+              <h2 className="font-display text-sm font-semibold">Other</h2>
+              <span className="text-[11px] tabular-nums text-muted-foreground">{orphans.length}</span>
+              <span className="text-[11px] text-muted-foreground">Campaigns with no brand set.</span>
+            </div>
+            <FolderGrid
+              folders={[{ id: '', name: 'Other', brand: null, count: orphans.length,
+                          latest: latestOf(orphans) }]}
+              dark={dark} noun="email" onOpen={() => setFolder('')}
+            />
+          </section>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Stat({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <p className="font-display text-2xl font-bold tabular-nums">{value}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
+    </div>
+  )
+}
+
+/** The composed email, scaled into the card. Same approach as the LP block
+ *  thumbnails: render the real output small rather than store a picture of it,
+ *  so a thumbnail can never be stale. */
+function EmailThumb({ c }: { c: CampaignSummary }) {
+  const key = `${c.id}:${c.updated_at}`
+  const [doc, setDoc] = useState<string | null>(() => thumbCache.get(key) ?? null)
+
+  useEffect(() => {
+    const cached = thumbCache.get(key)
+    if (cached !== undefined) {
+      setDoc(cached)
+      return
+    }
+    let gone = false
+    campaignThumb(c.id)
+      .then((html) => {
+        thumbCache.set(key, html)
+        if (!gone) setDoc(html)
+      })
+      .catch(() => {
+        thumbCache.set(key, '')
+        if (!gone) setDoc('')
+      })
+    return () => { gone = true }
+  }, [key, c.id])
+
+  return (
+    <span className="pointer-events-none block aspect-square overflow-hidden bg-white">
+      {doc ? (
+        <iframe
+          title=""
+          srcDoc={doc}
+          tabIndex={-1}
+          aria-hidden
+          scrolling="no"
+          sandbox=""
+          // 640px of email scaled to the card, anchored top-left so the card
+          // shows the top of the message — the part a recipient sees first.
+          className="h-[900px] w-[640px] origin-top-left border-0"
+          style={{ transform: 'scale(0.32)' }}
+        />
+      ) : (
+        <span className="flex h-full items-center justify-center">
+          <Mail className="h-6 w-6 text-muted-foreground/40" />
+        </span>
+      )}
+    </span>
+  )
+}
+
+function CampaignCard({
+  c, languages, index, onOpen, onChanged, onError,
+}: {
+  c: CampaignSummary
+  languages: Language[]
+  index: number
+  onOpen: () => void
+  onChanged: () => void
+  onError: (m: string) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <div
+      className="group animate-fade-up overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
+      style={{ animationDelay: `${Math.min(index * 40, 320)}ms` }}
+    >
+      <button type="button" onClick={onOpen} className="block w-full text-left">
+        <EmailThumb c={c} />
+        <span className="block space-y-1 p-3">
+          <span className="block truncate font-display text-sm font-semibold" title={c.name}>
+            {c.name}
+          </span>
+          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <LangChip code={c.language} languages={languages} />
+            <span>·</span>
+            <span>{c.blocks} blocks</span>
+          </span>
+          <span className="block truncate text-[11px] text-muted-foreground">
+            by {formatUserName(c.created_by)} ·{' '}
+            {new Date(c.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+          </span>
+        </span>
+      </button>
+
+      <div className="px-3 pb-2">
+        <CopyId value={c.id.replace(/^em_/, '')} />
+      </div>
+
+      <div className="flex items-center gap-1 border-t border-border px-2 py-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground" title={c.subject}>
+          {c.subject || 'No subject yet'}
+        </span>
+        <Button
+          variant="ghost" size="sm" disabled={busy} title={`Delete ${c.name}`}
+          onClick={() => {
+            if (!window.confirm(`Delete "${c.name}"? This cannot be undone.`)) return
+            setBusy(true)
+            deleteCampaign(c.id).then(onChanged).catch((e) => onError(e.message)).finally(() => setBusy(false))
+          }}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function CopyId({ value }: { value: string }) {
+  const [done, setDone] = useState(false)
+  return (
+    <button
+      type="button"
+      title="Copy campaign ID"
+      onClick={(e) => {
+        e.stopPropagation()
+        navigator.clipboard?.writeText(value).then(() => {
+          setDone(true)
+          window.setTimeout(() => setDone(false), 1200)
+        }).catch(() => { /* clipboard blocked — nothing useful to say */ })
+      }}
+      className="inline-flex items-center gap-1 rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <span className="font-mono">#{value}</span>
+      {done ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+    </button>
+  )
+}
+
+function LangChip({ code, languages }: { code: string; languages: Language[] }) {
+  const label = languages.find((l) => l.code === code)?.label ?? code.toUpperCase()
+  const url = flagUrl(code)
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1" title={label}>
+      {url && (
+        <img src={url} alt="" className="h-3 w-[18px] shrink-0 rounded-[2px] object-cover ring-1 ring-inset ring-black/10" />
+      )}
+      {label}
+    </span>
+  )
+}
