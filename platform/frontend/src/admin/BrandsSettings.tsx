@@ -191,7 +191,7 @@ export function BrandsSettings() {
                   None yet.
                 </p>
               ) : (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                   {items.map((brand) => (
                     <BrandCard
                       key={brand.id}
@@ -214,7 +214,7 @@ export function BrandsSettings() {
                   Hidden from every picker; kept so historical records still render.
                 </span>
               </div>
-              <div className="grid gap-3 opacity-60 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3 opacity-60 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                 {retired.map((brand) => (
                   <BrandCard
                     key={brand.id}
@@ -612,10 +612,6 @@ function BrandCard({
   /** Retired cards mix kinds, so they label it; grouped sections don't need to. */
   showKind?: boolean
 }) {
-  const swatches =
-    brand.swatches && brand.swatches.length
-      ? brand.swatches
-      : brand.colors.map((hex) => ({ hex, role: '' }))
   const kind = kindOf(brand)
   const accent = entityAccent(brand) ?? NEUTRAL_ACCENT
 
@@ -628,7 +624,10 @@ function BrandCard({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="truncate font-display text-sm font-semibold text-foreground">
+            <span
+              className="truncate font-display text-sm font-semibold text-foreground"
+              title={brand.name || 'Untitled'}
+            >
               {brand.name || 'Untitled'}
             </span>
             {showKind && (
@@ -637,26 +636,14 @@ function BrandCard({
               </span>
             )}
           </div>
-          {/* The registry slug — what every lookup normalises to. */}
-          <div className="truncate font-mono text-[11px] text-muted-foreground">
+          {/* The registry slug — what every lookup normalises to. Titled because
+              a long slug truncates at this card width. */}
+          <div
+            className="truncate font-mono text-[11px] text-muted-foreground"
+            title={normaliseName(brand.name)}
+          >
             {normaliseName(brand.name)}
           </div>
-
-          {swatches.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-1">
-              {swatches.map((s, i) => (
-                <span
-                  key={`${s.hex}-${i}`}
-                  title={s.role ? `${s.hex.toUpperCase()} · ${s.role}` : s.hex.toUpperCase()}
-                  className="h-3 w-3 rounded-full border border-border"
-                  style={{ backgroundColor: s.hex }}
-                />
-              ))}
-              {!brand.icon_svg && (
-                <span className="ml-1 text-[10px] text-muted-foreground">No icon</span>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="flex shrink-0 flex-col items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
