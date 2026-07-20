@@ -211,3 +211,21 @@ Minimum before any campaign ships:
 | Images-off in Outlook | Proves the alt-text layer. |
 | An Arabic (RTL) send | Proves `dir` handling end to end. |
 | Total HTML size | Must stay under ~100KB (Gmail clip). |
+
+---
+
+## 8. Decisions taken (2026-07-20)
+
+| Question | Decision | Consequence |
+|---|---|---|
+| What the tool hands off | **Export HTML + plain-text** to paste into the existing ESP | The ESP owns sending, lists, unsubscribe headers, tracking and bounce handling. None of that compliance surface lives in this codebase. Blocks stay ESP-agnostic — no merge-tag syntax baked in. |
+| Image hosting | **External bucket / CDN** | Composed emails reference absolute CDN URLs. The compositor takes a pluggable `resolve_img` (same shape the LP compositor already uses), so the bucket can be wired without touching block code. **Open: which provider + credentials.** |
+| Brand logos | **Add an SVG rasteriser** to the backend | All 16 entities work with no manual upload. Logos rasterise to PNG at the size the layout needs and are published to the CDN. Side benefit: fixes the banner tool silently skipping SVG logo overlay (`runner.py:522-528`). |
+
+### Still open
+
+- **Which CDN/bucket** (S3, R2, Cloudflare Images, other) and where its credentials live.
+  Until that is answered the compositor emits URLs through `resolve_img` and the publish
+  step is a stub — nothing else is blocked by it.
+- **Sender postal address and licence numbers** per entity for the compliance footer.
+  These are not in the registry yet; likely a per-entity field.
