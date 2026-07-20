@@ -18,6 +18,7 @@ import html as html_mod
 import io
 import json
 import re
+from urllib.parse import quote
 import zipfile
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
@@ -590,6 +591,45 @@ _GOOGLE_FONTS = ("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;70
                  "&family=Noto+Sans+Thai:wght@400;700&display=swap")
 
 
+def brand_logo_tokens(project: dict) -> dict:
+    """Logo tokens read from the brand registry at compose time.
+
+    They used to be inlined into `project.tokens` by the frontend, which broke
+    twice over: a >6KB logo hit the token length cap in _clean_project_patch and
+    shipped a data URI severed mid-path (an <img> the browser silently refuses
+    to render), and a logo edited in Settings never reached pages already
+    created. Reading the brand here fixes both — nothing large is ever stored on
+    the project, and every page picks up the current logo.
+
+    Returned values override any stored token, so existing pages carrying a
+    truncated copy heal on their next render.
+    """
+    bid = str(project.get("brand_id") or "").strip()
+    if not bid:
+        return {}
+    from .. import brands as _brands  # local: brands imports lp_builder.core
+
+    try:
+        entity = next((b for b in _brands.list_brands()
+                       if str(b.get("id") or "").lower() == bid.lower()), None)
+    except Exception:
+        return {}
+    if not entity:
+        return {}
+
+    out: Dict[str, str] = {}
+    for token_key, field in (("logo", "logo_svg"), ("logo-wide", "logo_wide"), ("icon", "icon_svg")):
+        raw = str(entity.get(field) or "").strip()
+        if not raw:
+            continue
+        if raw.startswith("<svg"):
+            # ';charset=utf-8' — ';utf8' is not a valid media-type parameter.
+            out[token_key] = "data:image/svg+xml;charset=utf-8," + quote(raw, safe="")
+        else:
+            out[token_key] = raw
+    return out
+
+
 def compose_page(project: dict, sections_map: Dict[str, dict], mode: str,
                  resolve_img: Callable[[str], str],
                  css_href: Optional[str] = None, js_href: Optional[str] = None,
@@ -597,7 +637,7 @@ def compose_page(project: dict, sections_map: Dict[str, dict], mode: str,
     """Returns {"html":…, "css":…, "js":…}. When css_href/js_href are given the
     HTML links to them (export); otherwise CSS is inlined (canvas srcdoc)."""
     lang = project.get("language") or "en"
-    tokens = project.get("tokens") or {}
+    tokens = {**(project.get("tokens") or {}), **brand_logo_tokens(project)}
     body_parts: List[str] = []
     used_css: List[str] = [BASE_CSS]
     seen_tpl = set()

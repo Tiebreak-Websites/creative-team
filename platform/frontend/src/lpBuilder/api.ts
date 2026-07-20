@@ -275,14 +275,14 @@ export function brandTokens(brand: {
   } | null
 }): Record<string, string> {
   const [c1, c2, c3] = brand.colors || []
-  const asUri = (v?: string | null) => {
-    const s = (v || '').trim()
-    return s.startsWith('<svg') ? 'data:image/svg+xml;utf8,' + encodeURIComponent(s) : s
-  }
-
   // An explicitly set token always wins. The palette-position fallbacks below
   // are what every brand relied on before the token editor existed, so brands
   // that haven't been given tokens keep rendering exactly as they did.
+  // Logos are deliberately NOT emitted here. They used to be inlined as data
+  // URIs, and a >6KB logo hit the 6000-char token cap on save and shipped a
+  // data URI cut off mid-path — a broken <img>. compose_page() now reads them
+  // straight from the brand registry, so the page always shows the CURRENT
+  // logo and nothing large is ever stored on the project.
   const t = brand.tokens || {}
   const primary = t.primary || c1 || '#E71E25'
   const out: Record<string, string> = {
@@ -297,8 +297,6 @@ export function brandTokens(brand: {
     card: t.card || brand.lp?.card || '#FFFFFF',
     text: t.text || '#0B1220',
     muted: t.muted || '#5B6472',
-    logo: asUri(brand.logo_svg),
-    'logo-wide': asUri(brand.logo_wide),
   }
 
   // Type scale -> --lp-<role>-size / -weight / -line. Existing sections hardcode

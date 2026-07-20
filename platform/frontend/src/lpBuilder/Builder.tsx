@@ -73,7 +73,7 @@ let iidCounter = 0
 const newIid = () => `i${Date.now().toString(36)}${(++iidCounter).toString(36)}`
 
 const CATEGORY_LABEL: Record<string, string> = {
-  braintrade: 'BrainTrade blocks', elements: 'Elements', hero: 'Hero',
+  braintrade: 'BrainTrade blocks', elements: 'Shared blocks', hero: 'Hero',
   content: 'Content', 'social-proof': 'Social proof', conversion: 'Conversion',
   legal: 'Legal & footer',
 }
