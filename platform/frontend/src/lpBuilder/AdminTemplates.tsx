@@ -68,13 +68,17 @@ function FlagPills({ items, empty }: { items: PillItem[]; empty: string }) {
 /** A category heading: the brand and how many blocks it owns. The brand's
  * languages/markets live in the side panel — inline they wrapped over three
  * rows and pushed the blocks themselves below the fold. */
-function GroupHeading({ cat, count }: { cat: string; count: number }) {
+function GroupHeading({ cat, count, note }: { cat: string; count: number; note?: string }) {
   return (
-    <div className="flex items-baseline gap-2 border-b border-border pb-1.5">
+    <div className="flex flex-wrap items-baseline gap-x-2 border-b border-border pb-1.5">
       <h2 className="font-display text-sm font-semibold text-foreground">{CATEGORY_LABEL[cat] ?? cat}</h2>
       <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
         {count}
       </span>
+      {/* Stated once for the group rather than stamped on all nine rows: every
+          shared block is offered to every brand, so per-row it would be nine
+          copies of one sentence. */}
+      {note && <span className="text-[11px] text-muted-foreground">{note}</span>}
     </div>
   )
 }
@@ -125,7 +129,7 @@ function Reach({ label, items }: { label: string; items: PillItem[] }) {
  * like — and it stops the same chip repeating on all 17 rows. */
 const CATEGORY_LABEL: Record<string, string> = {
   braintrade: 'BrainTrade',
-  elements: 'Elements (shared)',
+  elements: 'Shared blocks',
   hero: 'Hero',
   content: 'Content',
   'social-proof': 'Social proof',
@@ -170,39 +174,55 @@ function Toggle({
   )
 }
 
-/** A block's languages as flags — the same marks the Languages settings use, so
- * the two surfaces read alike.
+/** Translation coverage, not a flag strip.
  *
- * Every flag is shown (they wrap rather than truncate: "+4" hid exactly the
- * information you came for). Each carries its language NAME as a tooltip, and
- * the group tooltip lists them all — a flag alone is a guess. */
-function LangFlags({ codes, languages }: { codes: string[]; languages: Language[] }) {
+ * A row used to carry up to 13 flag images; seventeen rows of them was ~200
+ * pictures competing for attention, and at 18px Italy and Mexico are the same
+ * picture anyway. What you actually want to know is whether a block is ready in
+ * every language its brand sells in — so that is what it says, and it only
+ * raises its voice when the answer is no.
+ *
+ * `expected` is the brand's declared languages. Shared blocks belong to no one
+ * brand, so they get a plain count instead of a fraction. */
+function LangCoverage({
+  codes,
+  expected,
+  languages,
+}: {
+  codes: string[]
+  expected: string[] | null
+  languages: Language[]
+}) {
   const nameOf = (c: string) => languages.find((l) => l.code === c)?.label ?? c.toUpperCase()
+
+  if (!expected || !expected.length) {
+    return (
+      <span
+        className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
+        title={codes.length ? codes.map(nameOf).join(' · ') : undefined}
+      >
+        {codes.length} {codes.length === 1 ? 'language' : 'languages'}
+      </span>
+    )
+  }
+
+  const have = new Set(codes)
+  const missing = expected.filter((c) => !have.has(c))
+  const complete = missing.length === 0
+
   return (
     <span
-      className="flex min-w-0 flex-wrap items-center justify-end gap-0.5"
-      title={codes.map(nameOf).join(' · ')}
+      title={
+        complete
+          ? `Translated in all ${expected.length} of the brand's languages`
+          : `Missing: ${missing.map(nameOf).join(', ')}`
+      }
+      className={cn(
+        'shrink-0 rounded-full px-1.5 py-0.5 text-[11px] tabular-nums',
+        complete ? 'text-muted-foreground' : 'bg-amber-500/10 font-medium text-amber-700 dark:text-amber-400',
+      )}
     >
-      {codes.map((c) => {
-        const url = flagUrl(c)
-        return url ? (
-          <img
-            key={c}
-            src={url}
-            alt={nameOf(c)}
-            title={nameOf(c)}
-            className="h-3 w-[18px] shrink-0 rounded-[2px] object-cover ring-1 ring-inset ring-black/10"
-          />
-        ) : (
-          <span
-            key={c}
-            title={nameOf(c)}
-            className="shrink-0 text-[9px] font-semibold uppercase text-muted-foreground"
-          >
-            {c}
-          </span>
-        )
-      })}
+      {expected.length - missing.length} / {expected.length}
     </span>
   )
 }
@@ -330,6 +350,10 @@ export function AdminTemplates({
     return out
   }, [grouped, brands, languages])
 
+  // Null for shared categories: they belong to no brand, so there is no set of
+  // languages they are expected to cover.
+  const expectedFor = (cat: string) => reachOf(cat)?.langs.map((l) => l.code) ?? null
+
   const setActive = (s: SectionDef, on: boolean) =>
     updateSection(s.key, { enabled: on }).then(onChanged).catch((err) => onError(err.message))
 
@@ -415,7 +439,11 @@ export function AdminTemplates({
             const s = g.s!
             return g.heading !== undefined ? (
               <div key={`h-${g.heading}`} className="col-span-full mb-1 mt-4 first:mt-0">
-                <GroupHeading cat={g.heading} count={g.count!} />
+                <GroupHeading
+                  cat={g.heading}
+                  count={g.count!}
+                  note={reachOf(g.heading) ? undefined : 'Offered to every brand'}
+                />
               </div>
             ) : (
             <div
@@ -455,7 +483,7 @@ export function AdminTemplates({
                 <div className="mt-1.5 flex items-center gap-2">
                   <Toggle on={s.enabled} onChange={(v) => setActive(s, v)} label={`${s.name} active`} />
                   <span className="ml-auto min-w-0">
-                    <LangFlags codes={s.languages} languages={languages} />
+                    <LangCoverage codes={s.languages} expected={expectedFor(s.category)} languages={languages} />
                   </span>
                 </div>
               </div>
@@ -469,7 +497,11 @@ export function AdminTemplates({
           const s = g.s!
           return g.heading !== undefined ? (
               <div key={`h-${g.heading}`} className="mb-1 mt-4 first:mt-0">
-                <GroupHeading cat={g.heading} count={g.count!} />
+                <GroupHeading
+                  cat={g.heading}
+                  count={g.count!}
+                  note={reachOf(g.heading) ? undefined : 'Offered to every brand'}
+                />
               </div>
             ) : (
           <div key={s.key} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2 shadow-sm">
@@ -482,7 +514,7 @@ export function AdminTemplates({
             {!s.built_in && (
               <span className="shrink-0 rounded border border-emerald-500/40 px-1.5 text-[9px] font-semibold text-emerald-600">CUSTOM</span>
             )}
-            <LangFlags codes={s.languages} languages={languages} />
+            <LangCoverage codes={s.languages} expected={expectedFor(s.category)} languages={languages} />
             <Toggle on={s.enabled} onChange={(v) => setActive(s, v)} label={`${s.name} active`} />
             <Button variant="outline" size="sm" onClick={() => setEditing(s)}>
               <Pencil className="h-3.5 w-3.5" /> Edit
