@@ -9,16 +9,24 @@ slices heads and the CTA button off the top/bottom. This module does it
 properly with one masked /images/edits call:
 
   1. Lay the full render (contained, nothing cropped) on a canvas of the
-     source's own OpenAI size, leftover area pre-filled with the old blur —
-     a color/scene hint the model paints over.
-  2. Mask everything EXCEPT the render as editable and ask the model to
-     extend the background seamlessly (no text, no logos, no new objects).
-  3. Pixel-composite the ORIGINAL render back over the center (feathered a
-     few px so the hand-off to the painted margins stays seamless) — the
-     banner itself is guaranteed untouched.
+     source's own OpenAI size, leftover area pre-filled with a blurred
+     EDGE-STRETCH of the render's own border pixels — a pure color/lighting
+     hint with no structures in it. (It must NOT be a blurred cover copy of
+     the whole render: that puts the same background at a different scale and
+     offset right beside the sharp original, and the model sharpens that
+     misplaced duplicate instead of continuing the real edge — the "same
+     background but misplaced" seam users saw on 960x1200 / 1200x1500.)
+  2. Mask everything EXCEPT the render as editable — MINUS an overlap band a
+     few dozen px into the render, so the model repaints across the boundary
+     and can blend structure through it — and ask the model to extend the
+     background seamlessly (no text, no logos, no new objects).
+  3. Pixel-composite the ORIGINAL render back over the center with a wide
+     feather that lands inside that repainted overlap band — the banner
+     itself is guaranteed untouched, and the hand-off is gradual.
   4. Crop the target-aspect window and resize to the exact export pixels.
 
-Callers treat this as best-effort: any failure falls back to the blur-pad.
+Callers treat this as best-effort: any failure falls back to reshape's
+edge-pad (same fill construction, no API) and surfaces a QA note.
 """
 from __future__ import annotations
 
@@ -40,20 +48,32 @@ def _canvas_for(sw: int, sh: int) -> tuple:
         return 1024, 1536
     return 1024, 1024
 
-# How far the protected center is inset / feathered when compositing the
-# original pixels back, so the seam to the painted margins blends over ~6px.
-_FEATHER_INSET = 6
-_FEATHER_RADIUS = 3
+# Seam construction. The mask lets the model repaint _MASK_OVERLAP px INTO the
+# render (an overlap band it can blend structure through); the feathered
+# composite then restores the original pixels over everything except that band,
+# where the hand-off blends gradually. Inset ≈ overlap so the blend zone and the
+# repainted zone coincide. The old values (inset 6 / radius 3, no overlap) gave
+# a sub-1% transition on a 1024px canvas — a visible cut line.
+_MASK_OVERLAP = 24
+_FEATHER_INSET = 24
+_FEATHER_RADIUS = 10
 
 OUTPAINT_PROMPT = (
-    "Extend this finished advertising banner to fill the whole canvas. "
-    "The sharp central area is FINAL artwork - do not repaint, restyle, "
-    "recolor or add anything on top of it. Fill ONLY the blurred margins by "
-    "continuing the banner's background scene seamlessly: same lighting, "
-    "colors, materials, perspective and depth of field, as if the photo had "
-    "simply been shot wider. Do NOT add any text, letters, numbers, logos, "
-    "watermarks, buttons, people or new standalone objects in the margins - "
-    "pure background continuation only."
+    "Extend this finished advertising banner sideways to fill the whole canvas. "
+    "The sharp central area is FINAL artwork - do not repaint, restyle, recolor "
+    "or add anything on top of it. The blurred margins are PLACEHOLDER ONLY - a "
+    "smeared color hint, not real content: repaint 100% of them from scratch. "
+    "Do NOT keep or sharpen the smeared placeholder texture. Continue the scene "
+    "outward strictly from the pixels at the sharp area's edge, at the exact "
+    "same scale, position and perspective: every line, edge, chart, screen or "
+    "object that touches the boundary must cross it perfectly straight, with no "
+    "kink, offset, brightness step or change in size. Do NOT repeat or duplicate "
+    "elements already visible in the sharp area (no second copy of the same "
+    "chart, monitor row, window, panel or light row). Match lighting, colors, "
+    "materials, film grain and depth of field exactly; the margins must be as "
+    "sharp as the artwork beside them, as if the photo had simply been shot "
+    "wider. Do NOT add any text, letters, numbers, logos, watermarks, buttons, "
+    "people or new standalone objects - pure background continuation only."
 )
 
 
@@ -87,15 +107,19 @@ def outpaint_export(*, api_key: str, png_bytes: bytes, width: int, height: int,
 
     fg = src.resize((fw, fh), Image.LANCZOS)
 
-    # Base: the old blur fill as a scene hint, with the real render on top.
-    base = reshape._cover(src, cw, ch).filter(
-        ImageFilter.GaussianBlur(radius=max(8, cw // 22)))
+    # Base: blurred edge-stretch of the render's own borders as a color hint
+    # (structure-free — see module docstring), with the real render on top.
+    base = reshape._edge_fill(fg, cw, ch, fx, fy)
     base.paste(fg, (fx, fy))
 
-    # Mask: transparent = editable (OpenAI convention). Protect the render.
+    # Mask: transparent = editable (OpenAI convention). Protect the render MINUS
+    # an overlap band, so the model repaints across the boundary and the feather
+    # composite below hands off inside repainted territory.
+    ov = min(_MASK_OVERLAP, (fw - 2) // 2, (fh - 2) // 2)
     mask = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
-    protect = Image.new("RGBA", (fw - 4, fh - 4), (255, 255, 255, 255))
-    mask.paste(protect, (fx + 2, fy + 2))
+    protect = Image.new("RGBA", (max(1, fw - 2 * ov), max(1, fh - 2 * ov)),
+                        (255, 255, 255, 255))
+    mask.paste(protect, (fx + ov, fy + ov))
 
     with tempfile.TemporaryDirectory(prefix="outpaint-") as td:
         base_path = Path(td) / "base.png"
@@ -125,6 +149,7 @@ def outpaint_export(*, api_key: str, png_bytes: bytes, width: int, height: int,
     out = Image.composite(fg_full, out, feather)
 
     final = out.crop((rx, ry, rx + rw, ry + rh)).resize((width, height), Image.LANCZOS)
+    final = reshape.sharpen_if_upscaled(final, width / rw)
     buf = io.BytesIO()
     final.save(buf, format="PNG")
     return buf.getvalue()

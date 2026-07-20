@@ -366,12 +366,26 @@ def _surviving_band(size: str) -> int:
     return 100 - 2 * (pct + 6) if pct >= 4 else 100
 
 
+def _is_micro(size: str) -> bool:
+    """Absolute-pixel floor. At or under ~200x120 px there is no room for a stacked
+    headline+subtitle+CTA hierarchy no matter the aspect — the aspect-derived band
+    check below misses these (e.g. 100x60 has a generous band but 60 real pixels),
+    so they shipped a full layout crammed into noise. Mirrors the same threshold
+    in reshape.needs_outpaint (micro slots skip the outpaint API call)."""
+    try:
+        w, h = (int(x) for x in size.lower().split("x"))
+    except Exception:  # noqa: BLE001
+        return False
+    return w <= 200 or h <= 120
+
+
 def _is_strip(size: str) -> bool:
-    """True when the crop leaves only a thin strip (extreme letterbox — leaderboards,
-    billboards, skyscrapers). Such slots get a single-line, no-subtitle, compact-inline-
-    button treatment scaled to the strip instead of full-canvas hierarchy. Derived from
-    the crop band so every present + future extreme size is caught automatically."""
-    return _surviving_band(size) <= 34
+    """True when the slot can only carry a single line: the crop leaves a thin strip
+    (extreme letterbox — leaderboards, billboards, skyscrapers) OR the absolute pixel
+    box is micro (see _is_micro). Such slots get a single-line, no-subtitle, compact-
+    inline-button treatment instead of full-canvas hierarchy. Derived from the size
+    itself so every present + future extreme/custom size is caught automatically."""
+    return _surviving_band(size) <= 34 or _is_micro(size)
 
 
 def _crop_safe_note(size: str) -> str:
@@ -379,8 +393,21 @@ def _crop_safe_note(size: str) -> str:
     and that the WHOLE headline + button must be sized/placed inside the surviving
     band — text touching a cropped edge gets sliced (the #1 recomp defect)."""
     pct, axis = _crop_info(size)
+    # Micro slots: tiny absolute pixels, whatever the aspect/crop. Dense scenes and
+    # partial faces turn to noise at this scale (the cluttered-mosaic / half-face
+    # defect on 320x50-class and 100x60-class exports).
+    micro_rule = (
+        "MICRO SLOT (tiny absolute pixels): ONE short headline line and (if any) a "
+        "compact inline button ONLY. Big simple shapes, one clean focal element, "
+        "generous negative space — NO dense collage, NO mosaic of photos or panels, "
+        "no fine detail (it turns to unreadable noise at this size). "
+    ) if _is_micro(size) else ""
+    face_rule = (
+        "Never show a partially cut face or head at any edge: any person is either "
+        "fully inside the surviving area or omitted entirely."
+    )
     if pct < 4:
-        return ""
+        return ("⚠ " + micro_rule + face_rule) if micro_rule else ""
     m = pct + 6  # clearance — generous, because the model places text imprecisely
     band = 100 - 2 * m
     if _is_strip(size):
@@ -393,13 +420,14 @@ def _crop_safe_note(size: str) -> str:
                 f"survives. Put the WHOLE ad in that strip: ONE short headline line and (if "
                 f"any) a compact inline button on the SAME baseline beside it. NO stacked "
                 f"lines, NO subtitle, nothing taller than the strip. Top and bottom are "
-                f"background only."
+                f"background only. {micro_rule}{face_rule}"
             )
         return (
             f"⚠ EXTREME LETTERBOX CROP: the export slices off the left {pct}% and right "
             f"{pct}% — only a thin central VERTICAL strip (~{band}% of the width) survives. "
             f"Set the copy as a tight NARROW column inside that strip, sized to fit, with a "
-            f"compact button; NO content reaches a side edge, NO subtitle."
+            f"compact button; NO content reaches a side edge, NO subtitle. "
+            f"{micro_rule}{face_rule}"
         )
     if axis == "vertical":
         return (
@@ -484,6 +512,25 @@ def _validate_button_combo(combo) -> Optional[str]:
     return None
 
 
+# How the scene must resolve at the canvas borders and around the subject.
+# Without this, exports ship charts/panels chopped flat at the frame line,
+# split perspective (two vanishing points), and background structures that
+# fail to reconnect behind the subject — the recompose stage's most common
+# visible defects after seams.
+EDGE_INTEGRITY_RULE = (
+    "EDGE INTEGRITY: nothing may terminate exactly at the canvas edge. Every "
+    "graphic element (chart, candlestick cluster, panel, screen, light row, "
+    "prop) is either fully inside the frame with clear margin, or bleeds off "
+    "naturally as if it continues beyond the canvas — never chopped flat at "
+    "the border. One consistent perspective and one consistent horizon and "
+    "lighting direction across the ENTIRE canvas, including areas behind and "
+    "beside the subject. Background lines and structures that pass behind the "
+    "subject must re-emerge on the other side at the same height, angle and "
+    "thickness. Never show a partially cut face or head at any edge: a person "
+    "is either meaningfully inside the frame or absent."
+)
+
+
 def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
     """Compose the OpenAI generation prompt for one (concept, size).
 
@@ -561,6 +608,7 @@ def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
         )
         sections.append(COPY_STACK_ALIGNMENT)
 
+    sections.append(EDGE_INTEGRITY_RULE)
     sections.append(TYPOGRAPHY_RULE)
     if is_rtl(locale):
         sections.append(RTL_RULE)
@@ -666,6 +714,8 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
         "NO HARD SPLIT-PANEL. Keep it a real ad: no fake UI text or invented numbers, "
         "no real brand logos or wordmarks, no recognizable real landmarks, no AI "
         f"artifacts; do not drift into the watercolor/bokeh/abstract-swoosh{chart_clause}.",
+
+        EDGE_INTEGRITY_RULE,
     ]
     if has_cta:
         sections.append(COPY_STACK_ALIGNMENT)

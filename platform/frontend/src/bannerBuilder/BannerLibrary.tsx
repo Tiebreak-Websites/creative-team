@@ -40,6 +40,7 @@ export interface LibraryItem {
   runId: string // owning run, so a delete is scoped to the right run
   src: string // full-size image URL (ready to use)
   downloadHref: string // href that downloads this single PNG (already correctly named)
+  webHref?: string // ad-network weight-capped variant (≤150 KB) — display slots only
   size: string // e.g. "1200x1200"
   version: number
   title: string
@@ -531,6 +532,17 @@ export function BannerLibrary({
               <Download className="h-4 w-4" /> Download
             </a>
           </Button>
+          {current.webHref && (
+            <Button asChild variant="outline" className="w-full">
+              <a
+                href={current.webHref}
+                download
+                title="Weight-capped variant for ad networks (≤150 KB) — same pixels, display-ready"
+              >
+                <Download className="h-4 w-4" /> Web ≤150 KB
+              </a>
+            </Button>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <Button asChild variant="outline">
               <a href={current.src} target="_blank" rel="noreferrer" title="Open full size in a new tab">

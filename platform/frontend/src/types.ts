@@ -77,6 +77,7 @@ export interface Banner {
   error: string | null
   qa?: string | null // post-generation QA warning (size/blank/palette drift), else null
   url: string | null
+  web_url?: string | null // ad-network weight-capped variant (≤150 KB) for display slots
 }
 
 export interface RunDirector {
