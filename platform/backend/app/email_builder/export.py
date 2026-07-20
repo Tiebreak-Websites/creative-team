@@ -29,7 +29,11 @@ log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------- sanitizers
 
-_URL_OK = re.compile(r"^(https?:|mailto:|tel:|#|\{\{)", re.I)
+# Root-relative is allowed so the in-app preview resolves against our own
+# origin. It is NOT good enough to send — an inbox has no origin to resolve
+# against — so compose_email raises a warning when any survives, rather than
+# silently dropping the image and looking like a missing asset.
+_URL_OK = re.compile(r"^(https?:|mailto:|tel:|#|/|\{\{)", re.I)
 
 
 def _esc(s: str) -> str:
@@ -315,6 +319,14 @@ def compose_email(project: dict, blocks_map: Dict[str, dict],
     if empty_slots:
         warnings.append(f"{empty_slots} image slot(s) empty — those images are omitted "
                         "from the email entirely.")
+
+    # A relative src works in this preview and in no inbox anywhere. Surfacing
+    # it here is the difference between catching it now and catching it from a
+    # recipient asking why the email has no logo.
+    if 'src="/' in html:
+        warnings.append(
+            "Image URLs are relative, so they will not load in an inbox. Set "
+            "PLATFORM_PUBLIC_BASE_URL to this deployment's public origin.")
     if not any(b.get("key") == "em-footer" for b in
                (blocks_map.get(i.get("block_key") or "") or {} for i in project.get("sections") or [])):
         warnings.append("No footer block — an unsubscribe link and postal address are required.")

@@ -244,29 +244,98 @@ def _store_asset_bytes(data: bytes) -> str:
     return aid
 
 
+# The logo slots from Settings > Brands, in the order email should prefer them.
+# "Horizontal" is labelled "Page headers" there, which is exactly this job; the
+# wordmark is the next best lockup; the square mark is the last resort so a
+# brand that only has one still gets a logo instead of a gap.
+LOGO_FIELDS = ("logo_wide", "logo_svg", "icon_svg")
+
+_LOGO_PX = 320  # 2x the 160px the header block displays
+
+
+def _hosted_logo(entity: dict) -> Optional[str]:
+    """A hosted PNG for the brand's logo, or None.
+
+    Reads the same fields Settings > Brands uploads into, and handles every
+    format that screen accepts: raw SVG markup, a data: URI (what a PNG/JPG/
+    WebP upload is stored as), or an absolute URL.
+
+    Email cannot use any of those directly — SVG renders nowhere, and a data:
+    URI is rejected by most clients and would eat a tenth of the 102KB budget —
+    so each is materialised into a PNG file served by the public route. Named by
+    content hash, so repeated composes reuse one file and a logo change produces
+    a new URL rather than a stale cached one.
+    """
+    import base64
+    import hashlib
+
+    raw = ""
+    for field in LOGO_FIELDS:
+        v = str(entity.get(field) or "").strip()
+        if v:
+            raw = v
+            break
+    if not raw:
+        return None
+
+    if raw.startswith(("http://", "https://")):
+        return raw  # already hosted; nothing to do
+
+    aid = "logo-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24] + ".png"
+    path = core.ASSETS_DIR / aid
+    if path.exists():
+        return aid
+
+    png: Optional[bytes] = None
+    if raw.startswith("<svg"):
+        png = export.rasterise_svg(raw, width=_LOGO_PX)
+    elif raw.startswith("data:"):
+        try:
+            head, _, b64 = raw.partition(",")
+            data = base64.b64decode(b64) if "base64" in head else b64.encode("utf-8")
+            png = _normalise_logo_png(data)
+        except Exception:
+            log.exception("email-builder: could not decode the uploaded brand logo")
+            return None
+    if not png:
+        return None
+
+    core.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(png)
+    return aid
+
+
+def _normalise_logo_png(data: bytes) -> Optional[bytes]:
+    """Any uploaded raster -> a PNG no wider than _LOGO_PX."""
+    from PIL import Image
+
+    try:
+        im = Image.open(io.BytesIO(data))
+        im.load()
+    except Exception:
+        log.exception("email-builder: unreadable brand logo upload")
+        return None
+    if im.mode not in ("RGB", "RGBA"):
+        im = im.convert("RGBA")
+    if im.width > _LOGO_PX:
+        im.thumbnail((_LOGO_PX, _LOGO_PX * 4))
+    buf = io.BytesIO()
+    im.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
 def _with_brand_logo(project: dict, entity: Optional[dict]) -> dict:
-    """Materialise the brand's SVG logo as a hosted PNG and point the logo slot
-    at it.
+    """Point the logo slot at the brand's hosted logo.
 
     Done here rather than in the compositor so compose_email stays pure: it is
-    handed URLs, it never writes files. Cached by content so repeated composes
-    of the same brand reuse one file.
+    handed URLs and never writes files. An explicit per-campaign upload wins —
+    this only fills a slot the author left alone.
     """
     if not entity:
         return project
-    svg = str(entity.get("logo_wide") or entity.get("logo_svg") or "").strip()
-    if not svg.startswith("<svg"):
+    aid = _hosted_logo(entity)
+    if not aid:
         return project
-
-    import hashlib
-    aid = "logo-" + hashlib.sha1(svg.encode("utf-8")).hexdigest()[:24] + ".png"
-    path = core.ASSETS_DIR / aid
-    if not path.exists():
-        png = export.rasterise_svg(svg, width=320)
-        if not png:
-            return project  # no rasteriser — slot stays empty, alt text carries it
-        core.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(png)
 
     out = dict(project)
     out["sections"] = [
