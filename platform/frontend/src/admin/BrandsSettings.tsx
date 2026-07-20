@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { LanguagesEditor } from './LanguagesEditor'
 import {
   AlertCircle,
   Archive,
@@ -400,6 +401,12 @@ export function BrandsSettings() {
               </div>
             </section>
           )}
+
+          {/* The master language list. It lives here because this is where
+              languages get assigned to a brand — the Blocks page only reads it. */}
+          <div className="mt-8">
+            <LanguagesEditor onError={setError} />
+          </div>
         </div>
       )}
 

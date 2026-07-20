@@ -20,14 +20,15 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { flagUrl } from '@/lib/flags'
+import { countryFlagUrl, flagUrl } from '@/lib/flags'
+import { marketByCode } from '@/lib/markets'
+import { listBrands, normaliseName, type Brand } from '@/bannerBuilder/brandsApi'
 import { SectionThumb } from './Builder'
 import {
   composePage,
   createSection,
   deleteSection,
   DEVICE_WIDTH,
-  putLanguages,
   updateSection,
   uploadLpAsset,
   type Device,
@@ -35,6 +36,67 @@ import {
   type Project,
   type SectionDef,
 } from './api'
+
+/** Read-only flag pills — the same shape the Brand settings pickers use, so a
+ * brand's reach reads identically wherever you meet it. */
+interface PillItem {
+  code: string
+  label: string
+  flag: string | null
+}
+
+function FlagPills({ items, empty }: { items: PillItem[]; empty: string }) {
+  if (!items.length) return <span className="text-[11px] italic text-muted-foreground">{empty}</span>
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {items.map((it) => (
+        <span
+          key={it.code}
+          title={it.label}
+          className="inline-flex items-center gap-1 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground"
+        >
+          {it.flag && (
+            <img src={it.flag} alt="" className="h-2.5 w-[15px] rounded-[1px] object-cover ring-1 ring-inset ring-black/10" />
+          )}
+          {it.label}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+/** A category heading: the brand, how many blocks it owns, and the reach it was
+ * given in Settings > Brands. Read-only here on purpose — one place to edit. */
+function GroupHeading({
+  cat,
+  count,
+  reach,
+}: {
+  cat: string
+  count: number
+  reach: { langs: PillItem[]; markets: PillItem[] } | null
+}) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <h2 className="font-display text-sm font-semibold text-foreground">{CATEGORY_LABEL[cat] ?? cat}</h2>
+      <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+        {count}
+      </span>
+      {reach && (
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="flex items-center gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">Languages</span>
+            <FlagPills items={reach.langs} empty="none set" />
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">Markets</span>
+            <FlagPills items={reach.markets} empty="none set" />
+          </span>
+        </span>
+      )}
+    </div>
+  )
+}
 
 /** Category headings. A block's category IS its owning brand (plus the shared
  * generic buckets), so grouping is what "each brand has its own library" looks
@@ -154,15 +216,23 @@ export function AdminTemplates({
       setEditing(target)
     }
   }, [initialEditKey, sections])
-  const [langsDraft, setLangsDraft] = useState<Language[]>(languages)
-  const [savingLangs, setSavingLangs] = useState(false)
-  useEffect(() => setLangsDraft(languages), [languages])
 
   const [view, setView] = useState<'list' | 'grid'>('list')
   const [showDeactivated, setShowDeactivated] = useState(false)
   // The thumb scales by --thumb-scale, so it has to know the real card width
   // — which changes with the breakpoint (1/2/3 columns). Measure a card
   // rather than hardcoding a ratio that's only right at one size.
+  // The registry is the source of truth for a brand's languages and target
+  // markets — this page only displays them; they are edited in Settings > Brands.
+  const [brands, setBrands] = useState<Brand[]>([])
+  useEffect(() => {
+    listBrands()
+      .then(setBrands)
+      .catch(() => {
+        /* headings simply omit the reach pills */
+      })
+  }, [])
+
   const gridRef = useRef<HTMLDivElement>(null)
   const [cardW, setCardW] = useState(320)
   useEffect(() => {
@@ -204,6 +274,27 @@ export function AdminTemplates({
     }
     return out
   }, [active])
+
+  // A block's category is its owning brand's name, normalised.
+  const brandFor = (cat: string) =>
+    brands.find((b) => normaliseName(b.name) === normaliseName(cat)) || null
+
+  const reachOf = (cat: string) => {
+    const b = brandFor(cat)
+    if (!b) return null
+    return {
+      langs: (b.languages ?? []).map((c) => ({
+        code: c,
+        label: languages.find((l) => l.code === c)?.label ?? c.toUpperCase(),
+        flag: flagUrl(c),
+      })),
+      markets: (b.markets ?? []).map((c) => ({
+        code: c,
+        label: marketByCode(c)?.name ?? c.toUpperCase(),
+        flag: countryFlagUrl(c),
+      })),
+    }
+  }
 
   const setActive = (s: SectionDef, on: boolean) =>
     updateSection(s.key, { enabled: on }).then(onChanged).catch((err) => onError(err.message))
@@ -284,13 +375,8 @@ export function AdminTemplates({
           {grouped.map((g) => {
             const s = g.s!
             return g.heading !== undefined ? (
-              <div key={`h-${g.heading}`} className="col-span-full mb-1 mt-2 flex items-baseline gap-2 first:mt-0">
-                <h2 className="font-display text-sm font-semibold text-foreground">
-                  {CATEGORY_LABEL[g.heading] ?? g.heading}
-                </h2>
-                <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
-                  {g.count}
-                </span>
+              <div key={`h-${g.heading}`} className="col-span-full mb-1 mt-4 first:mt-0">
+                <GroupHeading cat={g.heading} count={g.count!} reach={reachOf(g.heading)} />
               </div>
             ) : (
             <div
@@ -343,13 +429,8 @@ export function AdminTemplates({
         {grouped.map((g) => {
           const s = g.s!
           return g.heading !== undefined ? (
-              <div key={`h-${g.heading}`} className="mb-1 mt-2 flex items-baseline gap-2 first:mt-0">
-                <h2 className="font-display text-sm font-semibold text-foreground">
-                  {CATEGORY_LABEL[g.heading] ?? g.heading}
-                </h2>
-                <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
-                  {g.count}
-                </span>
+              <div key={`h-${g.heading}`} className="mb-1 mt-4 first:mt-0">
+                <GroupHeading cat={g.heading} count={g.count!} reach={reachOf(g.heading)} />
               </div>
             ) : (
           <div key={s.key} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2 shadow-sm">
@@ -449,58 +530,6 @@ export function AdminTemplates({
         </section>
       )}
 
-      <div className="mt-8 animate-fade-up rounded-2xl border border-border bg-card p-4" style={{ animationDelay: '160ms' }}>
-        <h2 className="font-display text-base font-bold">Languages</h2>
-        <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
-          The global list templates and landing pages can use. A language in use by a landing page cannot be removed.
-        </p>
-        <div className="space-y-1.5">
-          {langsDraft.map((l, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <Input
-                value={l.code}
-                onChange={(e) => setLangsDraft((d) => d.map((x, j) => (j === i ? { ...x, code: e.target.value } : x)))}
-                className="h-8 w-20 text-xs"
-                aria-label="Language code"
-              />
-              <Input
-                value={l.label}
-                onChange={(e) => setLangsDraft((d) => d.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
-                className="h-8 flex-1 text-xs"
-                aria-label="Language label"
-              />
-              <button
-                type="button"
-                onClick={() => setLangsDraft((d) => d.filter((_, j) => j !== i))}
-                className="rounded p-1 text-muted-foreground hover:text-destructive"
-                title="Remove language"
-                aria-label={`Remove ${l.label}`}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setLangsDraft((d) => [...d, { code: '', label: '' }])}>
-            <Plus className="h-3.5 w-3.5" /> Add language
-          </Button>
-          <Button
-            size="sm"
-            disabled={savingLangs}
-            onClick={() => {
-              setSavingLangs(true)
-              putLanguages(langsDraft.filter((l) => l.code && l.label))
-                .then(() => onChanged())
-                .catch((e) => onError(e.message))
-                .finally(() => setSavingLangs(false))
-            }}
-          >
-            {savingLangs ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-            Save languages
-          </Button>
-        </div>
-      </div>
     </div>
   )
 }

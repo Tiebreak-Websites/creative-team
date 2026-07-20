@@ -269,18 +269,24 @@ def build_lp_builder_router() -> APIRouter:
         def usable(v) -> bool:
             return bool(v) and not str(v).startswith("token:")
 
-        for inst in p.get("sections") or []:
-            mobile = inst.get("images_mobile") or {}
-            images = inst.get("images") or {}
-            for key in preferred:
-                v = mobile.get(key) if usable(mobile.get(key)) else images.get(key)
-                if usable(v):
-                    return export.serve_url_for(str(v))
-            for key, v in images.items():
-                v = mobile.get(key) if usable(mobile.get(key)) else v
-                if usable(v):
-                    return export.serve_url_for(str(v))
-        return None
+        def pick(bucket: str):
+            """First usable image in `bucket`, hero-ish slots first."""
+            for inst in p.get("sections") or []:
+                imgs = inst.get(bucket) or {}
+                for key in preferred:
+                    if usable(imgs.get(key)):
+                        return imgs[key]
+                for v in imgs.values():
+                    if usable(v):
+                        return v
+            return None
+
+        # Mobile wins across the WHOLE page, not per section. A hero often has
+        # only a mobile image (that is the point of the override), so scanning
+        # section-by-section let a later section's desktop icon beat it — the
+        # card ended up showing a step icon instead of the hero.
+        v = pick("images_mobile") or pick("images")
+        return export.serve_url_for(str(v)) if v else None
 
     @router.get("/projects")
     def list_projects(_user: dict = Depends(require_user)):

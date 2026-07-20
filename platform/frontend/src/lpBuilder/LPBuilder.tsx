@@ -392,9 +392,9 @@ function Dashboard({
         </p>
       ) : (
         <div
-          /* Denser than the old 3-up: the cover is square now, so a third of the
-             width made one page as tall as the viewport. Matches the folder grid. */
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+          /* Small tiles: the cover is square, so a wide card becomes a very tall
+             one. Six across keeps a page scannable at a glance. */
+          className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
         >
           {visible.map((p, i) => {
             const mine = p.created_by.toLowerCase() === myEmail
