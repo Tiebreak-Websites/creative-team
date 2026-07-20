@@ -97,6 +97,11 @@ def _clean_project_patch(payload: dict, p: dict) -> None:
                             for k, v in (s.get("repeats") or {}).items()
                             if isinstance(v, (int, float))},
                 "props": s.get("props") if isinstance(s.get("props"), dict) else {},
+                # Layer names from the builder's tree, keyed the same way the
+                # tree keys things ('title', 'steps.1', 'steps.1.icon'). Emitted
+                # as data-name on export; descriptive only.
+                "names": {str(k)[:80]: str(v)[:120] for k, v in (s.get("names") or {}).items()
+                          if str(v).strip()},
             })
         p["sections"] = secs
 
@@ -106,6 +111,8 @@ def _public_section(s: dict, with_body: bool = False) -> dict:
         "key": s["key"], "name": s.get("name", s["key"]), "category": s.get("category", "content"),
         "position": s.get("position", 999), "enabled": s.get("enabled", True),
         "built_in": bool(s.get("built_in")),
+        # What the block calls each slot (Layers tree + exported data-name).
+        "names": s.get("names") or {},
         "languages": sorted((s.get("texts") or {}).keys()),
         **core.parse_fields(s.get("html") or ""),
     }
@@ -250,17 +257,28 @@ def build_lp_builder_router() -> APIRouter:
 
     # ---- projects ------------------------------------------------------------
     def _cover_url(p: dict):
-        """The page's own hero-ish image (first placed image, hero/creative
-        slots preferred) — the dashboard card cover."""
+        """The page's own hero-ish image — the dashboard card cover.
+
+        The MOBILE variant of a slot wins over the desktop one: the card is
+        square, and a mobile hero is already cropped for a narrow frame, so it
+        fills the tile instead of being letterboxed. Falls back to the desktop
+        image for any slot without a mobile override.
+        """
         preferred = ("creative", "hero", "photo", "image")
+
+        def usable(v) -> bool:
+            return bool(v) and not str(v).startswith("token:")
+
         for inst in p.get("sections") or []:
+            mobile = inst.get("images_mobile") or {}
             images = inst.get("images") or {}
             for key in preferred:
-                v = images.get(key)
-                if v and not str(v).startswith("token:"):
+                v = mobile.get(key) if usable(mobile.get(key)) else images.get(key)
+                if usable(v):
                     return export.serve_url_for(str(v))
-            for v in images.values():
-                if v and not str(v).startswith("token:"):
+            for key, v in images.items():
+                v = mobile.get(key) if usable(mobile.get(key)) else v
+                if usable(v):
                     return export.serve_url_for(str(v))
         return None
 

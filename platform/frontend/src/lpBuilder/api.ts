@@ -29,6 +29,10 @@ export interface SectionDef {
   languages: string[]
   fields: SectionField[]
   repeats: SectionRepeat[]
+  /** What this block calls each slot, keyed by slot key ('q' -> 'Question').
+   * Slot keys are never renamed (saved content is keyed by them), so this is
+   * the display layer over them. Mirrors BRAINTRADE_ELEMENT_NAMES. */
+  names?: Record<string, string>
   has_form: boolean
   html: string
   css: string
@@ -53,6 +57,10 @@ export interface Instance {
   repeats: Record<string, number>
   /** field key (or "_section") -> breakpoint -> prop -> css value */
   props: Record<string, Partial<Record<Breakpoint, Record<string, string | boolean>>>>
+  /** Layer names from the Layers tree, keyed the same way it keys things:
+   * a field key ('title', 'steps.1.icon') or a repeat item ('steps.1').
+   * Exported as `data-name` on the matching element. */
+  names?: Record<string, string>
 }
 
 export interface SeoSettings {
@@ -256,22 +264,52 @@ export async function downloadExportZip(p: Project): Promise<void> {
 export function brandTokens(brand: {
   colors: string[]
   logo_svg?: string | null
+  logo_wide?: string | null
   font?: string | null
   lp?: { bg?: string; card?: string }
+  tokens?: Record<string, string> | null
+  typography?: {
+    heading_font?: string
+    body_font?: string
+    scale?: Record<string, { size?: number; weight?: number; line?: number }>
+  } | null
 }): Record<string, string> {
   const [c1, c2, c3] = brand.colors || []
-  let logo = brand.logo_svg || ''
-  if (logo && logo.trim().startsWith('<svg')) {
-    logo = 'data:image/svg+xml;utf8,' + encodeURIComponent(logo)
+  const asUri = (v?: string | null) => {
+    const s = (v || '').trim()
+    return s.startsWith('<svg') ? 'data:image/svg+xml;utf8,' + encodeURIComponent(s) : s
   }
-  return {
-    primary: c1 || '#E71E25',
-    accent: c2 || '#0A0F2E',
-    bg: brand.lp?.bg || '#FFFFFF',
-    surface: c3 || '#F4F6FB',
-    card: brand.lp?.card || '#FFFFFF',
-    text: '#0B1220',
-    muted: '#5B6472',
-    logo,
+
+  // An explicitly set token always wins. The palette-position fallbacks below
+  // are what every brand relied on before the token editor existed, so brands
+  // that haven't been given tokens keep rendering exactly as they did.
+  const t = brand.tokens || {}
+  const primary = t.primary || c1 || '#E71E25'
+  const out: Record<string, string> = {
+    primary,
+    accent: t.accent || c2 || '#0A0F2E',
+    // The CTA used to be hardwired to primary with white text, so those stay
+    // the defaults — set them to give the button its own colour.
+    cta: t.cta || primary,
+    'cta-text': t['cta_text'] || '#FFFFFF',
+    bg: t.bg || brand.lp?.bg || '#FFFFFF',
+    surface: t.surface || c3 || '#F4F6FB',
+    card: t.card || brand.lp?.card || '#FFFFFF',
+    text: t.text || '#0B1220',
+    muted: t.muted || '#5B6472',
+    logo: asUri(brand.logo_svg),
+    'logo-wide': asUri(brand.logo_wide),
   }
+
+  // Type scale -> --lp-<role>-size / -weight / -line. Existing sections hardcode
+  // their own sizes and ignore these; they're here for templates that opt in.
+  const ty = brand.typography || {}
+  if (ty.heading_font) out['font-heading'] = ty.heading_font
+  if (ty.body_font) out['font-body'] = ty.body_font
+  for (const [role, spec] of Object.entries(ty.scale || {})) {
+    if (spec?.size != null) out[`${role}-size`] = `${spec.size}px`
+    if (spec?.weight != null) out[`${role}-weight`] = String(spec.weight)
+    if (spec?.line != null) out[`${role}-line`] = String(spec.line)
+  }
+  return out
 }

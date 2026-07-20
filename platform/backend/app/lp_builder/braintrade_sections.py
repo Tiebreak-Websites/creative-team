@@ -1141,3 +1141,84 @@ BRAINTRADE_SECTIONS = [
   "assets": {}
  }
 ]
+
+
+# ---------------------------------------------------------------------------
+# Element names
+# ---------------------------------------------------------------------------
+# What each slot is called in the Layers tree and in the exported `data-name`.
+#
+# Keys here are SLOT KEYS, never renamed: a page's saved text/image overrides
+# are keyed by them, so changing `q` to `question` would orphan every stored
+# answer. This is a display layer over the keys instead.
+#
+# Lookup order at compose time: the user's own rename -> this table -> the name
+# derived from the key. A repeat's own key names the ITEM ("Question" -> the
+# rows read "Question 1", "Question 2"); its fields are keyed by field name.
+BRAINTRADE_ELEMENT_NAMES = {
+    "bt-header": {"logo": "Logo"},
+    "bt-hero-form": {
+        "creative": "Hero image", "title": "Headline",
+        "ph_name": "Name field", "ph_email": "Email field",
+        "ph_code": "Country code", "ph_phone": "Phone field",
+        "consent": "Consent text", "submit": "Submit button", "trust": "Trust line",
+    },
+    "bt-steps": {
+        "title": "Section heading", "steps": "Step",
+        "icon": "Step icon", "text": "Step description",
+    },
+    "bt-2blog": {"title": "Card heading", "text": "Card text", "image": "Card image"},
+    "bt-content-split": {"title": "Heading", "text": "Body text"},
+    "bt-2col": {"title": "Heading", "cols": "Column", "text": "Column text"},
+    "bt-symbols": {
+        "title": "Section heading", "cards": "Symbol",
+        "image": "Symbol image", "text": "Symbol description",
+    },
+    "bt-cards-grid": {
+        "title": "Section heading", "cards": "Card",
+        "image": "Card image", "text": "Card text",
+    },
+    "bt-cta": {"cta_href": "Button link", "cta": "Button label"},
+    "bt-journey": {
+        "title": "Section heading", "divider": "Divider", "months": "Month",
+        "bg": "Background", "icon": "Month icon", "label": "Month label",
+        "text": "Month description",
+    },
+    "bt-benefits": {
+        "title": "Section heading", "cards": "Benefit",
+        "icon": "Benefit icon", "text": "Benefit description",
+    },
+    "bt-coaching": {
+        "photo": "Coach photo", "title": "Heading", "subtitle": "Subheading",
+        "body": "Body text", "cta_href": "Button link", "cta": "Button label",
+    },
+    "bt-learn": {
+        "title": "Heading", "subtitle": "Subheading", "body": "Body text",
+        "screenshot": "App screenshot", "bullets": "Bullet",
+        "check": "Check icon", "label": "Bullet text",
+    },
+    "bt-switch": {
+        "screenshot": "App screenshot", "title": "Heading",
+        "subtitle": "Subheading", "body": "Body text",
+    },
+    "bt-faq": {
+        "title": "Heading", "subtitle": "Subheading", "photo": "Photo",
+        "star": "Star decoration", "squiggle": "Squiggle decoration",
+        "faq": "Question", "q": "Question", "a": "Answer",
+    },
+    "bt-testimonials": {
+        "title": "Heading", "subtitle": "Subheading",
+        "arrow": "Previous arrow", "arrow2": "Next arrow", "reviews": "Review",
+        "photo": "Reviewer photo", "name": "Reviewer name", "role": "Reviewer role",
+        "mark": "Quote mark", "quote": "Review text",
+    },
+    "bt-footer": {
+        "privacy_href": "Privacy URL", "link_privacy": "Privacy label",
+        "contact_href": "Contact URL", "link_contact": "Contact label",
+        "terms_href": "Terms URL", "link_terms": "Terms label",
+        "legal": "Legal text", "copyright": "Copyright",
+    },
+}
+
+for _sec in BRAINTRADE_SECTIONS:
+    _sec["names"] = BRAINTRADE_ELEMENT_NAMES.get(_sec["key"], {})

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   Archive,
@@ -8,61 +8,223 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
   Upload,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
+import { PillMultiSelect, type PillOption } from '@/components/PillMultiSelect'
 import { brandLogoSrc, brandLogoUri, useIsDark } from '@/lib/brandLogo'
+import { countryFlagUrl, flagUrl } from '@/lib/flags'
+import { MARKETS, REGION_LABEL } from '@/lib/markets'
 import { cn } from '@/lib/utils'
+import { listSections, type Language } from '../lpBuilder/api'
 import {
   academyOptions,
   createBrand,
+  propOptions,
   entityAccent,
   ENTITY_KINDS,
+  FONT_WEIGHTS,
   KIND_HINT,
   KIND_LABEL,
   kindOf,
   listBrands,
   NEUTRAL_ACCENT,
   normaliseName,
+  REGULATION_LABEL,
+  REGULATIONS,
+  TOKEN_FIELDS,
+  TYPE_ROLES,
   updateBrand,
   whitelabelOptions,
   type Brand,
   type BrandInput,
   type EntityKind,
+  type Regulation,
+  type TypeSpec,
+  type Typography,
 } from '../bannerBuilder/brandsApi'
 
 /** ~1.2MB cap on an uploaded logo — a data: URI is ~1.37x the file bytes and the
  * backend caps the stored string at ~2MB, so this stays comfortably under. */
 const MAX_LOGO_BYTES = 1_200_000
 
+/** The five logo shapes an entity can carry. */
+type LogoField = 'icon_svg' | 'favicon' | 'logo_wide' | 'logo_svg' | 'logo_svg_dark'
+
+const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+
+/** '0050f9' / '#0050F9' / ' #05f ' -> '#0050F9'. null when it isn't a hex yet.
+ *
+ * Shorthand is EXPANDED to six digits: `<input type="color">` can only hold
+ * #rrggbb, so storing '#ABC' would leave every swatch silently showing the
+ * default blue while the value itself was fine. */
+function normaliseHex(raw: string): string | null {
+  const s = raw.trim()
+  if (!s) return null
+  const withHash = s.startsWith('#') ? s : `#${s}`
+  if (!HEX_RE.test(withHash)) return null
+  const body = withHash.slice(1)
+  const full = body.length === 3 ? body.split('').map((c) => c + c).join('') : body
+  return `#${full}`.toUpperCase()
+}
+
+/**
+ * A hex field you can type into. Keeps its own draft so half-typed values like
+ * "#00" don't get rejected mid-keystroke; commits as soon as the draft parses,
+ * and snaps back to the last good value on blur if it never did. The leading
+ * '#' is optional — pasting a bare hex from a design tool just works.
+ */
+function HexText({
+  value,
+  onCommit,
+  placeholder,
+  className,
+  ariaLabel,
+}: {
+  value: string | null
+  onCommit: (hex: string) => void
+  placeholder?: string
+  className?: string
+  ariaLabel: string
+}) {
+  const [draft, setDraft] = useState(value ?? '')
+  // Follow the value when it changes elsewhere (picker, clear, reopening the form).
+  useEffect(() => {
+    setDraft(value ?? '')
+  }, [value])
+  const parsed = normaliseHex(draft)
+  const invalid = draft.trim() !== '' && !parsed
+  return (
+    <input
+      type="text"
+      inputMode="text"
+      spellCheck={false}
+      value={draft}
+      aria-label={ariaLabel}
+      placeholder={placeholder}
+      onChange={(e) => {
+        setDraft(e.target.value)
+        const hex = normaliseHex(e.target.value)
+        if (hex) onCommit(hex)
+      }}
+      onBlur={() => setDraft(parsed ?? value ?? '')}
+      className={cn(
+        'w-full bg-transparent font-mono outline-none placeholder:text-muted-foreground',
+        invalid ? 'text-destructive' : 'text-foreground',
+        className,
+      )}
+    />
+  )
+}
+
+/** One logo shape: preview, upload, clear. `wide` gives a letterbox preview for
+ * horizontal lockups; `onDark` previews white-lettered marks on a dark plate. */
+function LogoSlot({
+  label,
+  note,
+  value,
+  wide,
+  onDark,
+  onPick,
+  onClear,
+}: {
+  label: string
+  note: string
+  value: string | null
+  wide?: boolean
+  onDark?: boolean
+  onPick: () => void
+  onClear: () => void
+}) {
+  const src = brandLogoUri(value, false)
+  return (
+    <div className="flex items-center gap-2.5 rounded-lg border border-border bg-background p-2">
+      <div
+        className={cn(
+          'flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-border',
+          wide ? 'h-11 w-20' : 'h-11 w-11',
+          onDark ? 'bg-slate-900' : 'bg-white',
+        )}
+      >
+        {src ? (
+          <img src={src} alt="" className="h-full w-full object-contain p-1" />
+        ) : (
+          <span className="text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+            None
+          </span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1 leading-tight">
+        <span className="block truncate text-[12px] font-medium text-foreground">{label}</span>
+        <span className="block truncate text-[10px] text-muted-foreground">{note}</span>
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <button
+          type="button"
+          onClick={onPick}
+          title={value ? `Replace ${label.toLowerCase()}` : `Upload ${label.toLowerCase()}`}
+          aria-label={value ? `Replace ${label}` : `Upload ${label}`}
+          className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Upload className="h-3.5 w-3.5" />
+        </button>
+        {value && (
+          <button
+            type="button"
+            onClick={onClear}
+            title={`Remove ${label.toLowerCase()}`}
+            aria-label={`Remove ${label}`}
+            className="rounded p-1 text-muted-foreground transition-colors hover:text-destructive"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 interface BrandDraft {
   id?: string
   name: string
   kind: EntityKind
   active: boolean
+  regulation: Regulation | null
+  markets: string[]
+  languages: string[]
   colors: string[]
   icon_svg: string | null
+  favicon: string | null
+  logo_wide: string | null
   logo_svg: string | null
   logo_svg_dark: string | null
   font: string
   accent: string | null
-  voice: string
+  tokens: Record<string, string>
+  typography: Typography
 }
 
 const EMPTY_DRAFT: BrandDraft = {
   name: '',
   kind: 'broker',
   active: true,
+  regulation: null,
+  markets: [],
+  languages: [],
   colors: [],
   icon_svg: null,
+  favicon: null,
+  logo_wide: null,
   logo_svg: null,
   logo_svg_dark: null,
   font: '',
   accent: null,
-  voice: '',
+  tokens: {},
+  typography: {},
 }
 
 const draftOf = (b: Brand): BrandDraft => ({
@@ -70,13 +232,22 @@ const draftOf = (b: Brand): BrandDraft => ({
   name: b.name,
   kind: kindOf(b),
   active: b.active !== false,
+  regulation: b.regulation ?? null,
+  markets: b.markets ?? [],
+  languages: b.languages ?? [],
   colors: b.colors ?? [],
   icon_svg: b.icon_svg ?? null,
+  favicon: b.favicon ?? null,
+  logo_wide: b.logo_wide ?? null,
   logo_svg: b.logo_svg ?? null,
   logo_svg_dark: b.logo_svg_dark ?? null,
   font: b.font ?? '',
   accent: b.accent ?? null,
-  voice: b.voice ?? '',
+  tokens: { ...(b.tokens ?? {}) },
+  typography: {
+    ...(b.typography ?? {}),
+    scale: { ...(b.typography?.scale ?? {}) },
+  },
 })
 
 /**
@@ -127,6 +298,7 @@ export function BrandsSettings() {
     { kind: 'broker', items: live.filter((b) => kindOf(b) === 'broker') },
     { kind: 'whitelabel', items: whitelabelOptions(live) },
     { kind: 'academy', items: academyOptions(live) },
+    { kind: 'prop', items: propOptions(live) },
   ]
   const retired = brands.filter((b) => b.active === false)
 
@@ -137,10 +309,11 @@ export function BrandsSettings() {
           <h2 className="font-display text-base font-semibold text-foreground">Brands</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             The registry every picker reads from. A <b className="font-semibold text-foreground">broker</b>{' '}
-            is the product being sold; a <b className="font-semibold text-foreground">white label</b> is a
-            surface that routes traffic to one; an{' '}
-            <b className="font-semibold text-foreground">academy</b> sells education — it picks like a
-            broker everywhere, and is grouped separately only for reporting.
+            is the product being sold; an <b className="font-semibold text-foreground">academy</b> sells
+            education and a <b className="font-semibold text-foreground">prop firm</b> sells
+            funded-account challenges — both pick like a broker everywhere, and are grouped separately
+            only for reporting. A <b className="font-semibold text-foreground">white label</b> is the one
+            true exception: a surface that routes traffic to a brand, never a brand itself.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -261,15 +434,47 @@ function BrandEditor({
   const [d, setD] = useState<BrandDraft>(draft)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const darkFileRef = useRef<HTMLInputElement>(null)
-  const iconFileRef = useRef<HTMLInputElement>(null)
+  const uploadRef = useRef<HTMLInputElement>(null)
+  const [uploadField, setUploadField] = useState<LogoField | null>(null)
+
+  // Markets are static reference data; languages come from the LP registry so
+  // the picker can't offer one the backend would reject on save.
+  const [languages, setLanguages] = useState<Language[]>([])
+  useEffect(() => {
+    listSections()
+      .then((d) => setLanguages(d.languages))
+      .catch(() => {
+        /* the field just stays empty — nothing else in the form depends on it */
+      })
+  }, [])
+
+  const marketOptions: PillOption[] = useMemo(
+    () =>
+      MARKETS.map((m) => ({
+        value: m.code,
+        label: m.name,
+        flag: countryFlagUrl(m.code),
+        group: REGION_LABEL[m.region],
+      })),
+    [],
+  )
+
+  const languageOptions: PillOption[] = useMemo(
+    () =>
+      languages.map((l) => ({
+        value: l.code,
+        label: l.label,
+        flag: flagUrl(l.code),
+      })),
+    [languages],
+  )
+  function pickFile(field: LogoField) {
+    setUploadField(field)
+    uploadRef.current?.click()
+  }
   const patch = (p: Partial<BrandDraft>) => setD((cur) => ({ ...cur, ...p }))
 
-  function onLogoFile(
-    file: File | undefined,
-    field: 'logo_svg' | 'logo_svg_dark' | 'icon_svg' = 'logo_svg',
-  ) {
+  function onLogoFile(file: File | undefined, field: LogoField = 'logo_svg') {
     if (!file) return
     if (file.size > MAX_LOGO_BYTES) {
       setErr('That logo is too large — please use one under ~1.2 MB.')
@@ -304,13 +509,21 @@ function BrandEditor({
       name: d.name.trim(),
       kind: d.kind,
       active: d.active,
+      // Regulation only means something for a broker; a white label or academy
+      // isn't the licensed entity, so don't persist a stale value against one.
+      regulation: d.kind === 'broker' ? d.regulation : null,
+      markets: d.markets,
+      languages: d.languages,
       colors: d.colors,
       icon_svg: d.icon_svg,
+      favicon: d.favicon,
+      logo_wide: d.logo_wide,
       logo_svg: d.logo_svg,
       logo_svg_dark: d.logo_svg_dark,
       font: d.font.trim() || null,
       accent: d.accent || null,
-      voice: d.voice.trim() || null,
+      tokens: d.tokens,
+      typography: d.typography,
     }
     setBusy(true)
     setErr(null)
@@ -330,8 +543,8 @@ function BrandEditor({
       open
       onClose={onClose}
       title={d.id ? `Edit ${KIND_LABEL[d.kind].toLowerCase()}` : 'Add entity'}
-      description="Name, palette and logo keep generated banners on-brand. The CTA stays auto high-contrast."
-      className="max-w-lg"
+      description="The brand kit: what pickers show, what a landing page is built from, and what keeps generated banners on-brand."
+      className="max-w-2xl"
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} className="mr-auto">
@@ -354,7 +567,7 @@ function BrandEditor({
         </Field>
 
         <Field label="Type" hint="Decides which pickers this appears in.">
-          <div className="grid gap-1.5 sm:grid-cols-3">
+          <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-4">
             {ENTITY_KINDS.map((k) => {
               const on = d.kind === k
               return (
@@ -394,6 +607,65 @@ function BrandEditor({
           )}
         </Field>
 
+        {/* Regulation is a property of the licensed entity, so it's only asked
+            for brokers — a white label fronts someone else's licence. */}
+        {d.kind === 'broker' && (
+          <Field label="Regulation" hint="Which licence this broker operates under.">
+            <div className="flex flex-wrap gap-1.5">
+              {REGULATIONS.map((r) => {
+                const on = d.regulation === r
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => patch({ regulation: on ? null : r })}
+                    aria-pressed={on}
+                    className={cn(
+                      'rounded-lg border px-3 py-1.5 font-display text-xs font-medium transition-colors',
+                      on
+                        ? 'border-primary/60 bg-primary/10 text-foreground'
+                        : 'border-border bg-background text-muted-foreground hover:bg-secondary/60',
+                    )}
+                  >
+                    {REGULATION_LABEL[r]}
+                  </button>
+                )
+              })}
+              {d.regulation && (
+                <button
+                  type="button"
+                  onClick={() => patch({ regulation: null })}
+                  className="px-2 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </Field>
+        )}
+
+        <Field label="Target markets" hint="Where this entity operates. Grouped by region.">
+          <PillMultiSelect
+            options={marketOptions}
+            selected={d.markets}
+            onChange={(markets) => patch({ markets })}
+            addLabel="Add market"
+            searchPlaceholder="Search countries…"
+            emptyHint="No markets yet."
+          />
+        </Field>
+
+        <Field label="Languages" hint="What this entity publishes in.">
+          <PillMultiSelect
+            options={languageOptions}
+            selected={d.languages}
+            onChange={(languages) => patch({ languages })}
+            addLabel="Add language"
+            searchPlaceholder="Search languages…"
+            emptyHint="No languages yet."
+          />
+        </Field>
+
         <Field label="Palette" hint="Folded into the art direction so the design stays on-brand.">
           <div className="flex flex-wrap items-center gap-2">
             {d.colors.map((hex, i) => (
@@ -410,7 +682,14 @@ function BrandEditor({
                   className="h-6 w-6 cursor-pointer rounded border border-border bg-transparent p-0"
                   title="Change colour"
                 />
-                <span className="font-mono text-[11px] text-foreground">{hex.toUpperCase()}</span>
+                <HexText
+                  value={hex}
+                  ariaLabel={`Palette colour ${i + 1} hex`}
+                  className="w-[68px] text-[11px]"
+                  onCommit={(next) =>
+                    patch({ colors: d.colors.map((c, j) => (j === i ? next : c)) })
+                  }
+                />
                 <button
                   type="button"
                   onClick={() => patch({ colors: d.colors.filter((_, j) => j !== i) })}
@@ -432,103 +711,218 @@ function BrandEditor({
           </div>
         </Field>
 
-        <Field label="Icon" hint="The square mark shown in this registry. Not composited onto banners.">
-          <div className="flex items-center gap-3">
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-white">
-              {brandLogoUri(d.icon_svg, false) ? (
-                <img src={brandLogoUri(d.icon_svg, false)} alt="" className="h-full w-full object-contain" />
-              ) : (
-                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Icon
-                </span>
-              )}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <input
-                ref={iconFileRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg"
-                className="hidden"
-                onChange={(e) => onLogoFile(e.target.files?.[0], 'icon_svg')}
-              />
-              <Button size="sm" variant="outline" onClick={() => iconFileRef.current?.click()}>
-                <Upload className="h-4 w-4" /> {d.icon_svg ? 'Replace icon' : 'Upload icon'}
-              </Button>
-              {d.icon_svg && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => patch({ icon_svg: null })}
-                >
-                  <X className="h-4 w-4" /> Remove icon
-                </Button>
-              )}
-            </div>
-          </div>
-        </Field>
+        {/* One hidden input serves every slot — the target field is picked when
+            the button is clicked, rather than keeping five refs in sync. */}
+        <input
+          ref={uploadRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg"
+          className="hidden"
+          onChange={(e) => {
+            if (uploadField) onLogoFile(e.target.files?.[0], uploadField)
+            e.target.value = '' // let the same file be re-picked after a remove
+          }}
+        />
 
-        <Field label="Logo (light theme)" hint="SVG, PNG, JPG or WebP. SVGs are rasterized for the overlay.">
-          <div className="flex items-center gap-3">
-            <LogoPreview svg={d.logo_svg} className="h-16 w-16 shrink-0" />
-            <div className="flex flex-col gap-1.5">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg"
-                className="hidden"
-                onChange={(e) => onLogoFile(e.target.files?.[0])}
-              />
-              <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
-                <Upload className="h-4 w-4" /> {d.logo_svg ? 'Replace logo' : 'Upload logo'}
-              </Button>
-              {d.logo_svg && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => patch({ logo_svg: null })}
-                >
-                  <X className="h-4 w-4" /> Remove logo
-                </Button>
-              )}
-            </div>
+        <Field label="Logos" hint="SVG or PNG. Each shape has its own job.">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <LogoSlot
+              label="Square"
+              note="Registry cards, folder tiles"
+              value={d.icon_svg}
+              onPick={() => pickFile('icon_svg')}
+              onClear={() => patch({ icon_svg: null })}
+            />
+            <LogoSlot
+              label="Favicon"
+              note="Tab icon on exported pages"
+              value={d.favicon}
+              onPick={() => pickFile('favicon')}
+              onClear={() => patch({ favicon: null })}
+            />
+            <LogoSlot
+              label="Horizontal"
+              note="Page headers"
+              value={d.logo_wide}
+              wide
+              onPick={() => pickFile('logo_wide')}
+              onClear={() => patch({ logo_wide: null })}
+            />
+            <LogoSlot
+              label="Banner wordmark"
+              note="Composited onto banners"
+              value={d.logo_svg}
+              wide
+              onPick={() => pickFile('logo_svg')}
+              onClear={() => patch({ logo_svg: null })}
+            />
+            <LogoSlot
+              label="Wordmark (dark)"
+              note="Optional — else dark letters auto-whiten"
+              value={d.logo_svg_dark}
+              wide
+              onDark
+              onPick={() => pickFile('logo_svg_dark')}
+              onClear={() => patch({ logo_svg_dark: null })}
+            />
           </div>
         </Field>
 
         <Field
-          label="Logo (dark theme, optional)"
-          hint="Shown wherever the app renders the logo on dark surfaces. Without one, dark letters are auto-recolored to white."
+          label="Page colours"
+          hint="Drive the landing page directly. Unset falls back to the palette."
         >
-          <div className="flex items-center gap-3">
-            <LogoPreview svg={d.logo_svg_dark} svgDark={d.logo_svg_dark} className="h-16 w-16 shrink-0 !bg-slate-900" />
-            <div className="flex flex-col gap-1.5">
-              <input
-                ref={darkFileRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg"
-                className="hidden"
-                onChange={(e) => onLogoFile(e.target.files?.[0], 'logo_svg_dark')}
-              />
-              <Button size="sm" variant="outline" onClick={() => darkFileRef.current?.click()}>
-                <Upload className="h-4 w-4" /> {d.logo_svg_dark ? 'Replace dark logo' : 'Upload dark logo'}
-              </Button>
-              {d.logo_svg_dark && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => patch({ logo_svg_dark: null })}
+          <div className="grid gap-1.5 sm:grid-cols-2">
+            {TOKEN_FIELDS.map((f) => {
+              const val = d.tokens[f.key]
+              return (
+                <div
+                  key={f.key}
+                  className="flex items-center gap-2 rounded-lg border border-border bg-background px-2 py-1.5"
                 >
-                  <X className="h-4 w-4" /> Remove dark logo
-                </Button>
-              )}
+                  {/* An unset token still needs a value for the colour input,
+                      so it's dimmed and dashed — otherwise every unset swatch
+                      reads as a deliberate blue. */}
+                  <input
+                    type="color"
+                    value={val && /^#[0-9a-fA-F]{6}$/.test(val) ? val : '#2563EB'}
+                    onChange={(e) =>
+                      patch({ tokens: { ...d.tokens, [f.key]: e.target.value.toUpperCase() } })
+                    }
+                    className={cn(
+                      'h-7 w-7 shrink-0 cursor-pointer rounded border bg-transparent p-0',
+                      val ? 'border-border' : 'border-dashed border-muted-foreground/50 opacity-30',
+                    )}
+                    title={val ? f.label : `${f.label} — not set, using the palette fallback`}
+                  />
+                  <span className="min-w-0 flex-1 leading-tight">
+                    <span className="block truncate text-[12px] font-medium text-foreground">
+                      {f.label}
+                    </span>
+                    <HexText
+                      value={val ?? null}
+                      ariaLabel={`${f.label} hex`}
+                      placeholder={f.hint}
+                      className="text-[10px]"
+                      onCommit={(hex) => patch({ tokens: { ...d.tokens, [f.key]: hex } })}
+                    />
+                  </span>
+                  {val && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = { ...d.tokens }
+                        delete next[f.key]
+                        patch({ tokens: next })
+                      }}
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
+                      title="Clear — fall back to the palette"
+                      aria-label={`Clear ${f.label}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </Field>
+
+        <Field
+          label="Typography"
+          hint="Families apply to pages now; the scale is read by templates that opt in."
+        >
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input
+              value={d.typography.heading_font ?? ''}
+              onChange={(e) =>
+                patch({ typography: { ...d.typography, heading_font: e.target.value } })
+              }
+              placeholder="Heading font — e.g. Poppins"
+              className="h-9"
+            />
+            <Input
+              value={d.typography.body_font ?? ''}
+              onChange={(e) =>
+                patch({ typography: { ...d.typography, body_font: e.target.value } })
+              }
+              placeholder="Body font — e.g. Inter"
+              className="h-9"
+            />
+          </div>
+
+          <div className="mt-2 space-y-1.5">
+            <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span>Role</span>
+              <span className="w-16 text-center">Size</span>
+              <span className="w-20 text-center">Weight</span>
+              <span className="w-16 text-center">Line</span>
             </div>
+            {TYPE_ROLES.map((role) => {
+              const spec = d.typography.scale?.[role.key] ?? {}
+              const setSpec = (next: TypeSpec) =>
+                patch({
+                  typography: {
+                    ...d.typography,
+                    scale: { ...(d.typography.scale ?? {}), [role.key]: { ...spec, ...next } },
+                  },
+                })
+              return (
+                <div
+                  key={role.key}
+                  className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 rounded-lg border border-border bg-background px-2 py-1.5"
+                >
+                  <span className="truncate text-[12px] font-medium">{role.label}</span>
+                  <input
+                    type="number"
+                    min={8}
+                    max={200}
+                    value={spec.size ?? ''}
+                    onChange={(e) =>
+                      setSpec({ size: e.target.value === '' ? undefined : Number(e.target.value) })
+                    }
+                    placeholder="—"
+                    aria-label={`${role.label} size in px`}
+                    className="h-8 w-16 rounded-md border border-border bg-background px-2 text-center text-xs"
+                  />
+                  <select
+                    value={spec.weight ?? ''}
+                    onChange={(e) =>
+                      setSpec({
+                        weight: e.target.value === '' ? undefined : Number(e.target.value),
+                      })
+                    }
+                    aria-label={`${role.label} weight`}
+                    className="h-8 w-20 rounded-md border border-border bg-background px-1 text-center text-xs"
+                  >
+                    <option value="">—</option>
+                    {FONT_WEIGHTS.map((w) => (
+                      <option key={w} value={w}>
+                        {w}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={0.8}
+                    max={3}
+                    step={0.05}
+                    value={spec.line ?? ''}
+                    onChange={(e) =>
+                      setSpec({ line: e.target.value === '' ? undefined : Number(e.target.value) })
+                    }
+                    placeholder="—"
+                    aria-label={`${role.label} line height`}
+                    className="h-8 w-16 rounded-md border border-border bg-background px-2 text-center text-xs"
+                  />
+                </div>
+              )
+            })}
           </div>
         </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Typography hint">
+          <Field label="Typography hint" hint="Steers banner art direction.">
             <Input
               value={d.font}
               onChange={(e) => patch({ font: e.target.value })}
@@ -536,7 +930,7 @@ function BrandEditor({
               className="h-9"
             />
           </Field>
-          <Field label="Accent colour">
+          <Field label="Accent colour" hint="Banner CTA hint.">
             <div className="flex items-center gap-2">
               <input
                 type="color"
@@ -545,33 +939,27 @@ function BrandEditor({
                 className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent p-0"
                 title="Accent colour"
               />
-              {d.accent ? (
-                <>
-                  <span className="font-mono text-xs text-foreground">{d.accent.toUpperCase()}</span>
-                  <button
-                    type="button"
-                    onClick={() => patch({ accent: null })}
-                    className="text-muted-foreground hover:text-foreground"
-                    title="Clear (auto)"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </>
-              ) : (
-                <span className="text-xs text-muted-foreground">Auto</span>
+              <HexText
+                value={d.accent}
+                ariaLabel="Accent colour hex"
+                placeholder="Auto"
+                className="w-[76px] text-xs"
+                onCommit={(hex) => patch({ accent: hex })}
+              />
+              {d.accent && (
+                <button
+                  type="button"
+                  onClick={() => patch({ accent: null })}
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  title="Clear (auto)"
+                  aria-label="Clear accent colour"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               )}
             </div>
           </Field>
         </div>
-
-        <Field label="Tone of voice">
-          <Input
-            value={d.voice}
-            onChange={(e) => patch({ voice: e.target.value })}
-            placeholder="e.g. confident, concise, expert"
-            className="h-9"
-          />
-        </Field>
 
         {err && <p className="text-sm text-destructive">{err}</p>}
       </div>
@@ -644,6 +1032,15 @@ function BrandCard({
           >
             {normaliseName(brand.name)}
           </div>
+          {brand.regulation && (
+            <span
+              className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-full border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+              title={REGULATION_LABEL[brand.regulation]}
+            >
+              <ShieldCheck className="h-2.5 w-2.5 shrink-0" aria-hidden />
+              {brand.regulation === 'eu' ? 'EU' : 'International'}
+            </span>
+          )}
         </div>
 
         <div className="flex shrink-0 flex-col items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">

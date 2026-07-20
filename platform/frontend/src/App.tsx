@@ -22,6 +22,7 @@ import { HelpModal, type HelpTool } from './bannerBuilder/HelpModal'
 import { LPBuilder } from './lpBuilder/LPBuilder'
 import { LPMaterials } from './lpMaterials/LPMaterials'
 import { EmailBuilder } from './emailBuilder/EmailBuilder'
+import { Home } from './home/Home'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { Login } from './auth/Login'
 import { UserMenu } from './auth/UserMenu'
@@ -197,6 +198,9 @@ const PRODUCTS: {
   nav: string
   navShort: string
   icon: ToolIcon
+  /** One-liner + accent, used by the home screen's cards. */
+  blurb: string
+  accent: string
   /** No working tools yet — the product renders a placeholder and has no help entry. */
   soon?: boolean
   tools: { id: string; label: string; icon: ToolIcon }[]
@@ -207,6 +211,8 @@ const PRODUCTS: {
     nav: 'Banners',
     navShort: 'Banners',
     icon: ImageIcon,
+    blurb: 'Describe an idea and the AI designs it, in every size you need.',
+    accent: '#2563EB',
     tools: [
       { id: 'generate', label: 'Generate', icon: Sparkles },
       { id: 'edit', label: 'Edit', icon: PenLine },
@@ -218,6 +224,8 @@ const PRODUCTS: {
     nav: 'Landing Pages',
     navShort: 'LPs',
     icon: PanelsTopLeft,
+    blurb: 'Assemble a page from brand templates and export a ready-to-host site.',
+    accent: '#7C3AED',
     tools: [
       { id: 'builder', label: 'Builder', icon: LayoutTemplate },
       { id: 'materials', label: 'Materials', icon: Images },
@@ -225,10 +233,12 @@ const PRODUCTS: {
   },
   {
     id: 'email',
-    label: 'Email Builder',
+    label: 'CRM Emails',
     nav: 'Emails',
     navShort: 'Emails',
     icon: Mail,
+    blurb: 'Campaign emails for the CRM team. In the works — take a peek.',
+    accent: '#0D9488',
     soon: true,
     tools: [{ id: 'builder', label: 'Builder', icon: LayoutTemplate }],
   },
@@ -248,6 +258,14 @@ function readWorkspaceFromUrl(): { app: ProductId; tool: string } | null {
   } catch {
     return null
   }
+}
+
+/** Start on the home screen unless the URL names a product — so a fresh visit
+ * gets the "what do you want to create?" picker rather than being dropped into
+ * whichever builder happens to be first. A deep link or a refresh inside a
+ * builder still lands where it should. */
+function initialView(): 'home' | 'tool' {
+  return readWorkspaceFromUrl() ? 'tool' : 'home'
 }
 
 function initialWorkspace(): { app: ProductId; tool: string } {
@@ -276,7 +294,7 @@ function Workspace() {
   const { user } = useAuth()
   const [ws, setWs] = useState(initialWorkspace)
   const [disk, setDisk] = useState(false)
-  const [view, setView] = useState<'tool' | 'settings'>('tool')
+  const [view, setView] = useState<'home' | 'tool' | 'settings'>(initialView)
   const [settingsTab, setSettingsTab] = useState<'brands' | 'sizes'>('brands')
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
@@ -295,19 +313,28 @@ function Workspace() {
   // Persist + mirror the workspace to the URL so refresh/deep-links restore it.
   // `inv:tool:<app>` remembers the last sub-tool PER product, so switching
   // products brings you back to where you left off in each.
+  //
+  // On the home screen the params are STRIPPED instead: leaving ?app= behind
+  // would make a refresh skip the picker and reopen the last builder, which is
+  // exactly the behaviour the home screen replaces.
   useEffect(() => {
     try {
-      localStorage.setItem('inv:app', ws.app)
-      localStorage.setItem('inv:tool', ws.tool)
-      localStorage.setItem(`inv:tool:${ws.app}`, ws.tool)
       const url = new URL(window.location.href)
-      url.searchParams.set('app', ws.app)
-      url.searchParams.set('tool', ws.tool)
+      if (view === 'home') {
+        url.searchParams.delete('app')
+        url.searchParams.delete('tool')
+      } else {
+        localStorage.setItem('inv:app', ws.app)
+        localStorage.setItem('inv:tool', ws.tool)
+        localStorage.setItem(`inv:tool:${ws.app}`, ws.tool)
+        url.searchParams.set('app', ws.app)
+        url.searchParams.set('tool', ws.tool)
+      }
       window.history.replaceState(null, '', url.toString())
     } catch {
       /* best-effort */
     }
-  }, [ws])
+  }, [ws, view])
 
   const isAdmin = user?.role === 'admin'
   const product = PRODUCTS.find((p) => p.id === ws.app) ?? PRODUCTS[0]
@@ -333,10 +360,16 @@ function Workspace() {
           panes, so header dropdowns (e.g. the user menu, which hangs below the
           64px header into <main>'s territory) paint on top of everything. */}
       <header className="relative z-50 flex h-16 shrink-0 items-center gap-2 bg-card/70 px-3 backdrop-blur-md sm:gap-3 sm:px-5">
-        {/* Brand mark only — categories live in their own bar below the header. */}
-        <div className="flex shrink-0 items-center" title="Internovus — Creative Builder">
+        {/* The brand mark doubles as the way back to the home picker. */}
+        <button
+          type="button"
+          onClick={() => { setDisk(false); setView('home') }}
+          className="flex shrink-0 items-center rounded-md transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title="Internovus — Creative Builder · back to home"
+          aria-label="Back to home"
+        >
           <Logo className="h-7 w-auto sm:h-8" />
-        </div>
+        </button>
 
         <div className="ml-auto flex items-center gap-2">
           <StorageBadge
@@ -386,7 +419,8 @@ function Workspace() {
           aria-label="Categories"
         >
           {PRODUCTS.map((p) => {
-            const active = p.id === product.id
+            // Nothing is "current" on the home screen — the picker is.
+            const active = view !== 'home' && p.id === product.id
             return (
               <button
                 key={p.id}
@@ -417,9 +451,9 @@ function Workspace() {
           })}
         </nav>
 
-        {/* Sub-tools of the active category. A category with a single tool has
-            nothing to switch between, so the row is omitted entirely. */}
-        {product.tools.length > 1 && (
+        {/* Sub-tools of the active category. Hidden on home (no category is
+            active) and for a category with a single tool (nothing to switch). */}
+        {view !== 'home' && product.tools.length > 1 && (
           <nav
             className="flex shrink-0 items-center gap-1"
             aria-label={`${product.label} tools`}
@@ -439,7 +473,22 @@ function Workspace() {
       </div>
 
       <main className="min-h-0 flex-1 overflow-hidden">
-        {view === 'settings' ? (
+        {view === 'home' ? (
+          <Home
+            options={PRODUCTS.map((p) => ({
+              id: p.id,
+              label: p.label,
+              blurb: p.blurb,
+              icon: p.icon,
+              accent: p.accent,
+              soon: p.soon,
+            }))}
+            onPick={(id) => {
+              const p = PRODUCTS.find((x) => x.id === id)
+              if (p) goProduct(p)
+            }}
+          />
+        ) : view === 'settings' ? (
           <div className="h-full overflow-y-auto">
             <div className="space-y-4 p-5">
               <nav className="flex items-center gap-1">

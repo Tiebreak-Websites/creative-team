@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   Check,
+  ChevronRight,
   Copy,
   Loader2,
   Monitor,
@@ -9,6 +10,9 @@ import {
   Plus,
   Smartphone,
   Tablet,
+  LayoutGrid,
+  List,
+  RotateCcw,
   Trash2,
   Upload,
   X,
@@ -16,6 +20,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { flagUrl } from '@/lib/flags'
+import { SectionThumb } from './Builder'
 import {
   composePage,
   createSection,
@@ -30,26 +36,191 @@ import {
   type SectionDef,
 } from './api'
 
+/** Category headings. A block's category IS its owning brand (plus the shared
+ * generic buckets), so grouping is what "each brand has its own library" looks
+ * like — and it stops the same chip repeating on all 17 rows. */
+const CATEGORY_LABEL: Record<string, string> = {
+  braintrade: 'BrainTrade',
+  elements: 'Elements (shared)',
+  hero: 'Hero',
+  content: 'Content',
+  'social-proof': 'Social proof',
+  conversion: 'Conversion',
+  legal: 'Legal & footer',
+}
+/** Brand libraries first, shared buckets after. */
+const CATEGORY_RANK = (c: string) => (c === 'elements' ? 2 : 1)
+
+/** Small switch — green when on. Replaces the native checkbox, which read as a
+ * form field rather than an on/off state. */
+function Toggle({
+  on,
+  onChange,
+  label,
+}: {
+  on: boolean
+  onChange: (next: boolean) => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      title={label}
+      onClick={() => onChange(!on)}
+      className={cn(
+        'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
+        on ? 'bg-emerald-500' : 'bg-muted-foreground/30',
+      )}
+    >
+      <span
+        className={cn(
+          'inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform',
+          on ? 'translate-x-3.5' : 'translate-x-0.5',
+        )}
+      />
+    </button>
+  )
+}
+
+/** A block's languages as flags — the same marks the Languages settings use, so
+ * the two surfaces read alike.
+ *
+ * Every flag is shown (they wrap rather than truncate: "+4" hid exactly the
+ * information you came for). Each carries its language NAME as a tooltip, and
+ * the group tooltip lists them all — a flag alone is a guess. */
+function LangFlags({ codes, languages }: { codes: string[]; languages: Language[] }) {
+  const nameOf = (c: string) => languages.find((l) => l.code === c)?.label ?? c.toUpperCase()
+  return (
+    <span
+      className="flex min-w-0 flex-wrap items-center justify-end gap-0.5"
+      title={codes.map(nameOf).join(' · ')}
+    >
+      {codes.map((c) => {
+        const url = flagUrl(c)
+        return url ? (
+          <img
+            key={c}
+            src={url}
+            alt={nameOf(c)}
+            title={nameOf(c)}
+            className="h-3 w-[18px] shrink-0 rounded-[2px] object-cover ring-1 ring-inset ring-black/10"
+          />
+        ) : (
+          <span
+            key={c}
+            title={nameOf(c)}
+            className="shrink-0 text-[9px] font-semibold uppercase text-muted-foreground"
+          >
+            {c}
+          </span>
+        )
+      })}
+    </span>
+  )
+}
+
 /** Admin — manage the section template library + the global language list. */
 export function AdminTemplates({
   sections,
   languages,
+  initialEditKey,
   onBack,
   onChanged,
   onError,
 }: {
   sections: SectionDef[]
   languages: Language[]
+  /** Open this block's editor on mount — set when arriving from the builder's
+   * Add tab, so the pencil lands on the block rather than the library index. */
+  initialEditKey?: string
   onBack: () => void
   onChanged: () => void
   onError: (m: string) => void
 }) {
   const [editing, setEditing] = useState<SectionDef | null>(null)
+
+  // Arriving from the builder's Add tab with a block in mind: open its editor
+  // directly. Runs once per key so closing the editor doesn't reopen it.
+  const openedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!initialEditKey || openedRef.current === initialEditKey) return
+    const target = sections.find((s) => s.key === initialEditKey)
+    if (target) {
+      openedRef.current = initialEditKey
+      setEditing(target)
+    }
+  }, [initialEditKey, sections])
   const [langsDraft, setLangsDraft] = useState<Language[]>(languages)
   const [savingLangs, setSavingLangs] = useState(false)
   useEffect(() => setLangsDraft(languages), [languages])
 
+  const [view, setView] = useState<'list' | 'grid'>('list')
+  const [showDeactivated, setShowDeactivated] = useState(false)
+  // The thumb scales by --thumb-scale, so it has to know the real card width
+  // — which changes with the breakpoint (1/2/3 columns). Measure a card
+  // rather than hardcoding a ratio that's only right at one size.
+  const gridRef = useRef<HTMLDivElement>(null)
+  const [cardW, setCardW] = useState(320)
+  useEffect(() => {
+    const el = gridRef.current
+    if (!el || view !== 'grid') return
+    const measure = () => {
+      // Must be a real card, not firstElementChild — the group headings are
+      // col-span-full, so measuring those returns the whole grid width and the
+      // thumbnails render at ~1.5x inside a 720px-tall empty box.
+      const first = el.querySelector<HTMLElement>('[data-block-card]')
+      if (first?.clientWidth) setCardW(first.clientWidth)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [view, sections.length])
   const ordered = useMemo(() => [...sections].sort((a, b) => a.position - b.position), [sections])
+  // Deactivated blocks drop out of the main list into their own group rather
+  // than sitting inline struck-through — same shape as a retired brand.
+  const active = useMemo(() => ordered.filter((s) => s.enabled), [ordered])
+  const deactivated = useMemo(() => ordered.filter((s) => !s.enabled), [ordered])
+  // A flat stream with heading markers, so list and grid share one grouping.
+  const grouped = useMemo(() => {
+    const sorted = [...active].sort(
+      (a, b) =>
+        CATEGORY_RANK(a.category) - CATEGORY_RANK(b.category) ||
+        a.category.localeCompare(b.category) ||
+        a.position - b.position,
+    )
+    const out: { heading?: string; count?: number; s?: SectionDef }[] = []
+    let last: string | null = null
+    for (const sec of sorted) {
+      if (sec.category !== last) {
+        out.push({ heading: sec.category, count: sorted.filter((x) => x.category === sec.category).length })
+        last = sec.category
+      }
+      out.push({ s: sec })
+    }
+    return out
+  }, [active])
+
+  const setActive = (s: SectionDef, on: boolean) =>
+    updateSection(s.key, { enabled: on }).then(onChanged).catch((err) => onError(err.message))
+
+  // The thumbnail renderer composes against a project (for tokens + language).
+  // There's no real project here, so a neutral stub gives every block the same
+  // unbranded baseline — the library shows the block, not one brand's take.
+  const stubProject = useMemo(
+    () =>
+      ({
+        id: 'lib', name: 'lib', brand_id: '', language: 'en', campaign_id: '',
+        sections: [], tokens: {}, form: { action_url: '', success_url: '' },
+        fonts: 'system', meta_title: '', meta_description: '',
+        created_by: '', created_at: '', updated_at: '',
+      }) as unknown as Project,
+    [],
+  )
 
   if (editing) {
     return (
@@ -73,37 +244,126 @@ export function AdminTemplates({
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight">Templates</h1>
+          {/* "Blocks", not "Templates": these are the section components a page
+              is assembled from, distinct from a brand's page templates. */}
+          <h1 className="font-display text-2xl font-bold tracking-tight">Blocks</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            The section library every landing page is built from. Built-ins can be edited or disabled, never deleted.
+            The section blocks every landing page is built from. Shipped blocks can be edited or
+            disabled but never deleted — clone one to make a custom block you own.
           </p>
+        </div>
+        <div className="ml-auto flex shrink-0 items-center rounded-lg border border-border bg-secondary p-0.5">
+          {([['list', List], ['grid', LayoutGrid]] as const).map(([v, Icon]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              aria-pressed={view === v}
+              title={`${v === 'list' ? 'List' : 'Grid'} view`}
+              aria-label={`${v === 'list' ? 'List' : 'Grid'} view`}
+              className={cn(
+                'rounded-md px-2 py-1 transition-colors',
+                view === v ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Icon className="h-4 w-4" />
+            </button>
+          ))}
         </div>
       </div>
 
+      {view === 'grid' ? (
+        <div
+          ref={gridRef}
+          className="grid gap-3 animate-fade-up sm:grid-cols-2 lg:grid-cols-3"
+          // SectionThumb scales by --thumb-scale; without it the transform is
+          // invalid and you get the top-left corner of an 800px page. Scaling to
+          // the measured card width makes the block fill it at any breakpoint.
+          style={{ animationDelay: '80ms', ['--thumb-scale' as string]: `${cardW / 800}` }}
+        >
+          {grouped.map((g) => {
+            const s = g.s!
+            return g.heading !== undefined ? (
+              <div key={`h-${g.heading}`} className="col-span-full mb-1 mt-2 flex items-baseline gap-2 first:mt-0">
+                <h2 className="font-display text-sm font-semibold text-foreground">
+                  {CATEGORY_LABEL[g.heading] ?? g.heading}
+                </h2>
+                <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                  {g.count}
+                </span>
+              </div>
+            ) : (
+            <div
+              key={s.key}
+              data-block-card=""
+              className={cn(
+                'group overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md',
+                !s.enabled && 'opacity-55',
+              )}
+            >
+              <div
+                className="relative overflow-hidden border-b border-border"
+                style={{ height: Math.round(cardW * 0.6) }}
+              >
+                <SectionThumb
+                  def={s}
+                  project={stubProject}
+                  // Fill the sized box: the thumb's own overflow-hidden does the
+                  // clipping, matching how the Add tab's fixed-height strip works.
+                  className="h-full"
+                />
+                {!s.built_in && (
+                  <span className="absolute right-1.5 top-1.5 rounded border border-emerald-500/40 bg-background/90 px-1.5 text-[9px] font-semibold text-emerald-600">
+                    CUSTOM
+                  </span>
+                )}
+              </div>
+              <div className="p-2.5">
+                <div className="flex items-center gap-1.5">
+                  <span className={cn('min-w-0 flex-1 truncate text-[13px] font-semibold', !s.enabled && 'line-through')}>
+                    {s.name}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(s)} title={`Edit ${s.name}`}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <Toggle on={s.enabled} onChange={(v) => setActive(s, v)} label={`${s.name} active`} />
+                  <span className="ml-auto min-w-0">
+                    <LangFlags codes={s.languages} languages={languages} />
+                  </span>
+                </div>
+              </div>
+            </div>
+            )
+          })}
+        </div>
+      ) : (
       <div className="space-y-2 animate-fade-up" style={{ animationDelay: '80ms' }}>
-        {ordered.map((s) => (
+        {grouped.map((g) => {
+          const s = g.s!
+          return g.heading !== undefined ? (
+              <div key={`h-${g.heading}`} className="mb-1 mt-2 flex items-baseline gap-2 first:mt-0">
+                <h2 className="font-display text-sm font-semibold text-foreground">
+                  {CATEGORY_LABEL[g.heading] ?? g.heading}
+                </h2>
+                <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                  {g.count}
+                </span>
+              </div>
+            ) : (
           <div key={s.key} className="flex items-center gap-2.5 rounded-xl border border-border bg-card px-3 py-2 shadow-sm">
-            <span className="w-20 shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-center text-[10px] font-semibold uppercase text-muted-foreground">
-              {s.category}
-            </span>
             <span className={cn('min-w-0 flex-1 truncate text-sm font-medium', !s.enabled && 'text-muted-foreground line-through')}>
               {s.name}
             </span>
-            {s.built_in && (
-              <span className="shrink-0 rounded border border-primary/35 px-1.5 text-[9px] font-semibold text-primary">BUILT-IN</span>
+            {/* Every shipped block is built-in, so badging THAT says nothing.
+                A cloned block is the exception worth marking — and it's also the
+                only kind that can be deleted (the backend 409s on a built-in). */}
+            {!s.built_in && (
+              <span className="shrink-0 rounded border border-emerald-500/40 px-1.5 text-[9px] font-semibold text-emerald-600">CUSTOM</span>
             )}
-            <span className="shrink-0 text-[10px] text-muted-foreground">{s.languages.join(' · ')}</span>
-            <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground" title="Show in the builder's Add tab">
-              <input
-                type="checkbox"
-                checked={s.enabled}
-                onChange={(e) =>
-                  updateSection(s.key, { enabled: e.target.checked }).then(onChanged).catch((err) => onError(err.message))
-                }
-                aria-label={`Enable ${s.name}`}
-              />
-              enabled
-            </label>
+            <LangFlags codes={s.languages} languages={languages} />
+            <Toggle on={s.enabled} onChange={(v) => setActive(s, v)} label={`${s.name} active`} />
             <Button variant="outline" size="sm" onClick={() => setEditing(s)}>
               <Pencil className="h-3.5 w-3.5" /> Edit
             </Button>
@@ -137,8 +397,57 @@ export function AdminTemplates({
               </Button>
             )}
           </div>
-        ))}
+          )
+        })}
       </div>
+      )}
+
+      {deactivated.length > 0 && (
+        <section className="mt-8 animate-fade-up" style={{ animationDelay: '120ms' }}>
+          {/* Collapsed by default: these are parked blocks, not working set. */}
+          <button
+            type="button"
+            onClick={() => setShowDeactivated((v) => !v)}
+            aria-expanded={showDeactivated}
+            className="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-accent"
+          >
+            <ChevronRight
+              className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', showDeactivated && 'rotate-90')}
+            />
+            <h2 className="font-display text-sm font-semibold text-muted-foreground">Deactivated</h2>
+            <span className="rounded-full bg-secondary px-1.5 text-xs font-semibold tabular-nums text-muted-foreground">
+              {deactivated.length}
+            </span>
+            <span className="hidden text-xs text-muted-foreground/80 sm:inline">
+              Hidden from the builder's Add tab. Pages already using one keep rendering it.
+            </span>
+          </button>
+          <div className={cn('mt-2 space-y-2 opacity-70', !showDeactivated && 'hidden')}>
+            {deactivated.map((s) => (
+              <div
+                key={s.key}
+                className="flex items-center gap-2.5 rounded-xl border border-dashed border-border bg-card px-3 py-2"
+              >
+                <span className="w-20 shrink-0 rounded-md bg-secondary px-1.5 py-0.5 text-center text-[10px] font-semibold uppercase text-muted-foreground">
+                  {s.category}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-muted-foreground">{s.name}</span>
+                {!s.built_in && (
+                  <span className="shrink-0 rounded border border-emerald-500/40 px-1.5 text-[9px] font-semibold text-emerald-600">
+                    CUSTOM
+                  </span>
+                )}
+                <Button variant="outline" size="sm" onClick={() => setActive(s, true)} title={`Reactivate ${s.name}`}>
+                  <RotateCcw className="h-3.5 w-3.5" /> Reactivate
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setEditing(s)} title={`Edit ${s.name}`}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="mt-8 animate-fade-up rounded-2xl border border-border bg-card p-4" style={{ animationDelay: '160ms' }}>
         <h2 className="font-display text-base font-bold">Languages</h2>
@@ -225,6 +534,11 @@ function SectionEditor({
   const [previewErr, setPreviewErr] = useState<string | null>(null)
   const previewRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(0.4)
+  /** Real rendered height of the section, measured from the iframe. The box
+   * used to be pinned to 900/scale, which LAID OUT ~2250px tall while only
+   * PAINTING 900px — leaving a screen of dead space under every preview. */
+  const [docHeight, setDocHeight] = useState(600)
+  const frameRef = useRef<HTMLIFrameElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [assetKey, setAssetKey] = useState('')
 
@@ -387,10 +701,33 @@ function SectionEditor({
           {previewErr && (
             <p className="mb-2 rounded-lg border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">{previewErr}</p>
           )}
-          <div style={{ width: DEVICE_WIDTH[device] * scale }} className="mx-auto">
-            <div style={{ width: DEVICE_WIDTH[device], height: 900 / scale, transform: `scale(${scale})`, transformOrigin: 'top left' }}
-                 className="overflow-hidden rounded-lg border border-border bg-white shadow-xl">
-              <iframe title="Section preview" srcDoc={srcdoc} className="h-full w-full border-0" sandbox="allow-same-origin" />
+          <div
+            style={{ width: DEVICE_WIDTH[device] * scale, height: docHeight * scale }}
+            className="mx-auto"
+          >
+            <div
+              style={{
+                width: DEVICE_WIDTH[device],
+                height: docHeight,
+                transform: `scale(${scale})`,
+                transformOrigin: 'top left',
+              }}
+              className="overflow-hidden rounded-lg border border-border bg-white shadow-xl"
+            >
+              <iframe
+                ref={frameRef}
+                title="Section preview"
+                srcDoc={srcdoc}
+                className="h-full w-full border-0"
+                sandbox="allow-same-origin"
+                onLoad={() => {
+                  // srcdoc + allow-same-origin lets us read the real height, so
+                  // the frame hugs the section instead of guessing.
+                  const d = frameRef.current?.contentDocument
+                  const h = d?.body?.scrollHeight ?? 0
+                  if (h > 0) setDocHeight(Math.min(4000, Math.max(120, h)))
+                }}
+              />
             </div>
           </div>
         </div>

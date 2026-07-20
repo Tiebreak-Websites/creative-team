@@ -504,9 +504,9 @@ def _resolve_brand(req: RunRequest):
     if isinstance(accent, str) and accent.strip():
         brand_bits.append(f"Prefer {accent.strip()} as the CTA/accent colour where it keeps "
                           f"strong contrast against the background.")
-    voice = brand.get("voice")
-    if isinstance(voice, str) and voice.strip():
-        brand_bits.append(f"Brand tone of voice: {voice.strip()}.")
+    # (Tone of voice was removed from the brand kit — the banner copy comes from
+    # the user's own concept cards verbatim, so a tone hint only ever steered the
+    # imagery, not the words.)
     if brand_bits:
         brand_line = " ".join(brand_bits)
         style = f"{style} {brand_line}".strip() if style else brand_line

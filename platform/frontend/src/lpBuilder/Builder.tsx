@@ -20,7 +20,9 @@ import {
   Minus,
   Monitor,
   Plus,
+  Pencil,
   Redo2,
+  Settings2,
   Rows3,
   Smartphone,
   Sparkles,
@@ -34,6 +36,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { brandLogoSrc, brandLogoUri, useIsDark } from '@/lib/brandLogo'
+import { FLAG_CC, flagUrl } from '@/lib/flags'
+import { resolveLayerName } from '@/lib/layerNames'
 import { cn } from '@/lib/utils'
 import { listBrands, type Brand } from '../bannerBuilder/brandsApi'
 import { createAdvertorial, getJob, listCampaigns, listJobs, type CampaignInfo, type MaterialJob } from '../lpMaterials/api'
@@ -69,20 +73,14 @@ let iidCounter = 0
 const newIid = () => `i${Date.now().toString(36)}${(++iidCounter).toString(36)}`
 
 const CATEGORY_LABEL: Record<string, string> = {
-  braintrade: 'BrainTrade template', elements: 'Elements', hero: 'Hero',
+  braintrade: 'BrainTrade blocks', elements: 'Elements', hero: 'Hero',
   content: 'Content', 'social-proof': 'Social proof', conversion: 'Conversion',
   legal: 'Legal & footer',
 }
 
-// Windows Chromium renders emoji flags as bare letters, so use tiny PNGs
-// (flagcdn is allowed by the CSP img-src https: whitelist; on failure the
-// picker falls back to the language code).
-const FLAG_CC: Record<string, string> = {
-  en: 'gb', ms: 'my', th: 'th', ja: 'jp', sv: 'se', no: 'no', pt: 'br', es: 'mx',
-  vi: 'vn', it: 'it', pl: 'pl', fr: 'fr', de: 'de', ar: 'sa', zh: 'cn',
-}
-const flagUrl = (code: string) =>
-  FLAG_CC[code] ? `https://flagcdn.com/w40/${FLAG_CC[code]}.png` : ''
+// FLAG_CC / flagUrl now live in @/lib/flags — this file used to carry its own
+// copy and the two drifted (Norwegian and Spanish disagreed between the canvas
+// and the dashboard).
 
 /** Compact popover picker used for brand + language in the top bar. */
 function TopPicker({
@@ -137,17 +135,24 @@ export function Builder({
   projectId,
   sections,
   languages,
+  isAdmin,
+  onManageBlocks,
   onBack,
   onError,
 }: {
   projectId: string
   sections: SectionDef[]
   languages: Language[]
+  /** Managing the block library is admin-only. */
+  isAdmin?: boolean
+  onManageBlocks?: (blockKey?: string) => void
   onBack: () => void
   onError: (m: string) => void
 }) {
   const [project, setProject] = useState<Project | null>(null)
   const [selection, setSelection] = useState<Selection | null>(null)
+  /** `${iid}:${repeatKey}.${idx}` of the repeat item selected on the canvas. */
+  const [activeItem, setActiveItem] = useState<string | null>(null)
   // Multi-selected SECTION iids in the Layers tree (shift-click) — used for
   // bulk delete via the Delete/Backspace key. Independent of `selection`
   // (which drives the single-element properties panel).
@@ -381,6 +386,10 @@ export function Builder({
         const fields = (m.fields ?? []) as { kind: string }[]
         setSelection(m.iid ? { iid: m.iid, fields: m.fields ?? [], tag: m.tag ?? '' } : null)
         setSelectedIids(m.iid ? [m.iid] : []) // a canvas click resets the layer multi-selection
+        // Clicking a card's padding selects the whole repeat item; mirror that
+        // in the Layers tree so the ITEM row highlights.
+        setActiveItem(m.iid && m.item ? `${m.iid}:${m.item}` : null)
+        if (m.iid && m.item) setLeftTab('layers')
         // Clicking an IMAGE brings its assets into view; clicking TEXT/a link
         // opens the Layers tree (which reveals + highlights that element).
         if (m.iid && fields.some((f) => f.kind === 'img')) {
@@ -843,7 +852,7 @@ export function Builder({
           trigger={
             <>
               {flagUrl(project.language) && (
-                <img src={flagUrl(project.language)} alt="" className="h-3.5 w-5 rounded-[2px] object-cover" />
+                <img src={flagUrl(project.language)} alt="" className="h-3.5 w-5 rounded-[2px] object-cover ring-1 ring-inset ring-black/10" />
               )}
               <span className="text-xs font-bold uppercase">{project.language}</span>
             </>
@@ -863,7 +872,7 @@ export function Builder({
               )}
             >
               {flagUrl(l.code) ? (
-                <img src={flagUrl(l.code)} alt="" className="h-3.5 w-5 shrink-0 rounded-[2px] object-cover" />
+                <img src={flagUrl(l.code)} alt="" className="h-3.5 w-5 shrink-0 rounded-[2px] object-cover ring-1 ring-inset ring-black/10" />
               ) : (
                 <span className="w-5 shrink-0 text-center text-[9px] font-bold uppercase">{l.code}</span>
               )}
@@ -910,6 +919,23 @@ export function Builder({
             )
           })}
         </span>
+
+        {/* Managing the block library lives here rather than on the folders
+            home: it's about the pieces a page is built from, so it belongs in
+            edit mode. Admin-only, so it stays a quiet icon. */}
+        {isAdmin && onManageBlocks && (
+          <Button
+            variant="ghost"
+            size="icon"
+            // Wrapped: passing the handler bare would hand React's MouseEvent
+            // in as the blockKey argument.
+            onClick={() => onManageBlocks()}
+            title="Manage section blocks and languages"
+            aria-label="Manage section blocks"
+          >
+            <Settings2 className="h-4 w-4" />
+          </Button>
+        )}
 
         <Button variant="ghost" size="icon" disabled={!canUndo} onClick={() => timeTravel(-1)} title="Undo (Ctrl+Z)" aria-label="Undo">
           <Undo2 className="h-4 w-4" />
@@ -1002,6 +1028,7 @@ export function Builder({
                   project={project}
                   onDragKey={(k) => (dragKeyRef.current = k)}
                   onAppend={(k) => addSection(k)}
+                  onEditBlock={isAdmin && onManageBlocks ? (k) => onManageBlocks(k) : undefined}
                 />
               )}
               {leftTab === 'layers' && (
@@ -1010,6 +1037,25 @@ export function Builder({
                   lib={lib}
                   selection={selection}
                   selectedIids={selectedIids}
+                  activeItem={activeItem}
+                  onRename={(iid, key, name) =>
+                    mutate((p) => ({
+                      ...p,
+                      sections: p.sections.map((s) => {
+                        if (s.iid !== iid) return s
+                        const names = { ...(s.names ?? {}) }
+                        // An empty name clears the override rather than storing ''.
+                        if (name) names[key] = name
+                        else delete names[key]
+                        return { ...s, names }
+                      }),
+                    }), { structural: false })
+                  }
+                  onSelectItem={(iid, itemKey) => {
+                    setActiveItem(`${iid}:${itemKey}`)
+                    iframeRef.current?.contentWindow?.postMessage(
+                      { lp: 1, type: 'selectItem', iid, item: itemKey }, '*')
+                  }}
                   onSelect={(iid, field, shift) => {
                     if (!field && shift) {
                       // shift-click a section row → toggle it in the multi-selection
@@ -1241,7 +1287,19 @@ function thumbKey(defKey: string, p: Project) {
   return [defKey, p.brand_id, p.language, t.primary, t.accent, t.bg, t.card].join('|')
 }
 
-function SectionThumb({ def, project }: { def: SectionDef; project: Project }) {
+/** A real render of one block, composed server-side and painted in a tiny
+ * scripts-off iframe. Shared by the builder's Add tab and the Blocks grid. */
+export function SectionThumb({
+  def,
+  project,
+  className,
+}: {
+  def: SectionDef
+  project: Project
+  /** Overrides the default 80px-tall strip — the Blocks grid wants a taller
+   * window so a block isn't sliced through the middle. */
+  className?: string
+}) {
   const key = thumbKey(def.key, project)
   const [doc, setDoc] = useState<string | null>(() => thumbCache.get(key) ?? null)
   useEffect(() => {
@@ -1271,7 +1329,7 @@ function SectionThumb({ def, project }: { def: SectionDef; project: Project }) {
     }
   }, [key, def, project])
   return (
-    <span className="pointer-events-none block h-20 overflow-hidden rounded-t-[11px] bg-white">
+    <span className={cn('pointer-events-none block overflow-hidden rounded-t-[11px] bg-white', className ?? 'h-20')}>
       {doc ? (
         <iframe
           title={`${def.name} preview`}
@@ -1298,17 +1356,20 @@ function AddTab({
   project,
   onDragKey,
   onAppend,
+  onEditBlock,
 }: {
   sections: SectionDef[]
   brands: Brand[]
   project: Project
   onDragKey: (k: string) => void
   onAppend: (k: string) => void
+  /** Admin-only: jump to this block in the Blocks library. */
+  onEditBlock?: (key: string) => void
 }) {
   const dark = useIsDark()
-  // Template groups are BRAND groups: a category matching a brand id gets the
+  // Block groups are BRAND groups: a category matching a brand id gets the
   // brand's logo as its header. The top-bar brand SCOPES this tab: only that
-  // brand's templates (plus the generic element categories) are offered.
+  // brand's blocks (plus the generic element categories) are offered.
   const brandFor = useCallback(
     (cat: string) =>
       brands.find((b) => b.id.toLowerCase() === cat.toLowerCase() || b.name.toLowerCase() === cat.toLowerCase()),
@@ -1405,7 +1466,7 @@ function AddTab({
               <span className="min-w-0 flex-1 truncate text-xs font-semibold">
                 {brand ? brand.name : (CATEGORY_LABEL[cat] ?? cat)}
               </span>
-              {brand && <span className="text-[9px] uppercase tracking-wide text-muted-foreground">template</span>}
+              {brand && <span className="text-[9px] uppercase tracking-wide text-muted-foreground">blocks</span>}
               <span className="rounded-full bg-secondary px-1.5 text-[9px] font-semibold tabular-nums text-muted-foreground">
                 {list.length}
               </span>
@@ -1428,15 +1489,28 @@ function AddTab({
                     <span className="block truncate border-t border-border px-2 py-1.5 text-xs font-medium">
                       {s.name}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => onAppend(s.key)}
-                      className="absolute right-1 top-1 rounded-md border border-border bg-card/95 p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
-                      title={`Append "${s.name}" to the page`}
-                      aria-label={`Append ${s.name}`}
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
+                    <span className="absolute right-1 top-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                      {onEditBlock && (
+                        <button
+                          type="button"
+                          onClick={() => onEditBlock(s.key)}
+                          className="rounded-md border border-border bg-card/95 p-1 text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+                          title={`Edit the "${s.name}" block`}
+                          aria-label={`Edit ${s.name} block`}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onAppend(s.key)}
+                        className="rounded-md border border-border bg-card/95 p-1 text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+                        title={`Append "${s.name}" to the page`}
+                        aria-label={`Append ${s.name}`}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
                   </div>
                 ))}
               </div>
@@ -1458,6 +1532,46 @@ const FIELD_ICON: Record<SectionField['kind'], typeof Type> = {
   link: Link2,
 }
 
+/** Inline rename field for a layer row. Commits on Enter or blur, reverts on
+ * Escape; an empty value clears the custom name so the row falls back to
+ * previewing its own content. */
+function RenameRow({
+  initial,
+  placeholder,
+  className,
+  icon,
+  onCommit,
+  onCancel,
+}: {
+  initial: string
+  placeholder: string
+  className?: string
+  icon?: React.ReactNode
+  onCommit: (name: string) => void
+  onCancel: () => void
+}) {
+  const [value, setValue] = useState(initial)
+  return (
+    <div className={cn('flex w-full items-center gap-1.5 rounded-lg bg-accent py-1 pr-2', className)}>
+      {icon}
+      <input
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onCommit(value.trim())
+          if (e.key === 'Escape') onCancel()
+          e.stopPropagation()
+        }}
+        onBlur={() => onCommit(value.trim())}
+        placeholder={placeholder}
+        aria-label="Layer name"
+        className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+      />
+    </div>
+  )
+}
+
 function LayersTab({
   project,
   lib,
@@ -1467,6 +1581,9 @@ function LayersTab({
   onMove,
   onDuplicate,
   onRemove,
+  onRename,
+  onSelectItem,
+  activeItem,
 }: {
   project: Project
   lib: Map<string, SectionDef>
@@ -1477,8 +1594,18 @@ function LayersTab({
   onMove: (from: number, to: number) => void
   onDuplicate: (iid: string) => void
   onRemove: (iid: string) => void
+  /** Rename a layer. `key` is a field key or a repeat item ('steps.1'); an
+   * empty name clears the override and the row falls back to its content. */
+  onRename: (iid: string, key: string, name: string) => void
+  /** Select a whole repeat item (a card) — mirrors clicking it on the canvas. */
+  onSelectItem?: (iid: string, itemKey: string) => void
+  /** `${iid}:${itemKey}` currently selected on the canvas, so the tree can
+   * highlight the matching ITEM row. */
+  activeItem?: string | null
 }) {
   const [drag, setDrag] = useState<number | null>(null)
+  /** `${iid}:${key}` of the row being renamed inline. */
+  const [renaming, setRenaming] = useState<string | null>(null)
   const [open, setOpen] = useState<Set<string>>(new Set()) // expanded section iids
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set()) // `${iid}:${repeatKey}`
   const rowRefs = useRef(new Map<string, HTMLDivElement>())
@@ -1518,22 +1645,52 @@ function LayersTab({
     depth: number,
   ) => {
     const Icon = FIELD_ICON[field.kind] ?? Type
+    const inst = project.sections.find((x) => x.iid === iid)
+    const def = inst ? lib.get(inst.template_key) : undefined
+    const custom = inst?.names?.[field.key] ?? ''
+    // The block's own name wins over one derived from the key, so 'q' reads
+    // 'Question' rather than 'Q'. Content previews still win over both.
+    const fallback = resolveLayerName(undefined, def?.names, field.key)
+    const rid = `${iid}:${field.key}`
+    const indent = depth >= 3 ? 'pl-14' : depth === 2 ? 'pl-10' : 'pl-6'
+    if (renaming === rid) {
+      return (
+        <RenameRow
+          key={rid}
+          initial={custom}
+          placeholder={label || fallback}
+          className={indent}
+          icon={<Icon className="h-3.5 w-3.5 shrink-0 opacity-70" />}
+          onCommit={(v) => {
+            onRename(iid, field.key, v)
+            setRenaming(null)
+          }}
+          onCancel={() => setRenaming(null)}
+        />
+      )
+    }
     return (
       <button
-        key={`${iid}:${field.key}`}
+        key={rid}
         type="button"
         onClick={() => onSelect(iid, field)}
-        title={label || field.key}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          setRenaming(rid)
+        }}
+        title={`${custom || label || fallback} — double-click to rename`}
         className={cn(
           'flex w-full items-center gap-1.5 rounded-lg py-1 pr-2 text-left transition-colors',
-          depth > 1 ? 'pl-10' : 'pl-6',
+          indent,
           fieldSelected(iid, field.key)
             ? 'bg-primary/10 text-foreground'
             : 'text-muted-foreground hover:bg-accent hover:text-foreground',
         )}
       >
         <Icon className="h-3.5 w-3.5 shrink-0 opacity-70" />
-        <span className="min-w-0 flex-1 truncate text-xs">{label || field.key}</span>
+        <span className={cn('min-w-0 flex-1 truncate text-xs', custom && 'font-medium text-foreground')}>
+          {custom || label || fallback}
+        </span>
       </button>
     )
   }
@@ -1623,12 +1780,11 @@ function LayersTab({
 
             {expanded && def && (
               <div className="mb-1 mt-0.5 space-y-px">
-                {def.fields.map((f) => layerRow(inst.iid, f, labelFor(inst, def, f.key) || f.key, 1))}
+                {def.fields.map((f) => layerRow(inst.iid, f, labelFor(inst, def, f.key), 1))}
                 {def.repeats.map((r) => {
                   const gid = `${inst.iid}:${r.key}`
                   const gOpen = openGroups.has(gid)
                   const count = inst.repeats[r.key] ?? Math.max(1, countDefaults(def, project.language, r.key))
-                  const firstField = r.fields[0]
                   return (
                     <div key={gid}>
                       <button
@@ -1643,12 +1799,50 @@ function LayersTab({
                         <span className="rounded-full bg-secondary px-1.5 text-[10px] font-semibold tabular-nums">{count}</span>
                       </button>
                       {gOpen &&
-                        firstField &&
-                        Array.from({ length: count }, (_, idx) => {
-                          const full = { ...firstField, key: `${r.key}.${idx}.${firstField.key}` }
-                          const preview = labelFor(inst, def, full.key)
-                          return layerRow(inst.iid, full, preview || `Item ${idx + 1}`, 2)
-                        })}
+                        Array.from({ length: count }, (_, idx) => (
+                          // Every field of the item, not just the first — a card
+                          // with an icon, a heading and a body used to surface
+                          // only its icon, leaving the text invisible here.
+                          <div key={`${gid}:${idx}`}>
+                            {renaming === `${inst.iid}:${r.key}.${idx}` ? (
+                              <RenameRow
+                                initial={inst.names?.[`${r.key}.${idx}`] ?? ''}
+                                placeholder={resolveLayerName(undefined, def.names, `${r.key}.${idx}`)}
+                                className="pl-10"
+                                onCommit={(v) => {
+                                  onRename(inst.iid, `${r.key}.${idx}`, v)
+                                  setRenaming(null)
+                                }}
+                                onCancel={() => setRenaming(null)}
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => onSelectItem?.(inst.iid, `${r.key}.${idx}`)}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation()
+                                  setRenaming(`${inst.iid}:${r.key}.${idx}`)
+                                }}
+                                title={`${resolveLayerName(inst.names?.[`${r.key}.${idx}`], def.names, `${r.key}.${idx}`)} — double-click to rename`}
+                                className={cn(
+                                  'flex w-full items-center gap-1.5 rounded-lg py-1 pl-10 pr-2 text-left text-[10px] font-semibold uppercase tracking-wide transition-colors hover:bg-accent',
+                                  activeItem === `${inst.iid}:${r.key}.${idx}`
+                                    ? 'bg-primary/10 text-foreground'
+                                    : 'text-muted-foreground/70 hover:text-foreground',
+                                )}
+                              >
+                                <span className="min-w-0 flex-1 truncate">
+                                  {resolveLayerName(inst.names?.[`${r.key}.${idx}`], def.names, `${r.key}.${idx}`)}
+                                </span>
+                              </button>
+                            )}
+                            {r.fields.map((f) => {
+                              const full = { ...f, key: `${r.key}.${idx}.${f.key}` }
+                              const preview = labelFor(inst, def, full.key)
+                              return layerRow(inst.iid, full, preview, 3)
+                            })}
+                          </div>
+                        ))}
                     </div>
                   )
                 })}

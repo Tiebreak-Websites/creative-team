@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
   ArrowLeft,
+  Check,
   Copy,
   Download,
   FilePlus2,
@@ -12,7 +13,6 @@ import {
   Layout,
   Loader2,
   Search,
-  Settings2,
   Trash2,
   X,
 } from 'lucide-react'
@@ -49,7 +49,12 @@ import {
   type SectionDef,
 } from './api'
 
-type View = { kind: 'home' } | { kind: 'builder'; id: string } | { kind: 'admin' }
+type View =
+  | { kind: 'home' }
+  | { kind: 'builder'; id: string }
+  /** `editKey` opens that block's editor straight away, so the Add tab's pencil
+   * lands on the block instead of the library index. */
+  | { kind: 'admin'; editKey?: string }
 
 export function LPBuilder() {
   const { user } = useAuth()
@@ -62,7 +67,10 @@ export function LPBuilder() {
   const [libVersion, setLibVersion] = useState(0)
 
   useEffect(() => {
-    listSections()
+    // all=1: the Blocks admin needs to SEE deactivated blocks to offer
+    // "Reactivate". The builder gets `sections.filter(s => s.enabled)` below,
+    // so a disabled block still never reaches the Add tab.
+    listSections(true)
       .then((d) => {
         setSections(d.sections)
         setLanguages(d.languages)
@@ -96,6 +104,8 @@ export function LPBuilder() {
           projectId={view.id}
           sections={sections.filter((s) => s.enabled)}
           languages={languages}
+          isAdmin={isAdmin}
+          onManageBlocks={(blockKey) => setView({ kind: 'admin', editKey: blockKey })}
           onBack={() => setView({ kind: 'home' })}
           onError={setError}
         />
@@ -103,6 +113,7 @@ export function LPBuilder() {
         <AdminTemplates
           sections={sections}
           languages={languages}
+          initialEditKey={view.editKey}
           onBack={() => setView({ kind: 'home' })}
           onChanged={() => setLibVersion((v) => v + 1)}
           onError={setError}
@@ -115,12 +126,59 @@ export function LPBuilder() {
           myEmail={(user?.email || '').toLowerCase()}
           isAdminRole={isAdmin}
           onOpen={(id) => setView({ kind: 'builder', id })}
-          onAdmin={() => setView({ kind: 'admin' })}
           onError={setError}
           onRefresh={() => listProjects().then(setProjects).catch(() => {})}
         />
       )}
     </div>
+  )
+}
+
+/** The page's Monday ID with one-click copy. It's the tracking key people
+ * paste into Monday, so retyping it from a card was the common annoyance. */
+function CopyId({ value }: { value: string }) {
+  const [done, setDone] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        navigator.clipboard
+          ?.writeText(value)
+          .then(() => {
+            setDone(true)
+            window.setTimeout(() => setDone(false), 1200)
+          })
+          .catch(() => {})
+      }}
+      title={done ? 'Copied' : `Copy Monday ID ${value}`}
+      aria-label={`Copy Monday ID ${value}`}
+      className="inline-flex max-w-full items-center gap-1 rounded-md border border-border bg-secondary/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <span className="truncate">#{value}</span>
+      {done ? (
+        <Check className="h-3 w-3 shrink-0 text-emerald-500" />
+      ) : (
+        <Copy className="h-3 w-3 shrink-0" />
+      )}
+    </button>
+  )
+}
+
+/** A language as flag + name. The label is what makes a flag readable — a flag
+ * alone is a guess, especially for the ones that share a palette. */
+function LangChip({ code, languages }: { code: string; languages: Language[] }) {
+  const label = languages.find((l) => l.code === code)?.label ?? code.toUpperCase()
+  const url = flagUrl(code)
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1" title={label}>
+      {url ? (
+        <img src={url} alt="" className="h-3 w-[18px] shrink-0 rounded-[2px] object-cover ring-1 ring-inset ring-black/10" />
+      ) : (
+        <span className="text-[9px] font-semibold uppercase">{code}</span>
+      )}
+      <span className="truncate">{label}</span>
+    </span>
   )
 }
 
@@ -134,7 +192,6 @@ function Dashboard({
   myEmail,
   isAdminRole,
   onOpen,
-  onAdmin,
   onError,
   onRefresh,
 }: {
@@ -144,7 +201,6 @@ function Dashboard({
   myEmail: string
   isAdminRole: boolean
   onOpen: (id: string) => void
-  onAdmin: () => void
   onError: (m: string) => void
   onRefresh: () => void
 }) {
@@ -255,16 +311,11 @@ function Dashboard({
             <p className="mt-1 text-sm text-muted-foreground">
               {folder !== null
                 ? `Landing pages in the ${folderBrand?.name ?? 'Other'} folder.`
-                : 'One folder per broker, white label and academy — pick one to see its landing pages.'}
+                : 'One folder per brand and white label — pick one to see its landing pages.'}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {isAdmin && (
-            <Button variant="outline" onClick={onAdmin} title="Manage the section templates and languages">
-              <Settings2 className="h-4 w-4" /> Templates
-            </Button>
-          )}
           <Button onClick={() => setCreating(true)}>
             <FilePlus2 className="h-4 w-4" /> New landing page
           </Button>
@@ -340,7 +391,11 @@ function Dashboard({
           {query ? 'Nothing matches your search.' : 'This folder is empty — create its first landing page.'}
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div
+          /* Denser than the old 3-up: the cover is square now, so a third of the
+             width made one page as tall as the viewport. Matches the folder grid. */
+          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+        >
           {visible.map((p, i) => {
             const mine = p.created_by.toLowerCase() === myEmail
             const canManage = mine || isAdminRole
@@ -351,35 +406,42 @@ function Dashboard({
                 style={{ animationDelay: `${Math.min(i * 45, 450)}ms` }}
               >
                 <button type="button" onClick={() => onOpen(p.id)} className="block w-full text-left" title="Open in the builder">
+                  {/* Square cover: the backend prefers the MOBILE hero, which is
+                      already cropped narrow, so it fills the tile rather than
+                      being letterboxed. */}
                   {coverFor(p) ? (
                     <img
                       src={coverFor(p)!}
                       alt=""
                       loading="lazy"
-                      className="h-28 w-full bg-secondary object-cover"
+                      className="aspect-square w-full bg-secondary object-cover"
                     />
                   ) : (
-                    <div className="flex h-28 items-center justify-center bg-gradient-to-br from-primary/15 via-secondary to-secondary">
+                    <div className="flex aspect-square items-center justify-center bg-gradient-to-br from-primary/15 via-secondary to-secondary">
                       <Layout className="h-8 w-8 text-primary/50" />
                     </div>
                   )}
-                  <div className="p-3.5">
-                    <p className="truncate font-display text-sm font-semibold">{p.name}</p>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">
-                      {flagUrl(p.language) ? (
-                        <img src={flagUrl(p.language)} alt="" className="h-3 w-[18px] rounded-[2px] object-cover" />
-                      ) : (
-                        <span className="uppercase">{p.language}</span>
-                      )}
-                      <span>{p.sections} section{p.sections === 1 ? '' : 's'}</span>
-                      {p.monday_id && <span title="Monday ID">· #{p.monday_id}</span>}
+                  <div className="space-y-1 p-3">
+                    <p className="truncate font-display text-sm font-semibold" title={p.name}>
+                      {p.name}
                     </p>
-                    <p className="mt-1 text-[11px] text-muted-foreground/80">
+                    <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <LangChip code={p.language} languages={languages} />
+                      <span className="truncate">
+                        {p.sections} section{p.sections === 1 ? '' : 's'}
+                      </span>
+                    </p>
+                    <p className="truncate text-[11px] text-muted-foreground/80">
                       by {formatUserName(p.created_by)} ·{' '}
                       {new Date(p.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                     </p>
                   </div>
                 </button>
+                {p.monday_id && (
+                  <div className="px-3 pb-2">
+                    <CopyId value={p.monday_id} />
+                  </div>
+                )}
                 <div className="flex items-center gap-1 border-t border-border px-2 py-1.5 opacity-0 transition-opacity group-hover:opacity-100">
                   <CardAction title="Duplicate" onClick={() => duplicateProject(p.id).then(onRefresh).catch((e) => onError(e.message))}>
                     <Copy className="h-3.5 w-3.5" />
@@ -445,11 +507,15 @@ function Dashboard({
 
 /** One category's folder tiles, 5 across on a wide screen.
  *
- * The tile leads with the entity's registry ICON — the same square mark as
- * Settings > Brands — so a folder is recognisable at a glance and every card
- * reads alike. It falls back to a wordmark (entities with a logo but no icon)
- * and then to a generic folder. `dark` only matters on that wordmark path;
- * icons carry their own plate and render as authored. */
+ * Drawn as an actual FOLDER — a tab sticking up behind the body — rather than a
+ * card, so the shape itself says "this opens into something" before any label is
+ * read. The tab is painted behind the opaque body, which hides the join and
+ * makes the two read as one piece.
+ *
+ * The face carries the entity's registry favicon (the same square mark as
+ * Settings > Brands), falling back to a wordmark for entities that have a logo
+ * but no icon, then to a folder glyph. `dark` only matters on the wordmark path;
+ * favicons carry their own plate and render as authored. */
 function FolderGrid({
   folders,
   dark,
@@ -464,38 +530,87 @@ function FolderGrid({
       {folders.map((f, i) => {
         const accent = f.brand ? entityAccent(f.brand) ?? NEUTRAL_ACCENT : NEUTRAL_ACCENT
         const icon = f.brand?.icon_svg ? brandLogoUri(f.brand.icon_svg, false) : ''
+        const label = `${f.count} landing page${f.count === 1 ? '' : 's'}`
+        // Mix the accent toward an OPAQUE base, not `transparent`: a translucent
+        // tint composites over the dark card into a washed-out grey that kills
+        // label contrast. Mixing toward white (light) / near-black (dark) keeps
+        // the folder coloured and the theme's own text colour readable on it.
+        const base = dark ? '#101013' : '#FFFFFF'
+        const mix = (pct: number) => `color-mix(in srgb, ${accent} ${pct}%, ${base})`
+        const face = mix(dark ? 20 : 13)
+        const tabFace = mix(dark ? 34 : 28)
+        const divider = mix(dark ? 32 : 22)
         return (
           <button
             key={f.id || 'other'}
             type="button"
             onClick={() => onOpen(f.id)}
-            className="group animate-fade-up overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm transition-all hover:-translate-y-1 hover:border-primary/40 hover:shadow-md"
+            title={`Open the ${f.name} folder — ${label}`}
+            className="group animate-fade-up relative block w-full pt-2.5 text-left"
             style={{ animationDelay: `${Math.min(i * 40, 320)}ms` }}
-            title={`Open the ${f.name} folder`}
           >
-            <div
-              className="flex h-16 items-center justify-center"
-              // The entity's own colour, kept faint so the mark stays readable.
-              style={{ backgroundColor: `color-mix(in srgb, ${accent} 12%, transparent)` }}
-            >
-              {icon ? (
-                <img src={icon} alt="" className="h-10 w-10 rounded-md bg-white object-contain" />
-              ) : f.brand?.logo_svg ? (
-                <img src={brandLogoSrc(f.brand, dark)} alt="" className="h-7 max-w-28 object-contain" />
-              ) : (
-                <FolderOpen className="h-6 w-6 text-primary/50" />
-              )}
-            </div>
-            <div className="p-2.5">
-              <div className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: accent }} />
-                <span className="truncate font-display text-[13px] font-semibold">{f.name}</span>
+            {/* The TAB. Sits behind the body (declared first, body is opaque), so
+                its bottom edge is covered and the folder reads as one shape. */}
+            <span
+              aria-hidden
+              className="absolute left-3 top-0 h-5 w-[42%] rounded-t-lg transition-transform duration-200 group-hover:-translate-y-0.5"
+              // Same material as the folder face, a shade deeper — a tab is part
+              // of the folder, not a sticker on it.
+              style={{ backgroundColor: tabFace }}
+            />
+            {/* A sheet peeking out, but only when the folder holds pages — a
+                full folder looks full. */}
+            {f.count > 0 && (
+              <span
+                aria-hidden
+                className="absolute inset-x-2 top-1 h-4 rounded-t-lg border border-b-0 border-border bg-card transition-transform duration-200 group-hover:-translate-y-0.5"
+              />
+            )}
+
+            {/* bg-card keeps the body OPAQUE so the tab's lower half stays
+                hidden behind it; the tint layer inside colours the whole face. */}
+            <div className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-primary/40 group-hover:shadow-md">
+              <div style={{ backgroundColor: face }}>
+                {/* pl-2.5 matches the label's padding below, so the icon's left
+                    edge lines up with the folder name. */}
+                <div className="flex h-[70px] items-center justify-start pl-2.5">
+                  {icon ? (
+                    <img
+                      src={icon}
+                      alt=""
+                      className="h-11 w-11 rounded-lg bg-white shadow-sm ring-1 ring-black/5 transition-transform duration-200 group-hover:scale-105"
+                    />
+                  ) : f.brand?.logo_svg ? (
+                    <img
+                      src={brandLogoSrc(f.brand, dark)}
+                      alt=""
+                      className="h-8 max-w-28 rounded-md bg-white p-1 shadow-sm ring-1 ring-black/5"
+                    />
+                  ) : (
+                    <FolderOpen className="h-7 w-7" style={{ color: accent }} />
+                  )}
+                </div>
+
+                <div
+                  className="border-t px-2.5 py-2"
+                  style={{ borderColor: divider }}
+                >
+                  <span
+                    className="block truncate font-display text-[13px] font-semibold"
+                    title={f.name}
+                  >
+                    {f.name}
+                  </span>
+                  <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <FolderOpen className="h-3 w-3 shrink-0" aria-hidden />
+                    <span className="truncate">
+                      {f.count === 0 ? 'Empty' : label}
+                      {f.latest &&
+                        ` · ${new Date(f.latest).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
+                    </span>
+                  </span>
+                </div>
               </div>
-              <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
-                {f.count} page{f.count === 1 ? '' : 's'}
-                {f.latest &&
-                  ` · ${new Date(f.latest).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
-              </span>
             </div>
           </button>
         )
@@ -708,7 +823,7 @@ function NewLpModal({
                   )}
                 >
                   {flag ? (
-                    <img src={flag} alt="" className="h-4 w-6 shrink-0 rounded-[2px] object-cover" />
+                    <img src={flag} alt="" className="h-4 w-6 shrink-0 rounded-[2px] object-cover ring-1 ring-inset ring-black/10" />
                   ) : (
                     <span className="grid h-4 w-6 shrink-0 place-items-center rounded-[2px] bg-secondary text-[8px] font-bold uppercase">
                       {l.code}

@@ -33,7 +33,7 @@ html{scroll-behavior:smooth}
 body{margin:0;font-family:var(--lp-font);color:var(--lp-text);background:var(--lp-bg);-webkit-font-smoothing:antialiased}
 img{max-width:100%}
 .lp-wrap{max-width:1140px;margin:0 auto;padding:0 32px}
-.lp-btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;background:var(--lp-primary);color:#fff;font-weight:700;border:0;cursor:pointer;border-radius:999px;padding:1rem 2.4rem;font-size:1.06rem;text-decoration:none;font-family:inherit;transition:filter .15s ease,transform .15s ease}
+.lp-btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;background:var(--lp-cta,var(--lp-primary));color:var(--lp-cta-text,#fff);font-weight:700;border:0;cursor:pointer;border-radius:999px;padding:1rem 2.4rem;font-size:1.06rem;text-decoration:none;font-family:inherit;transition:filter .15s ease,transform .15s ease}
 .lp-btn:hover{filter:brightness(1.08)}
 .lp-btn:active{transform:scale(.98)}
 @media (max-width:575px){.lp-wrap{padding:0 20px}.lp-btn{width:100%;}}
@@ -146,14 +146,20 @@ EDITOR_JS = """(function(){
     placeToolbar(sec);
     var fs = el.matches(SEL) ? fieldsOf(el) : [];
     post({type:'select', iid: sec ? sec.getAttribute('data-iid') : null,
-          fields: fs, tag: el.tagName.toLowerCase()});
+          fields: fs, tag: el.tagName.toLowerCase(),
+          // A repeat item (a whole card). Sent so the builder can highlight the
+          // matching ITEM group in the layers tree.
+          item: el.getAttribute('data-lp-item') || null});
   }
   window.addEventListener('scroll', function(){ if (selected) placeToolbar(selected.closest('section[data-iid]')); });
   document.addEventListener('click', function(e){
     if (e.target.closest('#lp-sec-toolbar')) return; // toolbar handles itself
     if (e.target.closest('[contenteditable]')) return;
     e.preventDefault();
-    var el = e.target.closest(SEL) || e.target.closest('section[data-iid]');
+    // Innermost-first hierarchy: a field if one is under the cursor, else the
+    // repeat item (the whole card — click its padding or gap), else the section.
+    var el = e.target.closest(SEL) || e.target.closest('[data-lp-item]')
+          || e.target.closest('section[data-iid]');
     select(el);
   }, true);
   document.addEventListener('dblclick', function(e){
@@ -220,6 +226,14 @@ EDITOR_JS = """(function(){
         : document.querySelector('section[data-iid="'+m.iid+'"]');
       clearSel(); if (el) { el.classList.add('lp-ed-selected'); selected = el; placeToolbar(el.closest('section[data-iid]')); } }
     if (m.type === 'deselect') clearSel();
+    // Selecting an ITEM row in the Layers tree: highlight that card and bring
+    // it into view, so the tree and the canvas agree in both directions.
+    if (m.type === 'selectItem' && m.item) {
+      var sec2 = document.querySelector('section[data-iid="' + m.iid + '"]');
+      var card = sec2 && sec2.querySelector('[data-lp-item="' + m.item + '"]');
+      if (card) { clearSel(); card.classList.add('lp-ed-selected'); selected = card;
+                  placeToolbar(sec2); card.scrollIntoView({block:'center', behavior:'smooth'}); }
+    }
     // IN-PLACE morph: swap the page content + styles WITHOUT reloading the
     // document — scroll position, image cache and focus all survive, so the
     // canvas never jumps to the top while editing.
@@ -326,9 +340,106 @@ def _expand_repeats(tpl_html: str, inst: dict, defaults: Dict[str, str]) -> str:
         for i in range(count):
             clone = re.sub(r'(data-lp-(?:text|rich|img|link))="([A-Za-z0-9_-]+)"',
                            lambda mm: f'{mm.group(1)}="{key}.{i}.{mm.group(2)}"', body)
+            # Stamp the item's own root so the whole card is addressable: the
+            # canvas can select it, and a layer name can be attached to it.
+            # Without this the item exists only in the builder's tree, never in
+            # the DOM, so clicking a card could only ever hit a field inside it.
+            clone = re.sub(r"<(\w+)", rf'<\1 data-lp-item="{key}.{i}"', clone, count=1)
             out.append(clone)
         return "".join(out)
     return core.REPEAT_RE.sub(expand, tpl_html)
+
+
+# Words that read wrong under plain title-casing.
+_NAME_ACRONYMS = {"cta": "CTA", "faq": "FAQ", "seo": "SEO", "url": "URL", "id": "ID"}
+
+
+def _humanise(token: str) -> str:
+    """'card_title' / 'card-title' -> 'Card title'; 'cta' -> 'CTA'."""
+    words = re.split(r"[-_\s]+", (token or "").strip())
+    out = []
+    for i, w in enumerate(words):
+        if not w:
+            continue
+        low = w.lower()
+        if low in _NAME_ACRONYMS:
+            out.append(_NAME_ACRONYMS[low])
+        elif i == 0:
+            out.append(w[:1].upper() + w[1:])
+        else:
+            out.append(low)
+    return " ".join(out) or token
+
+
+def auto_name(key: str) -> str:
+    """The default layer name for a slot key — what the element is called when
+    nobody has renamed it.
+
+    'title'          -> 'Title'
+    'steps.2'        -> 'Step 3'      (repeat item: singularised key + 1-based)
+    'steps.2.icon'   -> 'Icon'
+    Mirrored by autoName() in lpBuilder/Builder.tsx, which labels the same rows
+    in the Layers tree.
+    """
+    parts = (key or "").split(".")
+    if len(parts) >= 3:            # repeat FIELD -> name it after the field
+        return _humanise(parts[-1])
+    if len(parts) == 2 and parts[1].isdigit():   # repeat ITEM
+        base = parts[0]
+        singular = base[:-1] if len(base) > 3 and base.endswith("s") else base
+        return f"{_humanise(singular)} {int(parts[1]) + 1}"
+    return _humanise(parts[-1])
+
+
+def template_name(tpl_names: Dict[str, str], key: str) -> Optional[str]:
+    """The block's own name for a slot, if it declares one.
+
+    Slot keys are never renamed (saved page content is keyed by them), so a
+    block names its elements in a side table instead. A repeat resolves by its
+    own key for the ITEM ('faq' -> 'Question 1', 'Question 2') and by field name
+    for what's inside it ('faq.0.q' -> 'q' -> 'Question').
+    """
+    if not isinstance(tpl_names, dict) or not key:
+        return None
+    if key in tpl_names:
+        return tpl_names[key]
+    parts = key.split(".")
+    if len(parts) == 3:                                    # repeat field
+        return tpl_names.get(f"{parts[0]}.{parts[2]}") or tpl_names.get(parts[2])
+    if len(parts) == 2 and parts[1].isdigit():             # repeat item
+        base = tpl_names.get(parts[0])
+        return f"{base} {int(parts[1]) + 1}" if base else None
+    return None
+
+
+def _apply_names(html: str, names: Dict[str, str],
+                 tpl_names: Optional[Dict[str, str]] = None) -> str:
+    """Stamp `data-name` on every slot and repeat item.
+
+    Every element gets a name: an explicit one from the builder's Layers tree if
+    the user set it, otherwise the derived default from auto_name(). That way an
+    export is self-describing even for a page nobody has renamed anything in.
+
+    Purely descriptive — unlike a class or id it can't collide or change styling.
+    """
+    names = names if isinstance(names, dict) else {}
+
+    def stamp(m: "re.Match") -> str:
+        tag, before, attr, key, after = m.groups()
+        if "data-name=" in (before + after):
+            return m.group(0)
+        raw = ((names.get(key) or "").strip()
+               or template_name(tpl_names or {}, key)
+               or auto_name(key))
+        # The trailing '>' is part of the match and MUST be restored — dropping
+        # it merges the tag into the next one and the whole page stops parsing.
+        return f'<{tag}{before}data-name="{_attr(raw[:120])}" {attr}="{key}"{after}>'
+
+    return re.sub(
+        r'<(\w+)([^>]*?\s)(data-lp-(?:text|rich|img|link|item))="([^"]+)"([^>]*)>',
+        stamp,
+        html,
+    )
 
 
 def _fill_texts(html: str, values: Dict[str, str], rich: bool) -> str:
@@ -410,6 +521,9 @@ def compose_section(tpl: dict, inst: dict, lang: str, tokens: dict,
                 html = _fill_attr(html, "data-lp-link", f["key"], "href", _attr(_safe_url(href)))
     html = _fill_texts(html, text_vals, rich=False)
     html = _fill_texts(html, rich_vals, rich=True)
+
+    # Layer names the user gave in the builder, as descriptive data-name attrs.
+    html = _apply_names(html, inst.get("names") or {}, tpl.get("names") or {})
 
     # stamp the instance id on the section root
     html = re.sub(r"<section\b", f'<section data-iid="{inst["iid"]}"', html, count=1)

@@ -65,6 +65,9 @@ DEFAULT_LANGS = [
 # Default (unbranded) design tokens — a brand pick overwrites these per project.
 DEFAULT_TOKENS = {
     "primary": "#E71E25", "accent": "#0A0F2E", "bg": "#FFFFFF",
+    # The CTA defaults to the primary colour with white text — what the button
+    # hardcoded before these tokens existed — so an unbranded page is unchanged.
+    "cta": "#E71E25", "cta-text": "#FFFFFF",
     "surface": "#F4F6FB", "card": "#FFFFFF", "text": "#0B1220", "muted": "#5B6472",
     "font": "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif",
     "logo": "",

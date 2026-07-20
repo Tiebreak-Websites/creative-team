@@ -76,11 +76,13 @@ _MAX_COLORS = 12
 # `kind` is the single source of truth: every picker, filter and validator
 # derives from it. Nothing infers the vocabulary from values found on existing
 # records — that turns a typo into a permanent option.
-ENTITY_KINDS = ("broker", "whitelabel", "academy")
+ENTITY_KINDS = ("broker", "whitelabel", "academy", "prop")
 DEFAULT_KIND = "broker"
 # What a BRAND picker offers: the products being sold. A broker sells accounts,
-# an academy sells education — both are brands, so both belong here.
-BRAND_KINDS = ("broker", "academy")
+# an academy sells education, a prop firm sells funded-account challenges —
+# all three are brands, so all three belong here. Only `whitelabel` is a
+# different ROLE; the rest are reporting buckets over the same behaviour.
+BRAND_KINDS = ("broker", "academy", "prop")
 
 # This role was originally called 'brand'. Anything persisted under the old name
 # still loads as a broker, so a rename can't silently drop an entity out of every
@@ -133,6 +135,166 @@ def _validate_kind(value: Any) -> str:
         )
     return kind
 
+
+# --- Regulation --------------------------------------------------------------
+# Which licence a broker operates under. Metadata + a registry filter for now:
+# the risk warning it usually drives needs compliance-approved wording, which
+# isn't something to invent here.
+REGULATIONS = ("eu", "international")
+
+
+def _validate_regulation(value: Any) -> Optional[str]:
+    """'eu' | 'international' | None (unset). Anything else is rejected."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    v = value.strip().lower() if isinstance(value, str) else ""
+    if v not in REGULATIONS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"'regulation' must be one of {', '.join(REGULATIONS)} (or empty)",
+        )
+    return v
+
+
+# --- Target markets ----------------------------------------------------------
+# Where an entity operates. Keys are ISO-3166 alpha-2, which is also the flag
+# CDN's key, so the UI derives each flag straight from the code — no second
+# mapping to keep in sync. The value is the reporting region the market rolls up
+# into. Declaration order IS display order, so a saved list always comes back
+# grouped the same way regardless of what order it was clicked in.
+MARKETS: dict = {
+    # EU
+    "FR": "EU", "DE": "EU", "IT": "EU", "NO": "EU", "PL": "EU",
+    "ES": "EU", "SE": "EU",
+    # GCC
+    "BH": "GCC", "IN": "GCC", "KW": "GCC", "OM": "GCC", "QA": "GCC",
+    "SA": "GCC", "AE": "GCC",
+    # LATAM
+    "AR": "LATAM", "BR": "LATAM", "CL": "LATAM", "CO": "LATAM", "CR": "LATAM",
+    "EC": "LATAM", "SV": "LATAM", "MX": "LATAM", "PE": "LATAM", "UY": "LATAM",
+    # APAC
+    "CN": "APAC", "JP": "APAC", "MY": "APAC", "SG": "APAC", "TH": "APAC",
+    "VN": "APAC",
+    # North America
+    "CA": "NA",
+    # Unassigned in the source list — grouped separately rather than guessed at.
+    "ZA": "OTHER",
+}
+MARKET_REGIONS = ("EU", "GCC", "LATAM", "APAC", "NA", "OTHER")
+
+
+def _clean_markets(value: Any) -> List[str]:
+    """Known market codes only, deduped and returned in catalogue order.
+
+    Unknown codes are dropped rather than 422-ing: the list is reference data,
+    and one stale code shouldn't block saving the rest of the brand kit.
+    """
+    if not isinstance(value, list):
+        return []
+    want = {c.strip().upper() for c in value if isinstance(c, str) and c.strip()}
+    return [code for code in MARKETS if code in want]
+
+
+def _known_language_codes() -> List[str]:
+    """Language codes the LP registry knows about, in its own order.
+
+    Unions the live list with the shipped defaults: `languages()` reads a cache
+    that's empty until the LP store rehydrates, and validating against an empty
+    set would silently drop every language an admin picked.
+    """
+    from .lp_builder.core import DEFAULT_LANGS, languages  # local: avoids import-time coupling
+
+    order: List[str] = []
+    for entry in list(languages() or []) + list(DEFAULT_LANGS):
+        code = entry.get("code")
+        if isinstance(code, str) and code and code not in order:
+            order.append(code)
+    return order
+
+
+def _clean_languages(value: Any) -> List[str]:
+    """Known language codes only, deduped, in registry order."""
+    if not isinstance(value, list):
+        return []
+    want = {c.strip().lower() for c in value if isinstance(c, str) and c.strip()}
+    return [code for code in _known_language_codes() if code in want]
+
+
+# --- Page design tokens ------------------------------------------------------
+# Keys match the `--lp-*` CSS variables the LP section templates already consume,
+# so a value set here reaches the page without touching a template. `cta` and
+# `cta_text` are new: the button previously hardcoded the primary colour and
+# white text, which left no way to give the CTA its own colour.
+TOKEN_KEYS = (
+    "primary", "accent", "cta", "cta_text",
+    "bg", "surface", "card", "text", "muted",
+)
+
+
+def _clean_tokens(value: Any) -> dict:
+    """Keep the known token keys whose value is a well-formed hex colour."""
+    if not isinstance(value, dict):
+        return {}
+    out: dict = {}
+    for key in TOKEN_KEYS:
+        v = value.get(key)
+        if isinstance(v, str) and _HEX_RE.match(v.strip()):
+            out[key] = v.strip().upper()
+    return out
+
+
+# --- Typography --------------------------------------------------------------
+# Two families (headings vs body) plus a size/weight/line-height per role.
+# Emitted as --lp-<role>-size / -weight / -line so templates can opt in; the
+# existing sections hardcode their own scale and are deliberately left alone.
+TYPE_ROLES = ("h1", "h2", "h3", "body")
+_DEFAULT_TYPE_SCALE = {
+    "h1": {"size": 48, "weight": 700, "line": 1.1},
+    "h2": {"size": 34, "weight": 700, "line": 1.2},
+    "h3": {"size": 24, "weight": 600, "line": 1.3},
+    "body": {"size": 16, "weight": 400, "line": 1.6},
+}
+_WEIGHTS = (100, 200, 300, 400, 500, 600, 700, 800, 900)
+
+
+def _clean_typography(value: Any) -> dict:
+    """{heading_font, body_font, scale:{role:{size,weight,line}}} — clamped.
+
+    Sizes are px (8–200), weights snap to the nine CSS steps, line-height is a
+    unitless multiplier (0.8–3). Out-of-range numbers are clamped rather than
+    rejected so a fat-fingered value can't 422 the whole save.
+    """
+    if not isinstance(value, dict):
+        return {}
+    out: dict = {}
+    for key in ("heading_font", "body_font"):
+        f = _clean_text(value.get(key), limit=120)
+        if f:
+            out[key] = f
+
+    raw_scale = value.get("scale")
+    scale: dict = {}
+    if isinstance(raw_scale, dict):
+        for role in TYPE_ROLES:
+            spec = raw_scale.get(role)
+            if not isinstance(spec, dict):
+                continue
+            entry: dict = {}
+            size = spec.get("size")
+            if isinstance(size, (int, float)):
+                entry["size"] = max(8, min(200, round(float(size))))
+            weight = spec.get("weight")
+            if isinstance(weight, (int, float)):
+                entry["weight"] = min(_WEIGHTS, key=lambda w: abs(w - float(weight)))
+            line = spec.get("line")
+            if isinstance(line, (int, float)):
+                entry["line"] = max(0.8, min(3.0, round(float(line), 2)))
+            if entry:
+                scale[role] = entry
+    if scale:
+        out["scale"] = scale
+    return out
+
 # Bundled brand assets (logos), committed under the app package so they ship in
 # the Docker image and survive the ephemeral cloud disk.
 _ASSETS = Path(__file__).resolve().parent / "assets" / "brands"
@@ -184,7 +346,7 @@ BUILTIN_BRANDS: List[dict] = [
         "icon_svg": _icon("finansero"),
     },
     {
-        "id": "tradeapp", "name": "TradeApp", "kind": "broker",
+        "id": "tradeapp", "name": "TradeApp", "kind": "prop",
         "colors": ["#05ADC9", "#75FBFD"], "accent": "#05ADC9",
         "icon_svg": _icon("tradeapp"),
     },
@@ -346,6 +508,13 @@ def whitelabel_options(include_retired: bool = False) -> List[dict]:
             if _kind_of(b) == "whitelabel" and (include_retired or _is_active(b))]
 
 
+def prop_options(include_retired: bool = False) -> List[dict]:
+    """The prop-firm reporting bucket. Like academies, NOT a structural role —
+    these all also appear in brand_options()."""
+    return [b for b in list_brands()
+            if _kind_of(b) == "prop" and (include_retired or _is_active(b))]
+
+
 def academy_options(include_retired: bool = False) -> List[dict]:
     """The academy admin/reporting bucket. NOT a structural role — these all
     also appear in brand_options()."""
@@ -450,16 +619,28 @@ def _public(brand: dict) -> dict:
         # The resolved card colour (accent > first palette colour > none), so
         # every client tints from the same value instead of re-deriving it.
         "resolved_accent": resolve_accent(brand),
+        # 'eu' | 'international' | None — which licence this broker runs under.
+        "regulation": brand.get("regulation"),
+        # Where this entity operates / what it publishes in.
+        "markets": _clean_markets(brand.get("markets")),
+        "languages": _clean_languages(brand.get("languages")),
         "colors": brand.get("colors", []) or [],
-        # The square registry mark (lists/cards). Separate from logo_svg, which
-        # is the wordmark composited onto banners.
+        # --- Logos. Three shapes, each with its own job -----------------------
+        # icon_svg   square registry mark (lists, cards, folder tiles)
+        # favicon    the tiny mark, for exported pages' <link rel=icon>
+        # logo_wide  horizontal lockup for page headers
+        # logo_svg   the wordmark composited onto banners (+ dark variant)
         "icon_svg": brand.get("icon_svg"),
+        "favicon": brand.get("favicon"),
+        "logo_wide": brand.get("logo_wide"),
         "logo_svg": brand.get("logo_svg"),
         "logo_svg_dark": brand.get("logo_svg_dark"),
         # Brand-kit hints (all optional) folded into the art direction at run time.
         "font": brand.get("font"),
         "accent": brand.get("accent"),
-        "voice": brand.get("voice"),
+        # Page design tokens + type scale (see TOKEN_KEYS / TYPE_ROLES).
+        "tokens": _clean_tokens(brand.get("tokens")),
+        "typography": _clean_typography(brand.get("typography")),
         "builtin": bool(brand.get("builtin")),
     }
     # Built-ins may annotate each colour with a human role (CTA / Background / …).
@@ -496,13 +677,19 @@ def build_brands_router() -> APIRouter:
             "name": name,
             "kind": _validate_kind(payload.get("kind")),
             "active": payload.get("active", True) is not False,
+            "regulation": _validate_regulation(payload.get("regulation")),
+            "markets": _clean_markets(payload.get("markets")),
+            "languages": _clean_languages(payload.get("languages")),
             "colors": _clean_colors(payload.get("colors")),
             "icon_svg": _clean_logo(payload.get("icon_svg")),
+            "favicon": _clean_logo(payload.get("favicon")),
+            "logo_wide": _clean_logo(payload.get("logo_wide")),
             "logo_svg": _clean_logo(payload.get("logo_svg")),
             "logo_svg_dark": _clean_logo(payload.get("logo_svg_dark")),
             "font": _clean_text(payload.get("font")),
             "accent": _clean_accent(payload.get("accent")),
-            "voice": _clean_text(payload.get("voice"), limit=300),
+            "tokens": _clean_tokens(payload.get("tokens")),
+            "typography": _clean_typography(payload.get("typography")),
         }
         brands = _load()
         brands.append(brand)
@@ -517,10 +704,20 @@ def build_brands_router() -> APIRouter:
             b["kind"] = _validate_kind(payload.get("kind"))
         if "active" in payload:
             b["active"] = payload.get("active") is not False
+        if "regulation" in payload:
+            b["regulation"] = _validate_regulation(payload.get("regulation"))
+        if "markets" in payload:
+            b["markets"] = _clean_markets(payload.get("markets"))
+        if "languages" in payload:
+            b["languages"] = _clean_languages(payload.get("languages"))
         if "colors" in payload:
             b["colors"] = _clean_colors(payload.get("colors"))
         if "icon_svg" in payload:
             b["icon_svg"] = _clean_logo(payload.get("icon_svg"))
+        if "favicon" in payload:
+            b["favicon"] = _clean_logo(payload.get("favicon"))
+        if "logo_wide" in payload:
+            b["logo_wide"] = _clean_logo(payload.get("logo_wide"))
         if "logo_svg" in payload:
             b["logo_svg"] = _clean_logo(payload.get("logo_svg"))
         if "logo_svg_dark" in payload:
@@ -529,8 +726,10 @@ def build_brands_router() -> APIRouter:
             b["font"] = _clean_text(payload.get("font"))
         if "accent" in payload:
             b["accent"] = _clean_accent(payload.get("accent"))
-        if "voice" in payload:
-            b["voice"] = _clean_text(payload.get("voice"), limit=300)
+        if "tokens" in payload:
+            b["tokens"] = _clean_tokens(payload.get("tokens"))
+        if "typography" in payload:
+            b["typography"] = _clean_typography(payload.get("typography"))
         if "lp" in payload and isinstance(payload.get("lp"), dict):
             lp = {k: v.strip().upper() for k, v in payload["lp"].items()
                   if k in ("bg", "card") and isinstance(v, str) and _HEX_RE.match(v.strip())}
@@ -584,5 +783,5 @@ __all__ = [
     "build_brands_router", "list_brands", "get_brand", "BRANDS_PATH",
     "ENTITY_KINDS", "DEFAULT_KIND", "BRAND_KINDS",
     "normalise_name", "is_no_whitelabel", "resolve_accent", "find_by_name",
-    "brand_options", "whitelabel_options", "academy_options",
+    "brand_options", "whitelabel_options", "academy_options", "prop_options",
 ]

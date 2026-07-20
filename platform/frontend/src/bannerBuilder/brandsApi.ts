@@ -17,20 +17,22 @@ const BRANDS_URL = `${BASE}/tools/banner-builder/brands`
  * "Brand" is the umbrella for what's being sold (broker or academy), not a kind.
  * Mirrors ENTITY_KINDS in backend/app/brands.py, which validates on write.
  */
-export type EntityKind = 'broker' | 'whitelabel' | 'academy'
+export type EntityKind = 'broker' | 'whitelabel' | 'academy' | 'prop'
 
-export const ENTITY_KINDS: EntityKind[] = ['broker', 'whitelabel', 'academy']
+export const ENTITY_KINDS: EntityKind[] = ['broker', 'whitelabel', 'academy', 'prop']
 
 export const KIND_LABEL: Record<EntityKind, string> = {
   broker: 'Broker',
   whitelabel: 'White label',
   academy: 'Academy',
+  prop: 'Prop firm',
 }
 
 export const KIND_HINT: Record<EntityKind, string> = {
   broker: 'The product being sold — who the customer transacts with.',
   whitelabel: 'A marketing surface that routes traffic to a broker.',
   academy: 'Sells education. Picks like a broker; counted separately.',
+  prop: 'Sells funded-account challenges. Picks like a broker.',
 }
 
 /** `broker` was originally called `brand`; anything persisted under the old name
@@ -103,11 +105,11 @@ const isActive = (e: Brand) => e.active !== false
 export const kindOf = (e: Brand): EntityKind =>
   KIND_ALIASES[(e.kind as string) ?? ''] ?? e.kind ?? 'broker'
 
-/** Everything selectable in a BRAND picker — brokers AND academies. */
+/** Everything selectable in a BRAND picker — every kind that is a product
+ * being sold: brokers, academies and prop firms. Only white labels are excluded,
+ * because a white label is a ROLE, not a product. */
 export function brandOptions(entities: Brand[], includeRetired = false): Brand[] {
-  return entities.filter(
-    (e) => (kindOf(e) === 'broker' || kindOf(e) === 'academy') && (includeRetired || isActive(e)),
-  )
+  return entities.filter((e) => kindOf(e) !== 'whitelabel' && (includeRetired || isActive(e)))
 }
 
 /** Everything selectable in a WHITE-LABEL picker — never an academy. */
@@ -119,6 +121,59 @@ export function whitelabelOptions(entities: Brand[], includeRetired = false): Br
 export function academyOptions(entities: Brand[], includeRetired = false): Brand[] {
   return entities.filter((e) => kindOf(e) === 'academy' && (includeRetired || isActive(e)))
 }
+
+/** The prop-firm reporting bucket — like academies, a subset of brandOptions(). */
+export function propOptions(entities: Brand[], includeRetired = false): Brand[] {
+  return entities.filter((e) => kindOf(e) === 'prop' && (includeRetired || isActive(e)))
+}
+
+/** Which licence a broker operates under. Metadata + a registry filter — the
+ * risk warning this usually drives needs compliance-approved wording. */
+export type Regulation = 'eu' | 'international'
+
+export const REGULATIONS: Regulation[] = ['eu', 'international']
+
+export const REGULATION_LABEL: Record<Regulation, string> = {
+  eu: 'EU regulated',
+  international: 'International (Licensed)',
+}
+
+/** Page design tokens. Keys mirror the `--lp-*` CSS variables the LP section
+ * templates already consume, so a value set here reaches the page directly. */
+export const TOKEN_FIELDS: { key: string; label: string; hint: string }[] = [
+  { key: 'primary', label: 'Primary', hint: 'Headline accents, key surfaces' },
+  { key: 'cta', label: 'CTA', hint: 'Button background' },
+  { key: 'cta_text', label: 'CTA text', hint: 'Label on the button' },
+  { key: 'accent', label: 'Accent', hint: 'Secondary highlights' },
+  { key: 'bg', label: 'Page background', hint: 'Behind everything' },
+  { key: 'surface', label: 'Surface', hint: 'Alternating section bands' },
+  { key: 'card', label: 'Card', hint: 'Panels and cards' },
+  { key: 'text', label: 'Body text', hint: 'Default copy colour' },
+  { key: 'muted', label: 'Muted text', hint: 'Sub-copy and captions' },
+]
+
+/** One role in the type scale. Sizes are px, weight snaps to the CSS steps,
+ * line is a unitless multiplier. */
+export interface TypeSpec {
+  size?: number
+  weight?: number
+  line?: number
+}
+
+export interface Typography {
+  heading_font?: string
+  body_font?: string
+  scale?: Record<string, TypeSpec>
+}
+
+export const TYPE_ROLES: { key: string; label: string }[] = [
+  { key: 'h1', label: 'Heading 1' },
+  { key: 'h2', label: 'Heading 2' },
+  { key: 'h3', label: 'Subheading' },
+  { key: 'body', label: 'Body' },
+]
+
+export const FONT_WEIGHTS = [300, 400, 500, 600, 700, 800] as const
 
 /** One palette colour with an optional human role (e.g. "Primary · CTA"). */
 export interface BrandSwatch {
@@ -139,20 +194,31 @@ export interface Brand {
   /** Server-resolved accent (accent > first palette colour > null), so clients
    * don't each re-derive it. */
   resolved_accent?: string | null
+  /** Which licence this broker runs under, when known. */
+  regulation?: Regulation | null
+  /** ISO-3166 alpha-2 market codes this entity operates in. */
+  markets?: string[]
+  /** Language codes this entity publishes in. */
+  languages?: string[]
   colors: string[]
-  /** The square registry mark shown in lists and cards. Distinct from logo_svg:
-   * icons carry an opaque plate, so they aren't composited onto banners. */
+  /** Three logo shapes, each with its own job:
+   *  icon_svg   square registry mark (lists, cards, folder tiles)
+   *  favicon    the tiny mark, for an exported page's <link rel=icon>
+   *  logo_wide  horizontal lockup for page headers
+   *  logo_svg   the wordmark composited onto banners (+ dark variant) */
   icon_svg?: string | null
+  favicon?: string | null
+  logo_wide?: string | null
   logo_svg: string | null
-  /** Optional dark-theme logo variant (white lettering) — shown wherever the
-   * app renders the logo on dark surfaces. */
   logo_svg_dark?: string | null
   /** Typography hint folded into the art direction (e.g. "Inter / geometric sans"). */
   font?: string | null
   /** Preferred CTA / accent hex hint (the director still ensures contrast). */
   accent?: string | null
-  /** Tone of voice folded into the art direction (e.g. "confident, concise"). */
-  voice?: string | null
+  /** Page colour tokens, keyed by TOKEN_FIELDS. Empty = fall back to the palette. */
+  tokens?: Record<string, string>
+  /** Font families + type scale. See TYPE_ROLES. */
+  typography?: Typography
   /** Built-in brands ship with the app: always present; edits are stored as
    * overrides (deleting a built-in resets it to the shipped defaults). */
   builtin?: boolean
@@ -167,13 +233,19 @@ export interface BrandInput {
   name: string
   kind?: EntityKind
   active?: boolean
+  regulation?: Regulation | null
+  markets?: string[]
+  languages?: string[]
   colors: string[]
   icon_svg?: string | null
+  favicon?: string | null
+  logo_wide?: string | null
   logo_svg: string | null
   logo_svg_dark?: string | null
   font?: string | null
   accent?: string | null
-  voice?: string | null
+  tokens?: Record<string, string>
+  typography?: Typography
 }
 
 /** Partial update — any subset of the brand's editable fields. */
