@@ -13,6 +13,7 @@ tool's asset directory, and the 32-hex id is the capability.
 from __future__ import annotations
 
 import io
+import json
 import logging
 from typing import Optional
 
@@ -46,7 +47,15 @@ def _public_block(b: dict) -> dict:
 def _public_campaign(c: dict) -> dict:
     return {k: c.get(k) for k in
             ("id", "name", "subject", "preheader", "brand_id", "language",
-             "sections", "tokens", "created_by", "created_at", "updated_at")}
+             "sections", "tokens", "created_by", "created_at", "updated_at")} | {
+        # '' for a parent, the parent's id for a language variant. A campaign is
+        # authored once in English and translated outward, so the tree is one
+        # level deep by design — a variant of a variant has no meaning here.
+        "parent_id": c.get("parent_id") or "",
+        # Monday.com item id. Blank until someone pastes it; each variant gets
+        # its own, because Monday tracks them as separate items.
+        "monday_id": c.get("monday_id") or "",
+    }
 
 
 def _entity_for(project: dict) -> Optional[dict]:
@@ -85,6 +94,7 @@ class CampaignCreate(BaseModel):
     brand_id: str = ""
     language: str = "en"
     subject: str = ""
+    monday_id: str = ""
 
 
 class CampaignPatch(BaseModel):
@@ -95,6 +105,7 @@ class CampaignPatch(BaseModel):
     brand_id: Optional[str] = None
     sections: Optional[list] = None
     tokens: Optional[dict] = None
+    monday_id: Optional[str] = None
 
 
 def build_email_builder_router() -> APIRouter:
@@ -115,10 +126,19 @@ def build_email_builder_router() -> APIRouter:
         with core.lock():
             cs = sorted(core.campaigns().values(),
                         key=lambda c: c.get("updated_at", ""), reverse=True)
+        by_parent: dict = {}
+        for c in cs:
+            pid = c.get("parent_id") or ""
+            if pid:
+                by_parent[pid] = by_parent.get(pid, 0) + 1
         return {"campaigns": [
             {k: c.get(k) for k in ("id", "name", "subject", "brand_id", "language",
                                    "created_by", "created_at", "updated_at")}
-            | {"blocks": len(c.get("sections") or [])} for c in cs]}
+            | {"blocks": len(c.get("sections") or []),
+               "parent_id": c.get("parent_id") or "",
+               "monday_id": c.get("monday_id") or "",
+               "variants": by_parent.get(c.get("id"), 0)}
+            for c in cs]}
 
     @router.post("/campaigns")
     def create_campaign(payload: CampaignCreate, user: dict = Depends(require_user)):
@@ -138,6 +158,7 @@ def build_email_builder_router() -> APIRouter:
                  "brand_id": (payload.brand_id or "").strip(),
                  "language": (payload.language or "en").strip()[:8],
                  "sections": sections, "tokens": {},
+                 "parent_id": "", "monday_id": (payload.monday_id or "").strip()[:32],
                  "created_by": user.get("email", ""), "created_at": now, "updated_at": now}
             core.campaigns()[c["id"]] = c
             core.persist_campaign(c)
@@ -158,7 +179,7 @@ def build_email_builder_router() -> APIRouter:
             if not c:
                 raise HTTPException(404, "Campaign not found.")
             patch = payload.model_dump(exclude_none=True)
-            for k in ("name", "subject", "preheader", "language", "brand_id"):
+            for k in ("name", "subject", "preheader", "language", "brand_id", "monday_id"):
                 if k in patch:
                     c[k] = str(patch[k]).strip()[:200]
             if "tokens" in patch and isinstance(patch["tokens"], dict):
@@ -178,8 +199,14 @@ def build_email_builder_router() -> APIRouter:
     @router.delete("/campaigns/{cid}", status_code=204)
     def delete_campaign(cid: str, _user: dict = Depends(require_admin)):
         with core.lock():
-            core.campaigns().pop(cid, None)
-            core.delete_campaign_file(cid)
+            # Deleting a parent takes its variants with it. Leaving them behind
+            # would strand translations under a parent that no longer exists,
+            # invisible in a UI that lists parents.
+            doomed = [cid] + [c["id"] for c in core.campaigns().values()
+                              if c.get("parent_id") == cid]
+            for i in doomed:
+                core.campaigns().pop(i, None)
+                core.delete_campaign_file(i)
         return Response(status_code=204)
 
     # ----------------------------------------------------------- compose
@@ -191,6 +218,61 @@ def build_email_builder_router() -> APIRouter:
         entity = _entity_for(project)
         project = _with_brand_logo(project, entity)
         return export.compose_email(project, blocks_map, _asset_url, entity)
+
+    @router.post("/campaigns/{cid}/variants")
+    def create_variants(cid: str, payload: dict, user: dict = Depends(require_user)):
+        """Fan a finished parent out into one campaign per language.
+
+        A variant is a full copy, not a reference: translation edits the copy,
+        and a later parent tweak must NOT silently rewrite copy someone has
+        already reviewed and signed off in nine languages. The cost is that
+        parent changes do not propagate — which is the correct trade for
+        regulated marketing mail.
+        """
+        wanted = [str(x).strip()[:8] for x in (payload.get("languages") or []) if str(x).strip()]
+        if not wanted:
+            raise HTTPException(422, "Pick at least one language.")
+
+        with core.lock():
+            parent = core.campaigns().get(cid)
+            if not parent:
+                raise HTTPException(404, "Campaign not found.")
+            if parent.get("parent_id"):
+                raise HTTPException(
+                    409, "This is already a language variant. Create variants from the parent.")
+
+            existing = {c.get("language") for c in core.campaigns().values()
+                        if c.get("parent_id") == cid}
+            existing.add(parent.get("language"))
+
+            now = core._now()
+            made = []
+            for lang in wanted:
+                if lang in existing:
+                    continue  # already covered; asking twice is not an error
+                child = {
+                    "id": core.new_campaign_id(),
+                    "name": parent.get("name") or "",
+                    "subject": parent.get("subject") or "",
+                    "preheader": parent.get("preheader") or "",
+                    "brand_id": parent.get("brand_id") or "",
+                    "language": lang,
+                    # Deep-copied so editing a variant cannot reach back into
+                    # the parent's slots through a shared dict.
+                    "sections": json.loads(json.dumps(parent.get("sections") or [])),
+                    "tokens": dict(parent.get("tokens") or {}),
+                    "parent_id": cid,
+                    "monday_id": "",
+                    "created_by": user.get("email", ""),
+                    "created_at": now, "updated_at": now,
+                }
+                core.campaigns()[child["id"]] = child
+                core.persist_campaign(child)
+                made.append(child)
+                existing.add(lang)
+
+        return {"created": [_public_campaign(c) for c in made],
+                "skipped": [l for l in wanted if l not in {c["language"] for c in made}]}
 
     @router.get("/campaigns/{cid}/thumb")
     def campaign_thumb(cid: str, _user: dict = Depends(require_user)):

@@ -6,7 +6,9 @@
 // this screen, and two copies of a folder drift apart.
 
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Check, Copy, FilePlus2, Loader2, Mail, Search, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft, Check, Copy, FilePlus2, Languages, Loader2, Mail, Search, Trash2,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, formatUserName } from '@/lib/utils'
@@ -17,7 +19,7 @@ import type { Language } from '@/lpBuilder/api'
 import {
   ENTITY_KINDS, KIND_HINT, KIND_LABEL, kindOf, type Brand,
 } from '@/bannerBuilder/brandsApi'
-import { campaignThumb, deleteCampaign, type CampaignSummary } from './api'
+import { campaignThumb, createVariants, deleteCampaign, type CampaignSummary } from './api'
 
 /** Composed-HTML cache keyed by campaign + last edit, so returning to the
  *  dashboard doesn't recompose every card. */
@@ -50,7 +52,10 @@ export function Dashboard({
   const dark = useIsDark()
   /** null = the folder shelf; a brand id = inside that folder; '' = "Other". */
   const [folder, setFolder] = useState<string | null>(null)
+  /** A parent id when looking at its language variants. */
+  const [parentId, setParentId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [addingTo, setAddingTo] = useState<CampaignSummary | null>(null)
 
   const brandById = useMemo(
     () => Object.fromEntries(brands.map((b) => [b.id, b])) as Record<string, Brand>,
@@ -65,7 +70,7 @@ export function Dashboard({
       const items: FolderItem[] = brands
         .filter((b) => kindOf(b) === kind)
         .map((b) => {
-          const mine = list.filter((c) => c.brand_id === b.id)
+          const mine = list.filter((c) => c.brand_id === b.id && !c.parent_id)
           return {
             id: b.id,
             name: b.name,
@@ -79,7 +84,7 @@ export function Dashboard({
   }, [brands, campaigns])
 
   const orphans = useMemo(
-    () => (campaigns ?? []).filter((c) => !brandById[c.brand_id]),
+    () => (campaigns ?? []).filter((c) => !brandById[c.brand_id] && !c.parent_id),
     [campaigns, brandById],
   )
 
@@ -91,11 +96,86 @@ export function Dashboard({
     )
   }
 
+  // ------------------------------------------------------------ language variants
+  if (parentId) {
+    const parent = campaigns.find((c) => c.id === parentId)
+    const children = campaigns
+      .filter((c) => c.parent_id === parentId)
+      .sort((a, b) => a.language.localeCompare(b.language))
+    if (!parent) {
+      // Deleted from under us — fall back rather than render a blank screen.
+      setParentId(null)
+      return null
+    }
+    const brand = brandById[parent.brand_id]
+    const covered = new Set([parent.language, ...children.map((c) => c.language)])
+
+    return (
+      <div className="mx-auto max-w-6xl px-6 py-8">
+        <div className="mb-5 flex items-center gap-3 animate-fade-up">
+          <Button variant="ghost" size="icon" onClick={() => setParentId(null)}
+                  title="Back to campaigns" aria-label="Back to campaigns">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="min-w-0">
+            <h1 className="truncate font-display text-xl font-bold">{parent.name}</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {brand ? `${brand.name} · ` : ''}
+              {children.length === 0
+                ? 'No language variants yet.'
+                : `${children.length} language variant${children.length === 1 ? '' : 's'}.`}
+            </p>
+          </div>
+          <Button className="ml-auto shrink-0" onClick={() => setAddingTo(parent)}>
+            <Languages className="h-4 w-4" /> Add languages
+          </Button>
+        </div>
+
+        {/* The parent first and labelled. It is the source the variants were
+            copied from, so which one it is has to be unambiguous. */}
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+          <CampaignCard
+            c={parent} languages={languages} index={0} badge="Source"
+            onOpen={() => onOpen(parent.id)} onChanged={onChanged} onError={onError}
+          />
+          {children.map((c, i) => (
+            <CampaignCard
+              key={c.id} c={c} languages={languages} index={i + 1}
+              onOpen={() => onOpen(c.id)} onChanged={onChanged} onError={onError}
+            />
+          ))}
+        </div>
+
+        {children.length === 0 && (
+          <p className="mt-4 max-w-md text-xs leading-relaxed text-muted-foreground">
+            Finish the source email first, then fan it out. Each variant is a full copy
+            you translate and edit on its own — later edits to the source do not
+            overwrite copy that has already been signed off.
+          </p>
+        )}
+
+        {addingTo && (
+          <AddLanguagesModal
+            parent={addingTo}
+            covered={covered}
+            languages={languages}
+            brand={brand}
+            onClose={() => setAddingTo(null)}
+            onDone={() => { setAddingTo(null); onChanged() }}
+            onError={onError}
+          />
+        )}
+      </div>
+    )
+  }
+
   // ------------------------------------------------------------- inside a folder
   if (folder !== null) {
     const brand = brandById[folder]
+    // Parents only. A variant belongs under its parent, not loose in the
+    // folder — otherwise one campaign in ten languages reads as ten campaigns.
     const inFolder = campaigns.filter((c) =>
-      folder === '' ? !brandById[c.brand_id] : c.brand_id === folder)
+      !c.parent_id && (folder === '' ? !brandById[c.brand_id] : c.brand_id === folder))
     const visible = query
       ? inFolder.filter((c) =>
           (c.name + ' ' + c.subject).toLowerCase().includes(query.toLowerCase()))
@@ -150,7 +230,8 @@ export function Dashboard({
             {visible.map((c, i) => (
               <CampaignCard
                 key={c.id} c={c} languages={languages} index={i}
-                onOpen={() => onOpen(c.id)} onChanged={onChanged} onError={onError}
+                onOpen={() => (c.variants > 0 ? setParentId(c.id) : onOpen(c.id))}
+                onChanged={onChanged} onError={onError}
               />
             ))}
           </div>
@@ -160,7 +241,7 @@ export function Dashboard({
   }
 
   // --------------------------------------------------------------- folder shelf
-  const total = campaigns.length
+  const total = campaigns.filter((c) => !c.parent_id).length
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
       <div className="mb-6 flex items-start gap-3 animate-fade-up">
@@ -273,11 +354,13 @@ function EmailThumb({ c }: { c: CampaignSummary }) {
 }
 
 function CampaignCard({
-  c, languages, index, onOpen, onChanged, onError,
+  c, languages, index, badge, onOpen, onChanged, onError,
 }: {
   c: CampaignSummary
   languages: Language[]
   index: number
+  /** Marks the parent inside the variants view. */
+  badge?: string
   onOpen: () => void
   onChanged: () => void
   onError: (m: string) => void
@@ -289,15 +372,30 @@ function CampaignCard({
       style={{ animationDelay: `${Math.min(index * 40, 320)}ms` }}
     >
       <button type="button" onClick={onOpen} className="block w-full text-left">
-        <EmailThumb c={c} />
+        <span className="relative block">
+          <EmailThumb c={c} />
+          {badge && (
+            <span className="absolute left-1.5 top-1.5 rounded-md bg-foreground/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-background">
+              {badge}
+            </span>
+          )}
+        </span>
         <span className="block space-y-1 p-3">
           <span className="block truncate font-display text-sm font-semibold" title={c.name}>
             {c.name}
           </span>
-          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">
             <LangChip code={c.language} languages={languages} />
             <span>·</span>
             <span>{c.blocks} blocks</span>
+            {c.variants > 0 && (
+              <>
+                <span>·</span>
+                <span className="text-foreground">
+                  +{c.variants} language{c.variants === 1 ? '' : 's'}
+                </span>
+              </>
+            )}
           </span>
           <span className="block truncate text-[11px] text-muted-foreground">
             by {formatUserName(c.created_by)} ·{' '}
@@ -307,7 +405,10 @@ function CampaignCard({
       </button>
 
       <div className="px-3 pb-2">
-        <CopyId value={c.id.replace(/^em_/, '')} />
+        {/* Monday's id is the one people quote to each other; ours is only a
+            fallback until someone pastes it in. */}
+        <CopyId value={c.monday_id || c.id.replace(/^em_/, '')}
+                label={c.monday_id ? 'Monday ID' : 'Campaign ID'} />
       </div>
 
       <div className="flex items-center gap-1 border-t border-border px-2 py-1.5 opacity-0 transition-opacity group-hover:opacity-100">
@@ -329,12 +430,12 @@ function CampaignCard({
   )
 }
 
-function CopyId({ value }: { value: string }) {
+function CopyId({ value, label = 'Campaign ID' }: { value: string; label?: string }) {
   const [done, setDone] = useState(false)
   return (
     <button
       type="button"
-      title="Copy campaign ID"
+      title={`Copy ${label}`}
       onClick={(e) => {
         e.stopPropagation()
         navigator.clipboard?.writeText(value).then(() => {
@@ -360,5 +461,109 @@ function LangChip({ code, languages }: { code: string; languages: Language[] }) 
       )}
       {label}
     </span>
+  )
+}
+
+/** Pick the languages to fan a finished source email out into. */
+function AddLanguagesModal({
+  parent, covered, languages, brand, onClose, onDone, onError,
+}: {
+  parent: CampaignSummary
+  /** Languages already covered by the source or an existing variant. */
+  covered: Set<string>
+  languages: Language[]
+  brand?: Brand
+  onClose: () => void
+  onDone: () => void
+  onError: (m: string) => void
+}) {
+  const [picked, setPicked] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+
+  // The brand's declared languages first — those are the markets it actually
+  // sells in. The rest stay reachable but out of the way.
+  const declared = brand?.languages ?? []
+  const groups = useMemo(() => {
+    const inBrand = languages.filter((l) => declared.includes(l.code))
+    const rest = languages.filter((l) => !declared.includes(l.code))
+    return [
+      { label: brand ? `${brand.name} languages` : 'Languages', items: inBrand },
+      { label: 'Other languages', items: rest },
+    ].filter((g) => g.items.length)
+  }, [languages, declared, brand])
+
+  const toggle = (code: string) =>
+    setPicked((p) => (p.includes(code) ? p.filter((c) => c !== code) : [...p, code]))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-lg"
+           onClick={(e) => e.stopPropagation()}>
+        <h2 className="font-display text-lg font-bold">Add languages</h2>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+          Each one becomes its own editable copy of “{parent.name}”, ready to translate.
+        </p>
+
+        <div className="mt-4 space-y-4">
+          {groups.map((g) => (
+            <div key={g.label}>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                {g.label}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {g.items.map((l) => {
+                  const already = covered.has(l.code)
+                  const on = picked.includes(l.code)
+                  const url = flagUrl(l.code)
+                  return (
+                    <button
+                      key={l.code}
+                      type="button"
+                      disabled={already}
+                      onClick={() => toggle(l.code)}
+                      title={already ? `${l.label} already exists` : l.label}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] transition-colors',
+                        already
+                          ? 'cursor-not-allowed border-border bg-secondary text-muted-foreground/50'
+                          : on
+                          ? 'border-primary bg-primary/10 text-foreground'
+                          : 'border-border hover:border-primary/40',
+                      )}
+                    >
+                      {url && (
+                        <img src={url} alt="" className="h-3 w-[18px] rounded-[2px] object-cover ring-1 ring-inset ring-black/10" />
+                      )}
+                      {l.label}
+                      {already && <Check className="h-3 w-3" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <span className="mr-auto text-xs text-muted-foreground">
+            {picked.length ? `${picked.length} selected` : 'Nothing selected'}
+          </span>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            disabled={busy || picked.length === 0}
+            onClick={() => {
+              setBusy(true)
+              createVariants(parent.id, picked)
+                .then(onDone)
+                .catch((e) => onError(e.message))
+                .finally(() => setBusy(false))
+            }}
+          >
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Create {picked.length || ''} variant{picked.length === 1 ? '' : 's'}
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }

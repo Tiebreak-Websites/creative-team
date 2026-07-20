@@ -42,6 +42,11 @@ export interface BlockInstance {
 
 export interface Campaign {
   id: string
+  /** '' for a parent, the parent's id for a language variant. Authoring is
+   *  one level deep: a campaign is written once and translated outward. */
+  parent_id: string
+  /** Monday.com item id — each variant is tracked as its own Monday item. */
+  monday_id: string
   name: string
   subject: string
   preheader: string
@@ -56,6 +61,10 @@ export interface Campaign {
 
 export interface CampaignSummary {
   id: string
+  parent_id: string
+  monday_id: string
+  /** How many language variants hang off this one (parents only). */
+  variants: number
   name: string
   subject: string
   brand_id: string
@@ -103,6 +112,7 @@ export async function createCampaign(payload: {
   brand_id?: string
   language?: string
   subject?: string
+  monday_id?: string
 }): Promise<Campaign> {
   const r = await fetch(`${EB}/campaigns`, {
     method: 'POST', headers: j, credentials: 'include', body: JSON.stringify(payload),
@@ -137,6 +147,20 @@ export async function composeEmail(campaign: Campaign): Promise<Composed> {
     body: JSON.stringify({ project: campaign }),
   })
   if (!r.ok) return fail(r, 'Could not render the email')
+  return r.json()
+}
+
+/** Fan a parent out into one campaign per language. Each variant is a full
+ *  copy — translation edits the copy, so a later parent tweak cannot silently
+ *  rewrite copy already signed off in nine languages. */
+export async function createVariants(
+  id: string, languages: string[],
+): Promise<{ created: Campaign[]; skipped: string[] }> {
+  const r = await fetch(`${EB}/campaigns/${id}/variants`, {
+    method: 'POST', headers: j, credentials: 'include',
+    body: JSON.stringify({ languages }),
+  })
+  if (!r.ok) return fail(r, 'Could not create the variants')
   return r.json()
 }
 
