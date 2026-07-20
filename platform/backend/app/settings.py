@@ -59,6 +59,13 @@ class Settings:
         "PLATFORM_FRONTEND_DIST", str(PLATFORM_DIR / "frontend" / "dist")
     ))
 
+    # Absolute origin this deployment is reachable at, e.g.
+    # "https://creative.internovus.com". Email is the reason this exists: a
+    # recipient opening a message in Gmail has no relative path to resolve
+    # against, so every image URL in a composed email must be absolute. Empty
+    # in local dev, where the composed HTML is only ever previewed in-app.
+    PUBLIC_BASE_URL = _env("PLATFORM_PUBLIC_BASE_URL", "").strip().rstrip("/")
+
     # --- Runtime artifacts -------------------------------------------------
     # Per-run working dirs (generated PNGs). Gitignored.
     ARTIFACT_ROOT = Path(_env("PLATFORM_ARTIFACT_DIR", str(BACKEND_DIR / ".runs")))

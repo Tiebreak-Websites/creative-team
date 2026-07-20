@@ -136,6 +136,16 @@ def create_app() -> FastAPI:
     from .lp_builder import build_lp_builder_router
     app.include_router(build_lp_builder_router(),
                        prefix="/api/tools/lp-builder", dependencies=protected)
+    # CRM Email Builder — table-based email composition. The tool itself is
+    # session-gated like everything else...
+    from .email_builder import build_email_builder_router, build_public_email_router
+    app.include_router(build_email_builder_router(),
+                       prefix="/api/tools/email-builder", dependencies=protected)
+    # ...but images are served WITHOUT auth, because the person opening the
+    # email is a recipient in Gmail with no session here. Read-only, confined
+    # to the email asset directory, and the 32-hex filename is the capability.
+    app.include_router(build_public_email_router(), prefix="/e")
+
     # Floating suggestions/bug-report widget — per-user threads, admin checkmarks.
     from .feedback import build_feedback_router
     app.include_router(build_feedback_router(),
@@ -158,6 +168,9 @@ def create_app() -> FastAPI:
         # scan is a handful of small JSON files.
         from . import lp_builder as _lp_builder
         _lp_builder.rehydrate()
+        # Same reasoning for the email block library.
+        from .email_builder import core as _email_core
+        _email_core.rehydrate()
     except Exception:  # noqa: BLE001
         pass
 
