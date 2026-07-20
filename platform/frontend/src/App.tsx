@@ -226,8 +226,8 @@ const PRODUCTS: {
   {
     id: 'email',
     label: 'Email Builder',
-    nav: 'Emails',
-    navShort: 'Emails',
+    nav: 'CRM',
+    navShort: 'CRM',
     icon: Mail,
     soon: true,
     tools: [{ id: 'builder', label: 'Builder', icon: LayoutTemplate }],
