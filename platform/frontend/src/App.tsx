@@ -234,8 +234,8 @@ const PRODUCTS: {
   {
     id: 'email',
     label: 'CRM Emails',
-    nav: 'Emails',
-    navShort: 'Emails',
+    nav: 'CRM',
+    navShort: 'CRM',
     icon: Mail,
     blurb: 'Campaign emails for the CRM team. In the works — take a peek.',
     accent: '#0D9488',
