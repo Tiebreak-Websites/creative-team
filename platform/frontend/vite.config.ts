@@ -32,6 +32,14 @@ export default defineConfig(({ mode }) => {
           target: apiTarget,
           changeOrigin: true,
         },
+        // Email images are served unauthenticated from /e so recipients can
+        // load them. Without proxying it here, every image in the email
+        // preview 404s against Vite — the composed HTML is correct and the
+        // preview just looks empty, which reads as a broken upload.
+        '/e': {
+          target: apiTarget,
+          changeOrigin: true,
+        },
       },
     },
   }
