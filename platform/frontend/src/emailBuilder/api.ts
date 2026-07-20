@@ -47,8 +47,10 @@ export interface Campaign {
   parent_id: string
   /** Monday.com item id — each variant is tracked as its own Monday item. */
   monday_id: string
-  /** Draft until someone marks it Active. Campaigns are never deleted, only
-   *  deactivated — a sent campaign is a record, not a scratch file. */
+  /** Draft until someone approves it. The UI calls this Approved/Draft; the
+   *  field keeps its original name so stored campaigns need no migration.
+   *  Campaigns are never deleted, only un-approved — a sent campaign is a
+   *  record, not a scratch file. */
   active: boolean
   name: string
   subject: string
@@ -139,7 +141,7 @@ export async function saveCampaign(c: Campaign): Promise<Campaign> {
   return r.json()
 }
 
-/** Flip Active/Draft without loading the whole campaign. */
+/** Flip Approved/Draft without loading the whole campaign. */
 export async function setCampaignActive(id: string, active: boolean): Promise<void> {
   const r = await fetch(`${EB}/campaigns/${id}`, {
     method: 'PUT', headers: j, credentials: 'include', body: JSON.stringify({ active }),

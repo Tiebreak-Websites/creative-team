@@ -65,6 +65,17 @@ def _safe_colour(v: str, fallback: str) -> str:
     return v.upper()
 
 
+def _mix(hex_a: str, hex_b: str, pct: float) -> str:
+    """Blend two hex colours. Email has no color-mix(), so the tint the design
+    calls for has to be computed here and emitted as a literal."""
+    a, b = hex_a.lstrip("#"), hex_b.lstrip("#")
+    out = []
+    for i in (0, 2, 4):
+        ca, cb = int(a[i:i + 2], 16), int(b[i:i + 2], 16)
+        out.append(f"{round(ca * pct + cb * (1 - pct)):02X}")
+    return "#" + "".join(out)
+
+
 # ------------------------------------------------------------ brand → tokens
 
 def resolve_tokens(project: dict, entity: Optional[dict]) -> Dict[str, str]:
@@ -90,6 +101,14 @@ def resolve_tokens(project: dict, entity: Optional[dict]) -> Dict[str, str]:
 
     for k, default in core.DEFAULT_TOKENS.items():
         out[k] = _safe_colour(out[k], default)
+
+    # A soft wash of the brand colour, used for the page behind the card and
+    # for the highlight box. Derived rather than configured so every brand gets
+    # a coherent page without anyone picking a second palette.
+    if not (project.get("tokens") or {}).get("tint"):
+        out["tint"] = _mix(out["primary"], "#FFFFFF", 0.10)
+    if entity and not (entity.get("tokens") or {}).get("bg") and not (project.get("tokens") or {}).get("bg"):
+        out["bg"] = out["tint"]
 
     # Non-colour tokens. The brand font is deliberately NOT used: it renders in
     # Apple Mail and almost nowhere else, so the stack has to stand alone.
@@ -248,9 +267,8 @@ table {{ border-collapse:collapse; }}
 img {{ -ms-interpolation-mode:bicubic; }}
 a {{ text-decoration:none; }}
 @media only screen and (max-width:{w}px) {{
-  .em-card {{ width:100% !important; }}
+  .em-w {{ width:100% !important; }}
   .em-pad {{ padding-left:20px !important; padding-right:20px !important; }}
-  .em-h1 {{ font-size:24px !important; line-height:30px !important; }}
 }}
 </style>
 </head>
@@ -259,15 +277,21 @@ a {{ text-decoration:none; }}
 max-width:0;opacity:0;overflow:hidden;">{preheader}</div>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" \
 style="background-color:{bg};">
-<tr><td align="center" style="padding:24px 12px;">
-<table role="presentation" class="em-card" cellpadding="0" cellspacing="0" border="0" \
-width="{w}" style="width:{w}px;max-width:{w}px;background-color:{card};">
-{body}
-</table>
+<tr><td align="center" style="padding:0 12px 32px 12px;">
+{header}
+{card}
+{footer}
 </td></tr>
 </table>
 </body>
 </html>"""
+
+# Each zone is its own 600px table. The card is a separate one because a white
+# rounded panel spanning many rows cannot be faked with per-row backgrounds.
+_ZONE_TABLE = ('<table role="presentation" class="em-w" cellpadding="0" cellspacing="0" '
+               'border="0" width="{w}" style="width:{w}px;max-width:{w}px;{extra}">'
+               "{rows}</table>")
+
 
 # Arabic, Hebrew, Farsi, Urdu. Same list the banner engine uses.
 _RTL_LANGS = {"ar", "he", "fa", "ur"}
@@ -281,25 +305,34 @@ def compose_email(project: dict, blocks_map: Dict[str, dict],
     tokens = resolve_tokens(project, entity)
     forced = compliance_texts(entity)
 
-    rows: List[str] = []
+    zones: Dict[str, List[str]] = {"header": [], "card": [], "footer": []}
     for inst in project.get("sections") or []:
         block = blocks_map.get(inst.get("block_key") or "")
         if not block:
             continue
         inst = dict(inst)
         if block.get("key") == "em-footer" and forced:
-            # Compliance copy wins over whatever is stored on the instance:
-            # the regulator's wording is not the author's to edit.
+            # Compliance copy wins over whatever is stored on the instance: the
+            # regulator's wording is not the author's to edit.
             inst["texts"] = {**(inst.get("texts") or {}), **forced}
-        rows.append(compose_block(block, inst, lang, resolve_img))
+        zone = block.get("zone") or "card"
+        zones.setdefault(zone, []).append(compose_block(block, inst, lang, resolve_img))
 
-    body = "\n".join(rows)
+    def table(rows: List[str], extra: str = "") -> str:
+        if not rows:
+            return ""
+        return _ZONE_TABLE.format(w=EMAIL_W, extra=extra, rows="\n".join(rows))
+
     html = _SKELETON.format(
         lang=_attr(lang),
         dir="rtl" if lang.lower().split("-")[0] in _RTL_LANGS else "ltr",
         title=_esc(project.get("subject") or project.get("name") or ""),
         preheader=_esc(project.get("preheader") or ""),
-        bg=tokens["bg"], card=tokens["card"], w=EMAIL_W, body=body,
+        bg=tokens["bg"], w=EMAIL_W,
+        header=table(zones["header"]),
+        card=table(zones["card"],
+                   f'background-color:{tokens["card"]};border-radius:16px;'),
+        footer=table(zones["footer"]),
     )
     html = _apply_tokens(html, tokens)
 

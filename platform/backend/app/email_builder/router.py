@@ -35,6 +35,7 @@ _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 def _public_block(b: dict) -> dict:
     return {
         "key": b.get("key"), "name": b.get("name"), "category": b.get("category"),
+        "zone": b.get("zone") or "card",
         "position": b.get("position", 500), "enabled": b.get("enabled", True),
         "built_in": b.get("built_in", False),
         "html": b.get("html") or "", "texts": b.get("texts") or {},
@@ -55,8 +56,10 @@ def _public_campaign(c: dict) -> dict:
         # Monday.com item id. Blank until someone pastes it; each variant gets
         # its own, because Monday tracks them as separate items.
         "monday_id": c.get("monday_id") or "",
-        # Draft until someone says otherwise. A campaign is written before it is
-        # ready, so the safe default is the one that is not live.
+        # Draft until someone approves it — the UI's Approved/Draft switch.
+        # A campaign is written before it is ready, so the safe default is the
+        # one that is not live. Field name kept as `active` so existing stored
+        # campaigns need no migration.
         "active": bool(c.get("active", False)),
     }
 

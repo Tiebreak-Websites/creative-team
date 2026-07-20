@@ -409,14 +409,14 @@ function CampaignCard({
                 label={c.monday_id ? 'Monday ID' : 'Campaign ID'} />
       </div>
 
-      {/* Active/Draft instead of delete. A campaign that has been sent is a
-          record of what went out; deactivating retires it without destroying
+      {/* Approved/Draft instead of delete. A campaign that has been sent is a
+          record of what went out; un-approving retires it without destroying
           that. Always visible, not hover-revealed — it is status, not an
           action tucked away. */}
       <div className="flex items-center gap-2 border-t border-border px-3 py-2">
         <Toggle
           on={c.active}
-          label={c.active ? `Deactivate ${c.name}` : `Activate ${c.name}`}
+          label={c.active ? `Un-approve ${c.name}` : `Approve ${c.name}`}
           onChange={(next) => {
             setBusy(true)
             setCampaignActive(c.id, next)
@@ -426,7 +426,7 @@ function CampaignCard({
           }}
         />
         <span className={cn('text-[11px]', c.active ? 'font-medium text-foreground' : 'text-muted-foreground')}>
-          {c.active ? 'Active' : 'Draft'}
+          {c.active ? 'Approved' : 'Draft'}
         </span>
         {busy && <Loader2 className="ml-auto h-3 w-3 animate-spin text-muted-foreground" />}
       </div>
