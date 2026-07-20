@@ -55,6 +55,9 @@ def _public_campaign(c: dict) -> dict:
         # Monday.com item id. Blank until someone pastes it; each variant gets
         # its own, because Monday tracks them as separate items.
         "monday_id": c.get("monday_id") or "",
+        # Draft until someone says otherwise. A campaign is written before it is
+        # ready, so the safe default is the one that is not live.
+        "active": bool(c.get("active", False)),
     }
 
 
@@ -106,6 +109,7 @@ class CampaignPatch(BaseModel):
     sections: Optional[list] = None
     tokens: Optional[dict] = None
     monday_id: Optional[str] = None
+    active: Optional[bool] = None
 
 
 def build_email_builder_router() -> APIRouter:
@@ -137,6 +141,7 @@ def build_email_builder_router() -> APIRouter:
             | {"blocks": len(c.get("sections") or []),
                "parent_id": c.get("parent_id") or "",
                "monday_id": c.get("monday_id") or "",
+               "active": bool(c.get("active", False)),
                "variants": by_parent.get(c.get("id"), 0)}
             for c in cs]}
 
@@ -159,6 +164,7 @@ def build_email_builder_router() -> APIRouter:
                  "language": (payload.language or "en").strip()[:8],
                  "sections": sections, "tokens": {},
                  "parent_id": "", "monday_id": (payload.monday_id or "").strip()[:32],
+                 "active": False,
                  "created_by": user.get("email", ""), "created_at": now, "updated_at": now}
             core.campaigns()[c["id"]] = c
             core.persist_campaign(c)
@@ -182,6 +188,8 @@ def build_email_builder_router() -> APIRouter:
             for k in ("name", "subject", "preheader", "language", "brand_id", "monday_id"):
                 if k in patch:
                     c[k] = str(patch[k]).strip()[:200]
+            if "active" in patch:
+                c["active"] = bool(patch["active"])
             if "tokens" in patch and isinstance(patch["tokens"], dict):
                 c["tokens"] = {str(k)[:24]: str(v)[:40] for k, v in patch["tokens"].items()}
             if "sections" in patch and isinstance(patch["sections"], list):
@@ -263,6 +271,9 @@ def build_email_builder_router() -> APIRouter:
                     "tokens": dict(parent.get("tokens") or {}),
                     "parent_id": cid,
                     "monday_id": "",
+                    # Never live on arrival: an untranslated copy of the source
+                    # is exactly what must not go out.
+                    "active": False,
                     "created_by": user.get("email", ""),
                     "created_at": now, "updated_at": now,
                 }

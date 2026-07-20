@@ -47,6 +47,9 @@ export interface Campaign {
   parent_id: string
   /** Monday.com item id — each variant is tracked as its own Monday item. */
   monday_id: string
+  /** Draft until someone marks it Active. Campaigns are never deleted, only
+   *  deactivated — a sent campaign is a record, not a scratch file. */
+  active: boolean
   name: string
   subject: string
   preheader: string
@@ -63,6 +66,7 @@ export interface CampaignSummary {
   id: string
   parent_id: string
   monday_id: string
+  active: boolean
   /** How many language variants hang off this one (parents only). */
   variants: number
   name: string
@@ -133,6 +137,14 @@ export async function saveCampaign(c: Campaign): Promise<Campaign> {
   })
   if (!r.ok) return fail(r, 'Could not save')
   return r.json()
+}
+
+/** Flip Active/Draft without loading the whole campaign. */
+export async function setCampaignActive(id: string, active: boolean): Promise<void> {
+  const r = await fetch(`${EB}/campaigns/${id}`, {
+    method: 'PUT', headers: j, credentials: 'include', body: JSON.stringify({ active }),
+  })
+  if (!r.ok) return fail(r, 'Could not update the campaign')
 }
 
 export async function deleteCampaign(id: string): Promise<void> {

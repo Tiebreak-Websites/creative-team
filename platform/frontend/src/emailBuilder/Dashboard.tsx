@@ -7,23 +7,27 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft, Check, Copy, FilePlus2, Languages, Loader2, Mail, Search, Trash2,
+  ArrowLeft, Check, Copy, FilePlus2, Languages, Loader2, Mail, Search,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { cn, formatUserName } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { flagUrl } from '@/lib/flags'
 import { brandLogoSrc, brandLogoUri, useIsDark } from '@/lib/brandLogo'
 import { FolderGrid, type FolderItem } from '@/components/FolderGrid'
+import { Toggle } from '@/components/Toggle'
 import type { Language } from '@/lpBuilder/api'
 import {
   ENTITY_KINDS, KIND_HINT, KIND_LABEL, kindOf, type Brand,
 } from '@/bannerBuilder/brandsApi'
-import { campaignThumb, createVariants, deleteCampaign, type CampaignSummary } from './api'
+import { campaignThumb, createVariants, setCampaignActive, type CampaignSummary } from './api'
 
-/** Composed-HTML cache keyed by campaign + last edit, so returning to the
- *  dashboard doesn't recompose every card. */
-const thumbCache = new Map<string, string>()
+/** Last composed HTML per campaign, with the edit stamp it was composed at.
+ *  Keeping the html separately from its stamp lets a card keep showing the
+ *  previous render while a newer one loads — flipping Active bumps updated_at
+ *  without changing a pixel of the email, and blanking every thumbnail for
+ *  that is pure churn. */
+const thumbCache = new Map<string, { stamp: string; html: string }>()
 
 /** Most recent updated_at, or ''. Written out rather than using .at(-1):
  *  the project's TS target predates it. */
@@ -307,27 +311,27 @@ function Stat({ value, label }: { value: number; label: string }) {
  *  thumbnails: render the real output small rather than store a picture of it,
  *  so a thumbnail can never be stale. */
 function EmailThumb({ c }: { c: CampaignSummary }) {
-  const key = `${c.id}:${c.updated_at}`
-  const [doc, setDoc] = useState<string | null>(() => thumbCache.get(key) ?? null)
+  const [doc, setDoc] = useState<string | null>(() => thumbCache.get(c.id)?.html ?? null)
 
   useEffect(() => {
-    const cached = thumbCache.get(key)
-    if (cached !== undefined) {
-      setDoc(cached)
-      return
-    }
+    const cached = thumbCache.get(c.id)
+    // Show whatever we last had immediately, then refresh only if the campaign
+    // has actually been edited since.
+    if (cached) setDoc(cached.html)
+    if (cached?.stamp === c.updated_at) return
+
     let gone = false
     campaignThumb(c.id)
       .then((html) => {
-        thumbCache.set(key, html)
+        thumbCache.set(c.id, { stamp: c.updated_at, html })
         if (!gone) setDoc(html)
       })
       .catch(() => {
-        thumbCache.set(key, '')
-        if (!gone) setDoc('')
+        thumbCache.set(c.id, { stamp: c.updated_at, html: '' })
+        if (!gone) setDoc((prev) => prev ?? '')
       })
     return () => { gone = true }
-  }, [key, c.id])
+  }, [c.id, c.updated_at])
 
   return (
     <span className="pointer-events-none block aspect-square overflow-hidden bg-white">
@@ -386,8 +390,6 @@ function CampaignCard({
           </span>
           <span className="flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted-foreground">
             <LangChip code={c.language} languages={languages} />
-            <span>·</span>
-            <span>{c.blocks} blocks</span>
             {c.variants > 0 && (
               <>
                 <span>·</span>
@@ -396,10 +398,6 @@ function CampaignCard({
                 </span>
               </>
             )}
-          </span>
-          <span className="block truncate text-[11px] text-muted-foreground">
-            by {formatUserName(c.created_by)} ·{' '}
-            {new Date(c.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
           </span>
         </span>
       </button>
@@ -411,20 +409,26 @@ function CampaignCard({
                 label={c.monday_id ? 'Monday ID' : 'Campaign ID'} />
       </div>
 
-      <div className="flex items-center gap-1 border-t border-border px-2 py-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-        <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground" title={c.subject}>
-          {c.subject || 'No subject yet'}
-        </span>
-        <Button
-          variant="ghost" size="sm" disabled={busy} title={`Delete ${c.name}`}
-          onClick={() => {
-            if (!window.confirm(`Delete "${c.name}"? This cannot be undone.`)) return
+      {/* Active/Draft instead of delete. A campaign that has been sent is a
+          record of what went out; deactivating retires it without destroying
+          that. Always visible, not hover-revealed — it is status, not an
+          action tucked away. */}
+      <div className="flex items-center gap-2 border-t border-border px-3 py-2">
+        <Toggle
+          on={c.active}
+          label={c.active ? `Deactivate ${c.name}` : `Activate ${c.name}`}
+          onChange={(next) => {
             setBusy(true)
-            deleteCampaign(c.id).then(onChanged).catch((e) => onError(e.message)).finally(() => setBusy(false))
+            setCampaignActive(c.id, next)
+              .then(onChanged)
+              .catch((e) => onError(e.message))
+              .finally(() => setBusy(false))
           }}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
+        />
+        <span className={cn('text-[11px]', c.active ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+          {c.active ? 'Active' : 'Draft'}
+        </span>
+        {busy && <Loader2 className="ml-auto h-3 w-3 animate-spin text-muted-foreground" />}
       </div>
     </div>
   )
