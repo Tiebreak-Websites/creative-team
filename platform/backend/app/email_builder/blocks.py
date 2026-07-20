@@ -3,13 +3,13 @@
 Each block is one or more <tr> rows. `zone` says which of the three stacked
 tables compose_email() drops it into:
 
-    header  on the brand tint, above the card (the logo)
-    card    inside the white rounded card (everything you write)
-    footer  back on the tint, below the card (legal, account links)
+    header  above the card, on the page background (the logo)
+    card    inside the white card (everything you write)
+    footer  below the card, on the page background (legal, account links)
 
-Zones exist because the design is a white card floating on a tinted page, and
-a rounded white panel spanning many rows cannot be faked with per-row
-backgrounds — it has to be one nested table.
+Zones exist because a white panel spanning many rows cannot be faked with
+per-row backgrounds — it has to be one nested table, and the logo and legal
+footer sit outside it.
 
 House rules every block follows (see platform/EMAIL_HTML.md):
   - nested <table role="presentation">, never div+flex/grid
@@ -193,14 +193,18 @@ BUILTIN_BLOCKS: List[dict] = [
             f'style="font-family:{FONT};font-size:16px;line-height:24px;font-weight:700;'
             'color:{{primary}};text-decoration:none;">'
             '<span data-em-text="support_link_label">[CONTACT SUPPORT]</span></a></p>'
+            f'<p data-em-rich="support_footer" style="{_P}margin-top:14px;">Our support '
+            'team is available to assist you with any concerns.</p>'
             '</td></tr>'
         ),
         "texts": {"en": {"support_title": "Need Assistance?",
                          "support_body": "If you have any issues or require help, feel free to contact us:",
-                         "support_link_label": "[CONTACT SUPPORT]"}},
+                         "support_link_label": "[CONTACT SUPPORT]",
+                         "support_footer": "Our support team is available to assist you with any concerns."}},
         "assets": {},
         "names": {"support_title": "Support heading", "support_body": "Support text",
-                  "support_link_label": "Support link text", "support_url": "Support link"},
+                  "support_link_label": "Support link text", "support_url": "Support link",
+                  "support_footer": "Support closing line"},
     },
     {
         "key": "em-signoff",

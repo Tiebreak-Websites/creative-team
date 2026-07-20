@@ -70,9 +70,9 @@ DEFAULT_TOKENS: Dict[str, str] = {
     "text": "#0B1220",
     "muted": "#5B6472",
     "border": "#E4E8F0",
-    # A soft wash of the brand colour — the page behind the card, and the
-    # highlight box. Computed from `primary` at compose time unless overridden.
-    "tint": "#FDF0EC",
+    # Fill for the highlight panel. Neutral by default so it recedes behind
+    # the CTA instead of competing with it; a brand can override it.
+    "tint": "#F4F6FB",
 }
 
 # Web-safe only. A brand font renders in Apple Mail and almost nowhere else, so

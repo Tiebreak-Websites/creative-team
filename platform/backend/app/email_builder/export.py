@@ -102,13 +102,10 @@ def resolve_tokens(project: dict, entity: Optional[dict]) -> Dict[str, str]:
     for k, default in core.DEFAULT_TOKENS.items():
         out[k] = _safe_colour(out[k], default)
 
-    # A soft wash of the brand colour, used for the page behind the card and
-    # for the highlight box. Derived rather than configured so every brand gets
-    # a coherent page without anyone picking a second palette.
-    if not (project.get("tokens") or {}).get("tint"):
-        out["tint"] = _mix(out["primary"], "#FFFFFF", 0.10)
-    if entity and not (entity.get("tokens") or {}).get("bg") and not (project.get("tokens") or {}).get("bg"):
-        out["bg"] = out["tint"]
+    # The page stays neutral. A brand-tinted background was tried and pulled:
+    # it made every email read as the brand's colour rather than as a message,
+    # and the panel tint fought the CTA for attention. `tint` is now just a
+    # quiet grey panel fill, overridable per brand if one wants it coloured.
 
     # Non-colour tokens. The brand font is deliberately NOT used: it renders in
     # Apple Mail and almost nowhere else, so the stack has to stand alone.
