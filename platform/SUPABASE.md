@@ -74,3 +74,76 @@ Outbound: database webhooks (e.g. `email_campaigns.active` → true) → n8n →
 Monday item create/update (`monday_id` already lives on every campaign and
 variant). Inbound: n8n calls the FastAPI API with a service bearer token so
 every guardrail stays authoritative — n8n never writes to Postgres directly.
+
+---
+
+# How CreativeOPS did it (read 2026-07-21) — and what we mirror
+
+CreativeOPS (`Desktop/Creative/catalog`, deployed at creativeops.internovus.com)
+is a backend-less static app on the SAME Supabase project: supabase-js in the
+browser, RLS as the only security boundary, Edge Functions for privileged
+work, n8n bridged by database webhooks, Monday as source of truth. Its
+conventions are the house style; where we differ it is deliberate and noted.
+
+## Auth — Phase 2 is now much smaller than planned
+
+- **SSO is already registered.** Microsoft Entra is wired as a SAML IdP on
+  this project; login is `supabase.auth.signInWithSSO({ domain: 'tiebreak.dev' })`
+  — no OAuth provider, no scopes, MFA lives entirely in Entra Conditional
+  Access. **No Azure App Registration work is needed for us**: we reuse the
+  registration, add our origins to Supabase Auth URL configuration, and call
+  the same API.
+- First login auto-creates `public.users` (trigger): role `viewer`,
+  `access_status='pending'`, `monday_id='sso:'||id` — admins then grant
+  access/sections. **Role truth is `public.users.role`** via SECURITY-DEFINER
+  `auth_role()`/`is_admin()`, never the JWT claim.
+- Our twist (we have a backend, they don't): the React app gets the session
+  with supabase-js — with a **distinct `storageKey`** so we never stomp
+  CreativeOPS's session — and sends the Supabase JWT to FastAPI;
+  `require_user` verifies it (JWKS) and maps role from `public.users`
+  (env-var admin list until Phase 3 gives us DB access). Password login stays
+  as break-glass behind a flag, exactly like their `SSO_ENABLED` fallback.
+
+## Storage — our public bucket stands, one convergence noted
+
+- House pattern: ONE private bucket, direct browser uploads under the user
+  JWT, admin-gated by RLS on `storage.objects`, reads via 1-hour signed URLs
+  gated by a `file_is_public()` helper.
+- **Email images are the legitimate exception**: a signed 1-hour URL is
+  useless inside a sent email, so `email-assets` stays public — same
+  reasoning as their public `entities-icons`.
+- Convergence: the project already ships a **`compress-image` Edge Function**
+  (Tinify, admin-gated, overwrites in place) with `TINIFY_API_KEY` already
+  set as an edge secret. Our `compress.py` duplicates this locally for now —
+  it needs a user-context Supabase JWT we won't have until Phase 2, so:
+  short-term, copy the same Tinify key value into Render's `TINIFY_API_KEY`;
+  after Phase 2, switch Approve-compression to invoke the shared function
+  and delete our copy.
+
+## n8n + Monday — our Phase 4 design matches the house pattern
+
+- Events OUT: Supabase **database webhooks** with Header Auth
+  (`Bearer N8N_WEBHOOK_SECRET`); the app never calls n8n directly.
+- n8n IN: writes with the new-format `sb_secret_…` service key sent as BOTH
+  `apikey` and `Authorization`.
+- Monday ids are written back by n8n into the triggering row — our
+  `email_campaigns.monday_id` is already shaped for this.
+- Failures dead-letter into the shared `n8n_failures` table
+  (+ `resolve_n8n_failures` RPC); wiring ours there puts builder failures in
+  the same admin bell.
+
+## Schema — Phase 3 rules confirmed, plus the alignment question sharpened
+
+- House style: idempotent standalone SQL applied via MCP/SQL editor, RLS on
+  every table, `is_admin()` write policies, `security_invoker=on` views,
+  `_touch_updated_at` triggers, append-only `audit_log`, soft `text`
+  taxonomy references (Monday sync must never reject on an unknown name).
+- **The live DB is truth; committed SQL lags it** — always introspect before
+  writing.
+- The duplicate-modelling question is now concrete: their `entities` is
+  name-keyed with kind in (brand|whitelabel|academy) — no `prop`, no design
+  tokens; it is what Monday dropdowns self-heal against. Our registry is
+  slug-keyed and carries the full design system. Likely landing: builder
+  keeps its rich registry in the `builder` schema and syncs name+kind into
+  `public.entities` (or reads it as the canonical name list) — to be agreed
+  with the CreativeOPS maintainer, not decided silently.
