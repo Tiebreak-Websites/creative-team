@@ -782,7 +782,34 @@ function HeroGenerator({
   const [headline, setHeadline] = useState(ai.headline)
   const [subtitle, setSubtitle] = useState('')
   const [busy, setBusy] = useState(false)
+  const [more, setMore] = useState(false)
+  const [visualStyle, setVisualStyle] = useState<'auto' | 'photo' | 'illustration' | 'render3d'>('auto')
+  const [people, setPeople] = useState<'any' | 'none'>('any')
+  const [avoid, setAvoid] = useState('')
+  /** The art direction of the last run — editable, and "Regenerate" reuses it
+   *  verbatim (skipping the director), so an edit is final. */
   const [direction, setDirection] = useState<string | null>(null)
+
+  const run = (directionOverride?: string) => {
+    setBusy(true)
+    generateHeroImage({
+      brand_id: ai.brandId,
+      brief: brief.trim(),
+      with_text: withText,
+      headline: headline.trim(),
+      subtitle: subtitle.trim(),
+      visual_style: visualStyle,
+      people,
+      avoid: avoid.trim(),
+      direction_override: directionOverride,
+    })
+      .then((r) => {
+        onDone(r.id)
+        setDirection(r.direction)
+      })
+      .catch((e) => onError(e.message))
+      .finally(() => setBusy(false))
+  }
 
   return (
     <div className="mt-2 rounded-lg border border-border bg-secondary/40 p-2">
@@ -836,27 +863,61 @@ function HeroGenerator({
         aria-label="Image brief"
       />
 
+      <button
+        type="button"
+        onClick={() => setMore((v) => !v)}
+        aria-expanded={more}
+        className="mt-1.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ChevronDown className={cn('h-3 w-3 transition-transform', !more && '-rotate-90')} />
+        Art director settings
+      </button>
+      {more && (
+        <div className="mt-1.5 space-y-1.5 rounded-md bg-card p-2">
+          <div className="flex items-center gap-2">
+            <Label className="w-14 shrink-0 text-[10px]">Style</Label>
+            <select
+              value={visualStyle}
+              onChange={(e) => setVisualStyle(e.target.value as typeof visualStyle)}
+              className="h-7 flex-1 rounded-md border border-border bg-card px-1.5 text-[11px]"
+              aria-label="Visual style"
+            >
+              <option value="auto">Auto — let the director choose</option>
+              <option value="photo">Photography</option>
+              <option value="illustration">Illustration</option>
+              <option value="render3d">3D render</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="w-14 shrink-0 text-[10px]">People</Label>
+            <select
+              value={people}
+              onChange={(e) => setPeople(e.target.value as typeof people)}
+              className="h-7 flex-1 rounded-md border border-border bg-card px-1.5 text-[11px]"
+              aria-label="People"
+            >
+              <option value="any">Allowed</option>
+              <option value="none">No people</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <Label className="w-14 shrink-0 text-[10px]">Avoid</Label>
+            <Input
+              value={avoid}
+              onChange={(e) => setAvoid(e.target.value)}
+              className="h-7 flex-1 text-[11px]"
+              placeholder="e.g. charts, candlesticks, city skylines"
+              aria-label="Things to avoid"
+            />
+          </div>
+        </div>
+      )}
+
       <Button
         size="sm"
         className="mt-1.5 w-full"
         disabled={busy || (withText && !headline.trim())}
-        onClick={() => {
-          setBusy(true)
-          setDirection(null)
-          generateHeroImage({
-            brand_id: ai.brandId,
-            brief: brief.trim(),
-            with_text: withText,
-            headline: headline.trim(),
-            subtitle: subtitle.trim(),
-          })
-            .then((r) => {
-              onDone(r.id)
-              setDirection(r.direction)
-            })
-            .catch((e) => onError(e.message))
-            .finally(() => setBusy(false))
-        }}
+        onClick={() => { setDirection(null); run() }}
       >
         {busy ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating…</>
           : <><Sparkles className="h-3.5 w-3.5" /> Generate hero</>}
@@ -865,10 +926,27 @@ function HeroGenerator({
         Styled from the brand's colours and fonts in Settings.
       </p>
 
-      {direction && (
-        <p className="mt-1.5 rounded-md bg-card px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
-          <span className="font-semibold">Art direction used:</span> {direction}
-        </p>
+      {direction !== null && (
+        <div className="mt-1.5 rounded-md bg-card p-2">
+          <Label className="text-[10px]">Art direction used — edit and regenerate</Label>
+          <Textarea
+            value={direction}
+            onChange={(e) => setDirection(e.target.value)}
+            rows={4}
+            className="mt-1 text-[11px]"
+            aria-label="Art direction"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-1.5 w-full"
+            disabled={busy || !direction.trim()}
+            onClick={() => run(direction.trim())}
+          >
+            {busy ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Regenerating…</>
+              : 'Regenerate with this direction'}
+          </Button>
+        </div>
       )}
     </div>
   )

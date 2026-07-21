@@ -212,6 +212,12 @@ export async function generateHeroImage(payload: {
   with_text: boolean
   headline?: string
   subtitle?: string
+  /** Art-director pins — whitelisted server-side. */
+  visual_style?: 'auto' | 'photo' | 'illustration' | 'render3d'
+  people?: 'any' | 'none'
+  avoid?: string
+  /** An edited direction is used VERBATIM; the director pass is skipped. */
+  direction_override?: string
 }): Promise<{ id: string; url: string; direction: string }> {
   const r = await fetch(`${EB}/hero/generate`, {
     method: 'POST', headers: j, credentials: 'include', body: JSON.stringify(payload),

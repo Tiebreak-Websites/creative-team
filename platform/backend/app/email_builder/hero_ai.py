@@ -116,8 +116,24 @@ def _direct(api_key: str, *, brief: str, style: str, with_text: bool,
             f"lighting, professional and optimistic. {style}")
 
 
+# Art-director settings the author can pin, mirroring the banner generator's
+# controls. Free-text would leak junk into the prompt; a whitelist cannot.
+VISUAL_STYLES = {
+    "auto": "",
+    "photo": "Photorealistic editorial photography, natural light, shallow depth.",
+    "illustration": "Modern flat vector illustration, clean shapes, subtle gradients.",
+    "render3d": "Soft 3D rendered scene, gentle studio lighting, matte materials.",
+}
+PEOPLE_MODES = {
+    "any": "",
+    "none": "The scene contains NO people, faces, hands or body parts.",
+}
+
+
 def _image_prompt(direction: str, style: str, with_text: bool,
-                  headline: str, subtitle: str) -> str:
+                  headline: str, subtitle: str,
+                  visual_style: str = "auto", people: str = "any",
+                  avoid: str = "") -> str:
     parts = [
         "Design a wide hero image for a marketing email (2:1 landscape crop "
         "from a 3:2 frame — keep every important element inside the central "
@@ -125,6 +141,10 @@ def _image_prompt(direction: str, style: str, with_text: bool,
         f"Creative direction: {direction}",
         f"Brand style: {style}",
     ]
+    if VISUAL_STYLES.get(visual_style):
+        parts.append(f"Visual style: {VISUAL_STYLES[visual_style]}")
+    if PEOPLE_MODES.get(people):
+        parts.append(PEOPLE_MODES[people])
     if with_text:
         parts.append(
             'RENDER THIS TEXT, EXACTLY ONCE, VERBATIM, CORRECTLY SPELLED: '
@@ -136,10 +156,12 @@ def _image_prompt(direction: str, style: str, with_text: bool,
         parts.append(
             "ABSOLUTELY NO TEXT of any kind: no words, letters, numbers, "
             "captions, watermarks, logos or UI labels anywhere in the image.")
-    parts.append(
-        "Never include: watermarks, stock-photo text, third-party logos, "
-        "readable fake interfaces, real people's likenesses, distorted hands "
-        "or faces.")
+    negatives = ("Never include: watermarks, stock-photo text, third-party "
+                 "logos, readable fake interfaces, real people's likenesses, "
+                 "distorted hands or faces")
+    if avoid:
+        negatives += f", {avoid}"
+    parts.append(negatives + ".")
     return "\n\n".join(parts)
 
 
@@ -200,7 +222,9 @@ def _finish(png: bytes) -> Tuple[str, int]:
 
 
 def generate_hero(*, entity: Optional[dict], brief: str, with_text: bool,
-                  headline: str = "", subtitle: str = "") -> dict:
+                  headline: str = "", subtitle: str = "",
+                  visual_style: str = "auto", people: str = "any",
+                  avoid: str = "", direction_override: str = "") -> dict:
     """The whole pipeline. Raises LookupError when no API key is configured,
     ValueError for blocked content, RuntimeError for generation failures."""
     api_key = get_secret("OPENAI_API_KEY")
@@ -224,10 +248,15 @@ def generate_hero(*, entity: Optional[dict], brief: str, with_text: bool,
         log.exception("email-hero: moderation check unavailable, continuing")
 
     style = _style_from_brand(entity)
-    direction = _direct(api_key, brief=brief, style=style, with_text=with_text,
-                        headline=headline.strip(), subtitle=subtitle.strip())
+    # An edited direction is used VERBATIM and the director is skipped — the
+    # whole point of exposing it is that the author's edit is final.
+    direction = (direction_override.strip()[:900]
+                 or _direct(api_key, brief=brief, style=style, with_text=with_text,
+                            headline=headline.strip(), subtitle=subtitle.strip()))
     prompt = _image_prompt(direction, style, with_text,
-                           headline.strip(), subtitle.strip())
+                           headline.strip(), subtitle.strip(),
+                           visual_style=visual_style, people=people,
+                           avoid=avoid.strip()[:200])
     png = _generate_png(api_key, prompt)
     aid, nbytes = _finish(png)
     log.info("email-hero: generated %s (%d bytes)", aid, nbytes)

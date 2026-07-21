@@ -149,6 +149,10 @@ class HeroGen(BaseModel):
     with_text: bool = False
     headline: str = ""
     subtitle: str = ""
+    visual_style: str = "auto"
+    people: str = "any"
+    avoid: str = ""
+    direction_override: str = ""
 
 
 class CampaignPatch(BaseModel):
@@ -386,6 +390,11 @@ def build_email_builder_router() -> APIRouter:
                 with_text=bool(payload.with_text),
                 headline=(payload.headline or "").strip()[:120],
                 subtitle=(payload.subtitle or "").strip()[:160],
+                visual_style=payload.visual_style if payload.visual_style in
+                    ("auto", "photo", "illustration", "render3d") else "auto",
+                people=payload.people if payload.people in ("any", "none") else "any",
+                avoid=(payload.avoid or "").strip()[:200],
+                direction_override=(payload.direction_override or "").strip()[:900],
             )
         except LookupError:
             raise HTTPException(424, detail={"missing_secrets": ["OPENAI_API_KEY"],
@@ -412,20 +421,34 @@ def build_email_builder_router() -> APIRouter:
 
 
 def _store_asset_bytes(data: bytes) -> str:
-    """Normalise to PNG on the artifact disk. Returns '<32hex>.png'."""
+    """Store an upload in the format email best practice actually wants.
+
+    JPEG for photographic content, PNG only where transparency demands it —
+    forcing everything to PNG (the old behaviour) turned a photo upload into
+    a megabyte-class file, and slow-loading images are skipped emails. If a
+    TinyPNG-style squeeze is ever added, this function is its single hook.
+    """
     from PIL import Image
 
     im = Image.open(io.BytesIO(data))
     im.load()
-    if im.mode not in ("RGB", "RGBA"):
-        im = im.convert("RGBA")
+    im = im.convert("RGBA") if im.mode not in ("RGB", "RGBA") else im
     # 1200px wide is plenty for a 600px email at 2x, and keeps us clear of the
     # size budget that Gmail clips against.
     if im.width > 1200:
         im.thumbnail((1200, 1200 * 4))
+
+    transparent = im.mode == "RGBA" and im.getchannel("A").getextrema()[0] < 255
     buf = io.BytesIO()
-    im.save(buf, format="PNG", optimize=True)
-    aid = core.new_asset_id() + ".png"
+    if transparent:
+        im.save(buf, format="PNG", optimize=True)
+        ext = ".png"
+    else:
+        if im.mode != "RGB":
+            im = im.convert("RGB")
+        im.save(buf, format="JPEG", quality=85, optimize=True, progressive=True)
+        ext = ".jpg"
+    aid = core.new_asset_id() + ext
     core.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     (core.ASSETS_DIR / aid).write_bytes(buf.getvalue())
     return aid
