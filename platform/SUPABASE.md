@@ -39,9 +39,11 @@ SUPABASE_SERVICE_KEY=<service_role key — Creative Builder project dashboard �
 The service key bypasses row security — env vars only, never the frontend,
 never git.
 
-- [ ] Keys added on Render
-- [ ] Keys added locally
-- [ ] Real upload verified end to end (upload → CDN URL in composed HTML)
+- [ ] Keys added on Render  ← the remaining step
+- [x] Keys added locally (2026-07-21)
+- [x] Real upload verified end to end: upload → Supabase CDN URL stored →
+      publicly fetchable → composed HTML carries only absolute URLs (logos,
+      placeholder, uploads) and the relative-URL warning is gone
 
 Frontend key for Phase 2 (safe to ship in the browser):
 `sb_publishable_esM5Vcf8uAYkGa2U6SsiuA_0l-jApIk`

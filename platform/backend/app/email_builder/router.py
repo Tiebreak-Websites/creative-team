@@ -128,6 +128,11 @@ def _asset_url(raw: str) -> str:
         # before anything is uploaded, instead of silently absent. A pre-send
         # check refuses to let it ship quietly.
         raw = _ensure_placeholder(raw.split(":", 1)[1])
+        if raw.startswith(("http://", "https://")):
+            # Already a full Supabase URL — wrapping it in /e/img/ again
+            # produced src="/e/img/https://…", which is how this line earned
+            # its existence.
+            return raw
         base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
         return f"{base}/e/img/{raw}" if base else f"/e/img/{raw}"
     if raw.startswith("token:"):
