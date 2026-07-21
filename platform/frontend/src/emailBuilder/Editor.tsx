@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, Copy,
+  AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, Copy, GripVertical,
   Image as ImageIcon, Loader2, Monitor, Plus, Smartphone, Upload, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -67,6 +67,9 @@ export function Editor({
    *  eleven blocks instead of eleven stacked forms. */
   const [openIid, setOpenIid] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  // HTML5 drag state: what is being dragged, and which row it hovers.
+  const [dragIid, setDragIid] = useState<string | null>(null)
+  const [overIid, setOverIid] = useState<string | null>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
 
   const blockMap = useMemo(
@@ -149,6 +152,25 @@ export function Editor({
       ;[arr[i], arr[j]] = [arr[j], arr[i]]
       return c
     })
+
+  /** Drop `dragIid` at `targetIid`'s position — same-zone only, like the
+   *  arrows: zones are separate tables and cannot interleave. */
+  const dropOn = (targetIid: string, srcIid: string) => {
+    const src = srcIid || dragIid
+    setDragIid(null)
+    setOverIid(null)
+    if (!src || src === targetIid) return
+    mutate((c) => {
+      const arr = c.sections
+      const from = arr.findIndex((s) => s.iid === src)
+      const to = arr.findIndex((s) => s.iid === targetIid)
+      if (from === -1 || to === -1 || zoneOf(arr[from]) !== zoneOf(arr[to])) return c
+      const [moved] = arr.splice(from, 1)
+      const at = arr.findIndex((s) => s.iid === targetIid)
+      arr.splice(from < to ? at + 1 : at, 0, moved)
+      return c
+    })
+  }
 
   const duplicate = (iid: string) => {
     const copyIid = newIid()
@@ -356,13 +378,42 @@ export function Editor({
                   return (
                     <div
                       key={inst.iid}
+                      onDragOver={(e) => {
+                        if (!e.dataTransfer.types.includes('application/x-em-block')) return
+                        e.preventDefault()
+                        setOverIid(inst.iid)
+                      }}
+                      onDragLeave={() => setOverIid((cur) => (cur === inst.iid ? null : cur))}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        dropOn(inst.iid, e.dataTransfer.getData('application/x-em-block'))
+                      }}
                       className={cn(
                         'rounded-xl border bg-card transition-colors',
                         open ? 'border-primary/50 shadow-sm' : 'border-border',
+                        dragIid === inst.iid && 'opacity-40',
+                        overIid === inst.iid && dragIid !== inst.iid && 'border-primary ring-1 ring-primary/40',
                       )}
                     >
                       {/* row header: name + actions, click to open */}
                       <div className="group flex items-center gap-0.5 px-2 py-1.5">
+                        {canReorder && (
+                          <span
+                            draggable
+                            onDragStart={(e) => {
+                              setDragIid(inst.iid)
+                              e.dataTransfer.effectAllowed = 'move'
+                              e.dataTransfer.setData('application/x-em-block', inst.iid)
+                              // Firefox refuses to start a drag with no text data.
+                              e.dataTransfer.setData('text/plain', inst.iid)
+                            }}
+                            onDragEnd={() => { setDragIid(null); setOverIid(null) }}
+                            title="Drag to reorder"
+                            className="cursor-grab touch-none rounded p-0.5 text-muted-foreground/60 hover:text-foreground active:cursor-grabbing"
+                          >
+                            <GripVertical className="h-3.5 w-3.5" />
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={() => setOpenIid(open ? null : inst.iid)}
@@ -513,6 +564,18 @@ function BlockFields({
 }) {
   const [busy, setBusy] = useState<string | null>(null)
   const defaults = block.texts?.en ?? {}
+
+  // The logo is not editable per campaign — it comes from Settings > Brands,
+  // so every email a brand sends carries the same, current mark. Offering an
+  // upload here would quietly fork a campaign off the brand.
+  if (block.key === 'em-logo-header') {
+    return (
+      <p className="rounded-lg bg-secondary px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
+        The logo comes from Settings › Brands and updates here automatically when
+        it changes there.
+      </p>
+    )
+  }
 
   // The footer's risk warning is filled by the backend from the entity's
   // regulation, so offering an input here would imply it is editable when the

@@ -62,7 +62,7 @@ BUILTIN_BLOCKS: List[dict] = [
         "enabled": True,
         "html": (
             f'<tr><td class="em-pad" align="center" style="padding:28px {PAD_X}px 24px {PAD_X}px;">'
-            '<a data-em-link="logo_url" href="#" style="text-decoration:none;">'
+            '<a data-em-link="logo_url" style="text-decoration:none;">'
             '<img data-em-img="logo" src="" alt="{{brand_name}}" width="190" '
             'style="display:block;border:0;outline:none;text-decoration:none;'
             'width:190px;max-width:190px;height:auto;"></a>'
