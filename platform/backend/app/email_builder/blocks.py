@@ -36,7 +36,7 @@ def _cta(label_key: str, url_key: str, label: str) -> str:
     """A bulletproof button: the colour and padding live on the <td> because
     Outlook ignores padding on an <a>, and the link merely fills the cell."""
     return (
-        f'<tr><td align="center" style="padding:8px {PAD_X}px 24px {PAD_X}px;'
+        f'<tr><td class="em-pad" align="center" style="padding:8px {PAD_X}px 24px {PAD_X}px;'
         'background-color:{{card}};">'
         '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
         'style="border-collapse:separate;"><tr>'
@@ -61,7 +61,7 @@ BUILTIN_BLOCKS: List[dict] = [
         "position": 100,
         "enabled": True,
         "html": (
-            f'<tr><td align="center" style="padding:28px {PAD_X}px 24px {PAD_X}px;">'
+            f'<tr><td class="em-pad" align="center" style="padding:28px {PAD_X}px 24px {PAD_X}px;">'
             '<a data-em-link="logo_url" href="#" style="text-decoration:none;">'
             '<img data-em-img="logo" src="" alt="{{brand_name}}" width="190" '
             'style="display:block;border:0;outline:none;text-decoration:none;'
@@ -82,9 +82,9 @@ BUILTIN_BLOCKS: List[dict] = [
         "position": 110,
         "enabled": True,
         "html": (
-            f'<tr><td style="padding:8px {PAD_X}px 20px {PAD_X}px;'
+            f'<tr><td class="em-pad" style="padding:8px {PAD_X}px 20px {PAD_X}px;'
             'background-color:{{card}};">'
-            '<h1 data-em-text="headline" style="margin:0;padding:0;'
+            '<h1 data-em-text="headline" class="em-h1" style="margin:0;padding:0;'
             f'font-family:{FONT};font-size:30px;line-height:38px;font-weight:800;'
             'color:{{text}};text-align:center;">Every trader starts somewhere</h1>'
             '</td></tr>'
@@ -113,7 +113,7 @@ BUILTIN_BLOCKS: List[dict] = [
         "position": 130,
         "enabled": True,
         "html": (
-            f'<tr><td style="padding:32px {PAD_X}px 24px {PAD_X}px;'
+            f'<tr><td class="em-pad" style="padding:32px {PAD_X}px 24px {PAD_X}px;'
             'background-color:{{card}};">'
             f'<img data-em-img="hero" src="" alt="" width="{W - PAD_X * 2}" '
             f'style="display:block;border:0;outline:none;width:100%;'
@@ -132,7 +132,7 @@ BUILTIN_BLOCKS: List[dict] = [
         "position": 140,
         "enabled": True,
         "html": (
-            f'<tr><td style="padding:0 {PAD_X}px 22px {PAD_X}px;'
+            f'<tr><td class="em-pad" style="padding:0 {PAD_X}px 22px {PAD_X}px;'
             'background-color:{{card}};">'
             f'<p data-em-rich="body" style="{_P}">Write the message here. Line breaks '
             'are kept, so you can run a couple of short paragraphs.</p>'
@@ -153,7 +153,7 @@ BUILTIN_BLOCKS: List[dict] = [
         # The tinted callout. A nested table rather than a bordered <div> so the
         # background actually paints in Outlook.
         "html": (
-            f'<tr><td style="padding:0 {PAD_X}px 26px {PAD_X}px;'
+            f'<tr><td class="em-pad" style="padding:0 {PAD_X}px 26px {PAD_X}px;'
             'background-color:{{card}};">'
             '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
             'width="100%" bgcolor="{{tint}}" '
@@ -181,7 +181,7 @@ BUILTIN_BLOCKS: List[dict] = [
         "position": 160,
         "enabled": True,
         "html": (
-            f'<tr><td style="padding:6px {PAD_X}px 22px {PAD_X}px;'
+            f'<tr><td class="em-pad" style="padding:6px {PAD_X}px 22px {PAD_X}px;'
             'background-color:{{card}};">'
             '<p data-em-text="support_title" style="margin:0 0 6px 0;padding:0;'
             f'font-family:{FONT};font-size:16px;line-height:24px;font-weight:700;'
@@ -214,7 +214,7 @@ BUILTIN_BLOCKS: List[dict] = [
         "position": 170,
         "enabled": True,
         "html": (
-            f'<tr><td style="padding:0 {PAD_X}px 36px {PAD_X}px;'
+            f'<tr><td class="em-pad" style="padding:0 {PAD_X}px 36px {PAD_X}px;'
             'background-color:{{card}};">'
             f'<p data-em-rich="signoff" style="{_P}">Best regards,\nBrainTrade Team</p>'
             '</td></tr>'
@@ -237,8 +237,8 @@ BUILTIN_BLOCKS: List[dict] = [
         #   legal         operator name, company number, registered address
         #   unsubscribe   required, and its absence drives spam complaints
         "html": (
-            f'<tr><td style="padding:22px {PAD_X}px 6px {PAD_X}px;">'
-            '<p style="margin:0 0 14px 0;padding:0;'
+            f'<tr><td class="em-pad" style="padding:22px {PAD_X}px 6px {PAD_X}px;">'
+            '<p style="margin:0 0 10px 0;padding:0;'
             f'font-family:{FONT};font-size:13px;line-height:20px;color:{{{{muted}}}};">'
             '<span data-em-text="account_label">Your account:</span> '
             '<a data-em-link="account_url" href="#" '
@@ -248,16 +248,8 @@ BUILTIN_BLOCKS: List[dict] = [
             'style="color:{{muted}};text-decoration:underline;">'
             '<span data-em-text="password_label">Forgot Password</span></a></p>'
 
-            '<p data-em-rich="risk_warning" style="margin:0 0 12px 0;padding:0;'
-            f'font-family:{FONT};font-size:12px;line-height:19px;color:{{{{muted}}}};">'
-            'Risk warning.</p>'
-
-            '<p data-em-rich="legal" style="margin:0 0 12px 0;padding:0;'
-            f'font-family:{FONT};font-size:12px;line-height:19px;color:{{{{muted}}}};">'
-            'Operator, company number and registered address.</p>'
-
-            '<p style="margin:0;padding:0 0 24px 0;'
-            f'font-family:{FONT};font-size:12px;line-height:19px;color:{{{{muted}}}};">'
+            '<p style="margin:0 0 14px 0;padding:0;'
+            f'font-family:{FONT};font-size:13px;line-height:20px;color:{{{{muted}}}};">'
             '<a data-em-link="browser_url" href="#" '
             'style="color:{{muted}};text-decoration:underline;">'
             '<span data-em-text="browser_label">View in browser</span></a>'
@@ -265,6 +257,14 @@ BUILTIN_BLOCKS: List[dict] = [
             '<a data-em-link="unsubscribe_url" href="{{unsubscribe_url}}" '
             'style="color:{{muted}};text-decoration:underline;">'
             '<span data-em-text="unsubscribe_label">Unsubscribe</span></a></p>'
+
+            '<p data-em-rich="risk_warning" style="margin:0 0 12px 0;padding:0;'
+            f'font-family:{FONT};font-size:12px;line-height:19px;color:{{{{muted}}}};">'
+            'Risk warning.</p>'
+
+            '<p data-em-rich="legal" style="margin:0;padding:0 0 24px 0;'
+            f'font-family:{FONT};font-size:12px;line-height:19px;color:{{{{muted}}}};">'
+            'Operator, company number and registered address.</p>'
             '</td></tr>'
         ),
         "texts": {"en": {"account_label": "Your account:", "account_name": "your account",

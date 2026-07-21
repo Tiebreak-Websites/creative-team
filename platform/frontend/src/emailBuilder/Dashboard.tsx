@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft, Check, Copy, FilePlus2, Languages, Loader2, Mail, Search,
+  ArrowLeft, Check, Copy, FilePlus2, Languages, Loader2, Mail, Search, Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,7 +20,7 @@ import type { Language } from '@/lpBuilder/api'
 import {
   ENTITY_KINDS, KIND_HINT, KIND_LABEL, kindOf, type Brand,
 } from '@/bannerBuilder/brandsApi'
-import { campaignThumb, createVariants, setCampaignActive, type CampaignSummary } from './api'
+import { campaignThumb, createVariants, deleteCampaign, setCampaignActive, type CampaignSummary } from './api'
 
 /** Last composed HTML per campaign, with the edit stamp it was composed at.
  *  Keeping the html separately from its stamp lets a card keep showing the
@@ -444,7 +444,30 @@ function CampaignCard({
         <span className={cn('text-[11px]', c.active ? 'font-medium text-foreground' : 'text-muted-foreground')}>
           {c.active ? 'Approved' : 'Draft'}
         </span>
-        {busy && <Loader2 className="ml-auto h-3 w-3 animate-spin text-muted-foreground" />}
+        {busy ? (
+          <Loader2 className="ml-auto h-3 w-3 animate-spin text-muted-foreground" />
+        ) : !c.active ? (
+          /* Drafts can be deleted; approved campaigns must be un-approved
+             first (the backend refuses otherwise) — destroying a signed-off
+             email should take two deliberate steps, not one click. */
+          <button
+            type="button"
+            title={c.variants > 0 ? `Delete draft and its ${c.variants} variant(s)` : 'Delete draft'}
+            aria-label={`Delete draft ${c.name}`}
+            className="ml-auto rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => {
+              const extra = c.variants > 0 ? ` and its ${c.variants} language variant(s)` : ''
+              if (!window.confirm(`Delete the draft "${c.name}"${extra}? This cannot be undone.`)) return
+              setBusy(true)
+              deleteCampaign(c.id)
+                .then(onChanged)
+                .catch((e) => onError(e.message))
+                .finally(() => setBusy(false))
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
       </div>
     </div>
   )

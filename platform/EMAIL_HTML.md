@@ -229,3 +229,47 @@ Minimum before any campaign ships:
   step is a stub — nothing else is blocked by it.
 - **Sender postal address and licence numbers** per entity for the compliance footer.
   These are not in the registry yet; likely a per-entity field.
+
+---
+
+## 9. Body content rules and red flags (2026-07 research pass)
+
+What filters and clients measurably punish — each rule below is enforced or
+surfaced by `_content_checks()` in the compositor, so a campaign author sees
+the problem while writing, not from a spam-folder report.
+
+### Subject line and preheader
+- Subject reads best at **30–50 characters**; phones truncate around 40–60.
+  The tool warns past 60 and on an empty subject.
+- **ALL-CAPS words and stacked `!`** are classic filter signatures — warned.
+- Preheader: **40–80 characters**, written to extend the subject. An empty
+  preheader makes inboxes show a random first line of the email — warned.
+
+### Body
+- **Text-to-image ratio at least 60:40** (80:20 better). Image-heavy,
+  text-light mail is treated as filter evasion — warned when images are
+  present with under ~300 characters of text.
+- Spam-phrase penalties weigh heavier **above the fold**; keep the opener
+  plain ("free", "guaranteed", urgency phrasing).
+- One clear CTA, as an **HTML button** (never an image), reachable above the
+  fold on mobile. Ours is a bulletproof `<td>` button ≥44px tall.
+- Every link must go somewhere: `href="#"`/empty links are counted and warned.
+
+### Footer
+- **Unsubscribe sits ABOVE the legal text**, not under it — someone looking to
+  leave must find it instantly, or they press "spam" instead.
+- Unsubscribe/account links at **13px** — no more than 2pt below the 16px body
+  (Litmus/OTA guidance), and plainly labelled "Unsubscribe".
+- A missing unsubscribe URL is a dedicated, strongly-worded warning: that is a
+  legal problem before it is a deliverability one.
+
+### Mobile (composes into every email)
+- The 600px tables collapse to 100% width under 600px (`.em-w`).
+- Side padding narrows 32px → 20px (`.em-pad` on every outer `<td>`).
+- The headline steps 30px/38px → **24px/31px** (`.em-h1`).
+- Body text is already 16px/25px — at or above the 14px mobile floor.
+
+### Deletion policy (product rule, same research family)
+- Only **Drafts** can be deleted. Approved campaigns — and parents with any
+  approved variant — refuse with 409: an approved email is a record, and
+  destroying one takes two deliberate steps (un-approve, then delete).

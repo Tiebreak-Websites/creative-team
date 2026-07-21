@@ -208,14 +208,27 @@ def build_email_builder_router() -> APIRouter:
         return _public_campaign(c)
 
     @router.delete("/campaigns/{cid}", status_code=204)
-    def delete_campaign(cid: str, _user: dict = Depends(require_admin)):
+    def delete_campaign(cid: str, _user: dict = Depends(require_user)):
+        """Delete a DRAFT. Approved campaigns refuse: an approved email is a
+        record of what went (or is about to go) out, and destroying it should
+        take two deliberate steps — un-approve, then delete."""
         with core.lock():
-            # Deleting a parent takes its variants with it. Leaving them behind
-            # would strand translations under a parent that no longer exists,
+            c = core.campaigns().get(cid)
+            if not c:
+                raise HTTPException(404, "Campaign not found.")
+            if c.get("active"):
+                raise HTTPException(409, "This campaign is approved. Un-approve it first.")
+            variants = [v for v in core.campaigns().values() if v.get("parent_id") == cid]
+            approved = [v for v in variants if v.get("active")]
+            if approved:
+                langs = ", ".join(sorted(v.get("language") or "?" for v in approved))
+                raise HTTPException(
+                    409, f"Language variant(s) still approved ({langs}). "
+                         "Un-approve them first.")
+            # Draft variants go with their parent — leaving them behind would
+            # strand translations under a parent that no longer exists,
             # invisible in a UI that lists parents.
-            doomed = [cid] + [c["id"] for c in core.campaigns().values()
-                              if c.get("parent_id") == cid]
-            for i in doomed:
+            for i in [cid] + [v["id"] for v in variants]:
                 core.campaigns().pop(i, None)
                 core.delete_campaign_file(i)
         return Response(status_code=204)

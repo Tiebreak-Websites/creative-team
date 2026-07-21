@@ -275,6 +275,7 @@ a {{ text-decoration:none; }}
 @media only screen and (max-width:{w}px) {{
   .em-w {{ width:100% !important; }}
   .em-pad {{ padding-left:20px !important; padding-right:20px !important; }}
+  .em-h1 {{ font-size:24px !important; line-height:31px !important; }}
 }}
 </style>
 </head>
@@ -366,12 +367,70 @@ def compose_email(project: dict, blocks_map: Dict[str, dict],
         warnings.append(
             "Image URLs are relative, so they will not load in an inbox. Set "
             "PLATFORM_PUBLIC_BASE_URL to this deployment's public origin.")
+
+    warnings.extend(_content_checks(project, html))
     if not any(b.get("key") == "em-footer" for b in
                (blocks_map.get(i.get("block_key") or "") or {} for i in project.get("sections") or [])):
         warnings.append("No footer block — an unsubscribe link and postal address are required.")
 
     return {"html": html, "text": to_plain_text(html),
             "size_bytes": size, "warnings": warnings}
+
+
+# ------------------------------------------------------ pre-send content checks
+
+def _content_checks(project: dict, html: str) -> List[str]:
+    """Deliverability red flags, per the research in platform/EMAIL_HTML.md.
+
+    Each check is something a filter or a client measurably punishes — not
+    style opinions. Thresholds follow the published guidance: subjects read
+    best at 30-50 chars and truncate on phones past ~60; preheaders 40-80;
+    ALL-CAPS and stacked '!' are classic spam signatures; an email that is
+    images with no text is a spam signature on its own.
+    """
+    out: List[str] = []
+
+    subject = str(project.get("subject") or "").strip()
+    if not subject:
+        out.append("No subject line — it cannot be sent like this.")
+    else:
+        if len(subject) > 60:
+            out.append(f"Subject is {len(subject)} characters — phones truncate "
+                       "around 40-60. Front-load the message.")
+        words = subject.split()
+        caps = [w for w in words if len(w) > 2 and w.isupper()]
+        if len(caps) >= 2 or (caps and len(words) <= 3):
+            out.append("Subject shouts in ALL CAPS — a classic spam-filter signal.")
+        if "!!" in subject or subject.count("!") >= 2:
+            out.append("Multiple exclamation marks in the subject read as spam "
+                       "to filters and to people.")
+
+    preheader = str(project.get("preheader") or "").strip()
+    if not preheader:
+        out.append("No preheader — inboxes will show a random first line of the "
+                   "email next to the subject instead of your words.")
+    elif len(preheader) > 100:
+        out.append(f"Preheader is {len(preheader)} characters — most clients "
+                   "show 40-80. The end will be cut.")
+
+    # Links that go nowhere: seeded blocks default to href="#", and the
+    # unsubscribe token composes to href="" until a real URL is set.
+    dead = html.count('href="#"') + html.count('href=""')
+    if dead:
+        out.append(f"{dead} link(s) point nowhere yet (href is '#' or empty) — "
+                   "including these in a send breaks trust and CTR.")
+    if 'data-em-link="unsubscribe_url" href=""' in html or \
+       'data-em-link="unsubscribe_url" href="#"' in html:
+        out.append("The unsubscribe link has no URL. Sending without a working "
+                   "unsubscribe is a legal problem, not just a spam-score one.")
+
+    # Text-to-image ratio: filters treat image-heavy/text-light mail as evasion.
+    visible = to_plain_text(html)
+    if html.count("<img") >= 1 and len(visible) < 300:
+        out.append("Very little text next to the images — filters read "
+                   "image-heavy, text-light emails as spam. Aim for at least "
+                   "60:40 text to image.")
+    return out
 
 
 # ------------------------------------------------------------- plain text
