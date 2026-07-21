@@ -116,6 +116,111 @@ def is_copy_block(block_key: str) -> bool:
     return block_key in _FIELD_GUIDE
 
 
+# ---- content -> hero-image brief -------------------------------------------
+# The approved copy is the best context for the hero image: the image should
+# show what the email is ABOUT. This turns the written content into a short,
+# concrete visual brief that drops straight into the hero generator.
+
+_IMG_BRIEF_SYSTEM = (
+    "You turn a marketing email's copy into a SHORT visual brief for its ONE "
+    "hero image. Read the subject, headline, body and offer, then describe — in "
+    "1-2 sentences, 35-70 words — what the hero image should SHOW: a concrete, "
+    "photographable subject/scene, the mood, and how it ties to the message. "
+    "Specific, never abstract adjectives alone. The image carries NO text (the "
+    "email supplies the words). Stay on-brand for a financial-education / "
+    "trading brand: credible, optimistic, no hype, no logos, no real people's "
+    "likenesses, no charts-with-fake-numbers."
+)
+
+_IMG_BRIEF_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["brief"],
+    "properties": {
+        "brief": {"type": "string",
+                  "description": "35-70 words, one concrete hero-image visual "
+                                 "brief derived from the email content."},
+    },
+}
+
+# Which field each block contributes to the content digest the image brief is
+# built from.
+_DIGEST_KEYS = {
+    "em-headline": ("headline", ("headline",)),
+    "em-body": ("body", ("body",)),
+    "em-highlight": ("offer", ("highlight_title", "highlight_items")),
+}
+
+
+def content_digest(sections: List[dict]) -> Dict[str, str]:
+    """Pull the readable content out of a campaign's blocks: the headline, the
+    body (all body blocks joined in order) and the offer. What the image should
+    be about."""
+    headline, offer = "", ""
+    bodies: List[str] = []
+    for s in sections or []:
+        spec = _DIGEST_KEYS.get(s.get("block_key"))
+        if not spec:
+            continue
+        texts = s.get("texts") or {}
+        bucket, keys = spec
+        val = "\n".join(str(texts.get(k) or "").strip() for k in keys if texts.get(k)).strip()
+        if not val:
+            continue
+        if bucket == "headline" and not headline:
+            headline = val
+        elif bucket == "body":
+            bodies.append(val)
+        elif bucket == "offer" and not offer:
+            offer = val
+    return {"headline": headline, "body": "\n\n".join(bodies).strip(), "offer": offer}
+
+
+def _fallback_brief(headline: str) -> str:
+    base = headline.strip() or "A confident, welcoming financial-education moment"
+    return (f"{base}. A clean, optimistic on-brand scene that conveys the "
+            "message at a glance — professional and credible, no text.")
+
+
+def image_brief(*, entity: Optional[dict], subject: str, headline: str,
+                body: str, offer: str) -> str:
+    """The approved email content -> a concrete hero-image brief, via the LLM.
+    Validate-and-degrade: any failure returns a deterministic brief so the hero
+    generator always gets something usable."""
+    api_key = get_secret("OPENAI_API_KEY")
+    if not api_key:
+        raise LookupError("OPENAI_API_KEY")
+    if not (headline or body or offer or subject):
+        raise ValueError("There is no email content to build an image brief from yet.")
+
+    brand = str((entity or {}).get("name") or "").strip()
+    parts = []
+    if brand:
+        parts.append(f"Brand: {brand}")
+    if subject:
+        parts.append(f"Subject: {subject}")
+    if headline:
+        parts.append(f"Headline: {headline}")
+    if body:
+        parts.append(f"Body:\n{body[:1200]}")
+    if offer:
+        parts.append(f"Offer:\n{offer[:400]}")
+    user = ("Write the hero-image brief for this email.\n\n" + "\n\n".join(parts))
+
+    from .. import lp_materials
+    try:
+        out = lp_materials._llm_json(
+            api_key, system=_IMG_BRIEF_SYSTEM, user_text=user,
+            schema_name="email_image_brief", schema=_IMG_BRIEF_SCHEMA,
+            effort="low", timeout=60)
+        got = str(out.get("brief") or "").strip()
+        if 30 <= len(got) <= 700:
+            return got
+    except Exception:
+        log.exception("email-copy: image-brief generation failed, using fallback")
+    return _fallback_brief(headline)
+
+
 def build_spec(sections: List[dict]) -> List[dict]:
     """The ordered list of copy-bearing block instances to fill. Each entry:
     {iid, block_key, fields:[{key, guide, current}]}. Preserves email order so
@@ -290,5 +395,22 @@ def generate_copy(*, entity: Optional[dict], brief: str, segment: str,
     if missing:
         log.info("email-copy: %d field(s) left unfilled by the model", len(missing))
 
+    # Derive the hero-image brief from the copy we just wrote, so the image
+    # generator starts from the approved content, not a blank field. A failure
+    # here must not fail the copy — fall back to a deterministic brief.
+    by_key: Dict[str, List[str]] = {}
+    for it in items:
+        by_key.setdefault(it["key"], []).append(it["value"])
+    headline = (by_key.get("headline") or [""])[0]
+    body = "\n\n".join(by_key.get("body") or [])
+    offer = "\n".join((by_key.get("highlight_title") or [])
+                      + (by_key.get("highlight_items") or []))
+    try:
+        img_brief = image_brief(entity=entity, subject=(subjects[0] if subjects else ""),
+                                headline=headline, body=body, offer=offer)
+    except Exception:
+        log.exception("email-copy: image brief step failed")
+        img_brief = _fallback_brief(headline)
+
     return {"subjects": subjects, "preheader": preheader, "items": items,
-            "segment": seg, "tier": tr}
+            "segment": seg, "tier": tr, "image_brief": img_brief}

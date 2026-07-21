@@ -63,6 +63,9 @@ def _public_campaign(c: dict) -> dict:
         # language, brief, subitems…). What the task LOOKED LIKE when linked —
         # a prefill source and provenance record, not a live mirror.
         "monday": c.get("monday") or None,
+        # Hero-image brief derived from the approved copy — what the image
+        # should show, in the copy's own terms. Seeds the hero generator.
+        "image_brief": c.get("image_brief") or "",
         # Draft until someone approves it — the UI's Approved/Draft switch.
         # A campaign is written before it is ready, so the safe default is the
         # one that is not live. Field name kept as `active` so existing stored
@@ -260,6 +263,7 @@ class CampaignPatch(BaseModel):
     sections: Optional[list] = None
     tokens: Optional[dict] = None
     monday_id: Optional[str] = None
+    image_brief: Optional[str] = None
     active: Optional[bool] = None
 
 
@@ -346,7 +350,8 @@ def build_email_builder_router() -> APIRouter:
             if not c:
                 raise HTTPException(404, "Campaign not found.")
             patch = payload.model_dump(exclude_none=True)
-            for k in ("name", "subject", "preheader", "language", "brand_id", "monday_id"):
+            for k in ("name", "subject", "preheader", "language", "brand_id",
+                      "monday_id", "image_brief"):
                 if k in patch:
                     c[k] = str(patch[k]).strip()[:200]
             if "active" in patch:
@@ -704,6 +709,8 @@ def build_email_builder_router() -> APIRouter:
                     camp["subject"] = subs[0]
                 if result.get("preheader"):
                     camp["preheader"] = result["preheader"]
+                if result.get("image_brief"):
+                    camp["image_brief"] = result["image_brief"]
                 for sct in camp.get("sections") or []:
                     iid = sct.get("iid")
                     texts = sct.setdefault("texts", {})
@@ -728,6 +735,43 @@ def build_email_builder_router() -> APIRouter:
         from . import jobs
         return {"jobs": [jobs.public(j) for j in jobs.for_campaign(campaign_id)
                          if j.get("kind") == "copy"]}
+
+    @router.post("/copy/image-brief")
+    def copy_image_brief(payload: CopyGen, _user: dict = Depends(require_user)):
+        """A hero-image brief built from the campaign's CURRENT content — the
+        approved copy read live, so it reflects any inline edits. Short and
+        synchronous: it only fills the generator's brief field. Reuses the
+        CopyGen payload for its campaign_id."""
+        from . import copy_ai
+        from ..secrets import get_secret
+        if not get_secret("OPENAI_API_KEY"):
+            raise HTTPException(424, detail={"missing_secrets": ["OPENAI_API_KEY"],
+                                             "error": "OPENAI_API_KEY is not configured."})
+        cid = (payload.campaign_id or "").strip()
+        with core.lock():
+            c = core.campaigns().get(cid)
+            if not c:
+                raise HTTPException(404, "Campaign not found.")
+            sections = [dict(s) for s in (c.get("sections") or [])]
+            subject = c.get("subject") or ""
+        entity = _entity_for(c)
+        digest = copy_ai.content_digest(sections)
+        try:
+            brief = copy_ai.image_brief(entity=entity, subject=subject,
+                                        headline=digest["headline"],
+                                        body=digest["body"], offer=digest["offer"])
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
+        # Persist it too, so the seed survives a reload even before any save.
+        with core.lock():
+            camp = core.campaigns().get(cid)
+            if camp:
+                camp["image_brief"] = brief
+                camp["updated_at"] = core._now()
+                core.persist_campaign(camp)
+        return {"brief": brief}
 
     # ------------------------------------------------------------ assets
     @router.post("/assets")

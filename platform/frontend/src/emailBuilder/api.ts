@@ -101,6 +101,9 @@ export interface Campaign {
   /** Snapshot of the linked Monday task at pull time — prefill source and
    *  provenance, not a live mirror. */
   monday?: MondayItem | null
+  /** Hero-image brief derived from the approved copy — seeds the hero
+   *  generator so the image starts from what the email says. */
+  image_brief?: string
   /** Draft until someone approves it. The UI calls this Approved/Draft; the
    *  field keeps its original name so stored campaigns need no migration.
    *  Campaigns are never deleted, only un-approved — a sent campaign is a
@@ -351,6 +354,8 @@ export interface CopyResult {
   items: { iid: string; key: string; value: string }[]
   segment: 'REG' | 'NONREG' | 'NONE'
   tier: 'Retail' | 'Pro'
+  /** A hero-image brief derived from the copy just written. */
+  image_brief?: string
   applied?: boolean
 }
 
@@ -395,6 +400,23 @@ export async function listCopyJobs(campaignId: string): Promise<CopyJob[]> {
     { credentials: 'include' })
   if (!r.ok) return fail(r, 'Could not check copy generations')
   return (await r.json()).jobs ?? []
+}
+
+/** Build a hero-image brief from the campaign's CURRENT content — the approved
+ *  copy, read live, so it reflects inline edits. Fast and synchronous; it only
+ *  fills the generator's brief field. */
+export async function imageBriefFromContent(campaignId: string): Promise<string> {
+  const r = await fetch(`${EB}/copy/image-brief`, {
+    method: 'POST', headers: j, credentials: 'include',
+    body: JSON.stringify({ campaign_id: campaignId }),
+  })
+  if (!r.ok) {
+    const body = await asJson(r)
+    if (r.status === 424) throw new Error('OPENAI_API_KEY is not configured on this server.')
+    throw new Error(
+      (typeof body.detail === 'string' && body.detail) || 'Could not build the image brief.')
+  }
+  return (await r.json()).brief ?? ''
 }
 
 export async function uploadEmailAsset(file: File): Promise<{ id: string; url: string }> {

@@ -28,7 +28,8 @@ import type { Language } from '@/lpBuilder/api'
 import type { Brand } from '@/bannerBuilder/brandsApi'
 import {
   SIZE_LIMIT, SIZE_WARN, composeEmail, generateCopy, generateHeroImage, getCopyJob,
-  getHeroJob, listCopyJobs, listHeroJobs, saveCampaign, uploadEmailAsset,
+  getHeroJob, imageBriefFromContent, listCopyJobs, listHeroJobs, saveCampaign,
+  uploadEmailAsset,
   type BlockDef, type BlockInstance, type Campaign, type CopyResult,
 } from './api'
 
@@ -125,6 +126,9 @@ export function Editor({
     mutate((c) => {
       if (r.subjects[0]) c.subject = r.subjects[0]
       if (r.preheader) c.preheader = r.preheader
+      // The hero-image brief the copywriter derived from what it just wrote —
+      // the image generator seeds from this.
+      if (r.image_brief) c.image_brief = r.image_brief
       const byIid = new Map<string, Record<string, string>>()
       for (const it of r.items) {
         const m = byIid.get(it.iid) ?? {}
@@ -594,10 +598,12 @@ export function Editor({
                                   ?? blockMap['em-headline']?.texts?.en?.headline ?? ''
                               })(),
                               // The hero brief chains off the approved copy:
-                              // the brief the copywriter just used, falling back
-                              // to the Monday task's brief. Either way the image
-                              // starts from what the email is actually about.
-                              brief: copyBrief || campaign.monday?.brief || '',
+                              // the image_brief the copywriter derived from the
+                              // content, else the copy brief, else the Monday
+                              // brief. Either way the image starts from what the
+                              // email is actually about.
+                              brief: campaign.image_brief || copyBrief
+                                || campaign.monday?.brief || '',
                             }}
                             onText={(k, v) => setField(inst.iid, 'texts', k, v)}
                             onLink={(k, v) => setField(inst.iid, 'links', k, v)}
@@ -1043,6 +1049,16 @@ function HeroGenerator({
   const [jobId, setJobId] = useState<string | null>(null)
   const busy = jobId !== null
   const [direction, setDirection] = useState<string | null>(null)
+  // Rebuild the brief from the email's CURRENT content — "pull the approved
+  // content as context for the image".
+  const [briefing, setBriefing] = useState(false)
+  const fromContent = () => {
+    setBriefing(true)
+    imageBriefFromContent(ai.campaignId)
+      .then((b) => { if (b) setBrief(b) })
+      .catch((e) => onError(e.message))
+      .finally(() => setBriefing(false))
+  }
 
   // Adopt a generation a previous page left running.
   useEffect(() => {
@@ -1143,12 +1159,27 @@ function HeroGenerator({
         </div>
       )}
 
+      <div className="mt-1.5 flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+          Image brief
+        </span>
+        <button
+          type="button"
+          onClick={fromContent}
+          disabled={briefing || busy}
+          title="Write the brief from the email's approved copy"
+          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+        >
+          {briefing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+          From email content
+        </button>
+      </div>
       <Textarea
         value={brief}
         onChange={(e) => setBrief(e.target.value)}
-        rows={2}
-        className="mt-1.5 text-xs"
-        placeholder="What should the image show? e.g. a confident beginner at a laptop, upbeat, daylight"
+        rows={3}
+        className="mt-1 text-xs"
+        placeholder="What should the image show? Click “From email content”, or describe it — e.g. a confident beginner at a laptop, upbeat, daylight"
         aria-label="Image brief"
       />
 
