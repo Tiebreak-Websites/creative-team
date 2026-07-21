@@ -43,6 +43,9 @@ never git.
 - [ ] Keys added locally
 - [ ] Real upload verified end to end (upload → CDN URL in composed HTML)
 
+Frontend key for Phase 2 (safe to ship in the browser):
+`sb_publishable_esM5Vcf8uAYkGa2U6SsiuA_0l-jApIk`
+
 ## Phase 2 — Microsoft SSO
 
 Our own SAML registration against the same Entra tenant — CreativeOPS proved
@@ -63,7 +66,15 @@ side) and `catalog/docs/for-it-entra-sso.md` (the IT ticket). Steps:
 
 ## Phase 3 — data → Postgres (our own project, plain `public` schema)
 
-Swap the persistence layer only (`_flush_json` → upsert, `rehydrate` →
+**Schema is applied** (migration `builder_core_schema`, 2026-07-21): `users`
+(+ `handle_new_user` trigger priming Phase 2, `auth_role()`/`is_admin()`
+helpers), `brands`, `email_campaigns`, `email_blocks`, `lp_projects`,
+`lp_sections`, `languages`, `feedback`, `audit_log` — RLS enabled on all
+nine with read-for-signed-in / write-per-role policies. Payload-first jsonb;
+indexed columns only where queries and webhooks need them (brand_id,
+parent_id, monday_id via payload later if needed).
+
+Remaining: swap the persistence layer only (`_flush_json` → upsert, `rehydrate` →
 select); in-memory dicts, locks and every router stay. One-time import of
 the `.runs` JSON. Tables: `brands`, `email_campaigns`, `email_blocks`,
 `lp_projects`, `lp_sections`, `languages`, `feedback` — jsonb-heavy on
