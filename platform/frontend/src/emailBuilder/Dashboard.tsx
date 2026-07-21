@@ -5,7 +5,7 @@
 // lookalikes: someone who has used Landing Pages should not have to relearn
 // this screen, and two copies of a folder drift apart.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, Check, Copy, FilePlus2, Languages, Loader2, Mail, Search,
 } from 'lucide-react'
@@ -312,6 +312,20 @@ function Stat({ value, label }: { value: number; label: string }) {
  *  so a thumbnail can never be stale. */
 function EmailThumb({ c }: { c: CampaignSummary }) {
   const [doc, setDoc] = useState<string | null>(() => thumbCache.get(c.id)?.html ?? null)
+  // The tile's real width, so the 640px email viewport scales to EXACTLY fit.
+  // A fixed scale cropped the email's right edge on narrow grid tiles and
+  // left dead space on wide ones — the tile width is the only correct scale.
+  const boxRef = useRef<HTMLSpanElement>(null)
+  const [tileW, setTileW] = useState(0)
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el) return
+    const measure = () => setTileW(el.clientWidth)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   useEffect(() => {
     const cached = thumbCache.get(c.id)
@@ -334,8 +348,8 @@ function EmailThumb({ c }: { c: CampaignSummary }) {
   }, [c.id, c.updated_at])
 
   return (
-    <span className="pointer-events-none block aspect-square overflow-hidden bg-white">
-      {doc ? (
+    <span ref={boxRef} className="pointer-events-none block aspect-square overflow-hidden bg-white">
+      {doc && tileW > 0 ? (
         <iframe
           title=""
           srcDoc={doc}
@@ -343,10 +357,12 @@ function EmailThumb({ c }: { c: CampaignSummary }) {
           aria-hidden
           scrolling="no"
           sandbox=""
-          // 640px of email scaled to the card, anchored top-left so the card
-          // shows the top of the message — the part a recipient sees first.
-          className="h-[900px] w-[640px] origin-top-left border-0"
-          style={{ transform: 'scale(0.32)' }}
+          // A 640x640 window on the email scaled to the measured tile: the
+          // square tile shows a square crop from the top — the part a
+          // recipient sees first — at exactly the tile's width, never cropped
+          // sideways.
+          className="h-[640px] w-[640px] origin-top-left border-0"
+          style={{ transform: `scale(${tileW / 640})` }}
         />
       ) : (
         <span className="flex h-full items-center justify-center">
