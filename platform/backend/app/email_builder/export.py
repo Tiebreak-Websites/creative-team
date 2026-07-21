@@ -292,6 +292,10 @@ body {{ margin:0 !important; padding:0 !important; width:100% !important; }}
 table {{ border-collapse:collapse; }}
 img {{ -ms-interpolation-mode:bicubic; }}
 a {{ text-decoration:none; }}
+@media (prefers-color-scheme: dark) {{
+  .em-logo-light {{ display:none !important; }}
+  .em-logo-dark {{ display:block !important; }}
+}}
 @media only screen and (max-width:{w}px) {{
   .em-w {{ width:100% !important; }}
   .em-pad {{ padding-left:20px !important; padding-right:20px !important; }}
@@ -390,8 +394,9 @@ def compose_email(project: dict, blocks_map: Dict[str, dict],
     # a brand logo) is present in the email and must not be reported missing.
     expected_imgs = sum(1 for i in project.get("sections") or []
                         for f in core.parse_fields((blocks_map.get(i.get("block_key") or "") or {}).get("html") or "")["fields"]
-                        if f["kind"] == "img")
-    dropped = expected_imgs - html.count("data-em-img=")
+                        if f["kind"] == "img" and f["key"] != "logo_dark")
+    present = html.count("data-em-img=") - html.count('data-em-img="logo_dark"')
+    dropped = expected_imgs - present
     if dropped > 0:
         warnings.append(f"{dropped} image slot(s) empty — those images are omitted "
                         "from the email entirely.")

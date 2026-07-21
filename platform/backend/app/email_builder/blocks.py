@@ -63,14 +63,24 @@ BUILTIN_BLOCKS: List[dict] = [
         "html": (
             f'<tr><td class="em-pad" align="center" style="padding:28px {PAD_X}px 24px {PAD_X}px;">'
             '<a data-em-link="logo_url" style="text-decoration:none;">'
+            # Two wordmarks, one visible: prefers-color-scheme (honoured by
+            # Apple Mail, the biggest opens share) swaps them; clients without
+            # it keep the light one. display toggles need !important in the
+            # media rule because these are inline styles.
             '<img data-em-img="logo" src="" alt="{{brand_name}}" width="190" '
+            'class="em-logo-light" '
             'style="display:block;border:0;outline:none;text-decoration:none;'
+            'width:190px;max-width:190px;height:auto;">'
+            '<img data-em-img="logo_dark" src="" alt="{{brand_name}}" width="190" '
+            'class="em-logo-dark" '
+            'style="display:none;border:0;outline:none;text-decoration:none;'
             'width:190px;max-width:190px;height:auto;"></a>'
             '</td></tr>'
         ),
         "texts": {"en": {}},
         "assets": {"logo": "token:logo"},
-        "names": {"logo": "Brand logo", "logo_url": "Logo link"},
+        "names": {"logo": "Brand logo", "logo_url": "Logo link",
+                  "logo_dark": "Brand logo (dark)"},
     },
 
     # --------------------------------------------------------- card zone

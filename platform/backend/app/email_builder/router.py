@@ -426,6 +426,14 @@ def _hosted_logo(entity: dict) -> Optional[str]:
         if v:
             raw = v
             break
+    return _materialise_logo(raw)
+
+
+def _materialise_logo(raw: str) -> Optional[str]:
+    """One stored logo value (SVG markup, data: URI or URL) -> a hosted asset."""
+    import base64
+    import hashlib
+
     if not raw:
         return None
 
@@ -501,12 +509,23 @@ def _with_brand_logo(project: dict, entity: Optional[dict]) -> dict:
     aid = _hosted_logo(entity)
     if not aid:
         return project
+    # The dark-mode wordmark, when Settings has one. Composed as a hidden
+    # sibling the prefers-color-scheme swap reveals — dark-lettered logos
+    # otherwise vanish on dark backgrounds.
+    dark_aid = _materialise_logo(str(entity.get("logo_svg_dark") or "").strip())
+
+    def fill(images: dict) -> dict:
+        out = dict(images or {})
+        if not out.get("logo"):
+            out["logo"] = aid
+        if dark_aid and not out.get("logo_dark"):
+            out["logo_dark"] = dark_aid
+        return out
 
     out = dict(project)
     out["sections"] = [
-        {**s, "images": {**(s.get("images") or {}), "logo": aid}}
-        if s.get("block_key") == "em-logo-header" and not (s.get("images") or {}).get("logo")
-        else s
+        {**s, "images": fill(s.get("images"))}
+        if s.get("block_key") == "em-logo-header" else s
         for s in (project.get("sections") or [])
     ]
     return out

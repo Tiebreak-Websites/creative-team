@@ -55,6 +55,10 @@ function darkLens(html: string): string {
     '<style id="em-dark-sim">' +
     'html{filter:invert(1) hue-rotate(180deg);background:#111}' +
     'img{filter:invert(1) hue-rotate(180deg)}' +
+    // The same swap the email's own prefers-color-scheme rule performs in
+    // dark clients — the moon shows the dark wordmark when Settings has one.
+    '.em-logo-light{display:none!important}' +
+    '.em-logo-dark{display:block!important}' +
     '</style>'
   return html.includes('</head>') ? html.replace('</head>', lens + '</head>') : lens + html
 }
