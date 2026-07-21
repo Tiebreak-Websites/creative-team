@@ -9,7 +9,7 @@ import {
   PanelsTopLeft,
   PenLine,
   RefreshCw,
-  Ruler,
+  Ruler, UsersRound,
   Settings,
   Sparkles,
   Tag,
@@ -33,6 +33,7 @@ import { FeedbackWidget } from './components/FeedbackWidget'
 import { InstallButton } from './components/InstallButton'
 import { VersionBadge } from './components/VersionBadge'
 import { BrandsSettings } from './admin/BrandsSettings'
+import { UsersSettings } from './admin/UsersSettings'
 import { SizesSettings } from './admin/SizesSettings'
 import { DiskManager } from './admin/DiskManager'
 import { Button } from '@/components/ui/button'
@@ -294,7 +295,7 @@ function Workspace() {
   const [ws, setWs] = useState(initialWorkspace)
   const [disk, setDisk] = useState(false)
   const [view, setView] = useState<'home' | 'tool' | 'settings'>(initialView)
-  const [settingsTab, setSettingsTab] = useState<'brands' | 'sizes'>('brands')
+  const [settingsTab, setSettingsTab] = useState<'brands' | 'sizes' | 'users'>('brands')
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -497,8 +498,13 @@ function Workspace() {
                 <Tab active={settingsTab === 'sizes'} onClick={() => setSettingsTab('sizes')}>
                   <Ruler className="h-4 w-4" /> Sizes &amp; bundles
                 </Tab>
+                <Tab active={settingsTab === 'users'} onClick={() => setSettingsTab('users')}>
+                  <UsersRound className="h-4 w-4" /> Users
+                </Tab>
               </nav>
-              {settingsTab === 'brands' ? <BrandsSettings /> : <SizesSettings />}
+              {settingsTab === 'brands' ? <BrandsSettings />
+                : settingsTab === 'users' ? <UsersSettings />
+                : <SizesSettings />}
             </div>
           </div>
         ) : disk && isAdmin ? (

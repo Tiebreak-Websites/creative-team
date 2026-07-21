@@ -146,6 +146,13 @@ def create_app() -> FastAPI:
     # to the email asset directory, and the 32-hex filename is the capability.
     app.include_router(build_public_email_router(), prefix="/e")
 
+    # Admin user management (Supabase users table) — dormant until the keys
+    # exist; the whole prefix is admin-gated.
+    from .admin_users import build_admin_users_router
+    from .auth import require_admin as _require_admin
+    app.include_router(build_admin_users_router(),
+                       prefix="/api/admin", dependencies=[Depends(_require_admin)])
+
     # Floating suggestions/bug-report widget — per-user threads, admin checkmarks.
     from .feedback import build_feedback_router
     app.include_router(build_feedback_router(),
