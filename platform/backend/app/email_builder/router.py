@@ -157,6 +157,8 @@ class HeroGen(BaseModel):
     # annotations` defers resolution to module scope, and a function-local
     # model silently degrades into a QUERY parameter there.
     brand_id: str = ""
+    campaign_id: str = ""
+    iid: str = ""
     brief: str = ""
     with_text: bool = False
     headline: str = ""
@@ -421,33 +423,80 @@ def build_email_builder_router() -> APIRouter:
 
     @router.post("/hero/generate")
     def hero_generate(payload: HeroGen, _user: dict = Depends(require_user)):
-        """AI hero image: art-director pass + gpt-image-2, brand styling from
-        Settings. Same secret discipline as the banner engine — a missing key
-        is 424 with the machine-readable field, not a 500."""
-        from . import hero_ai
-        entity = _entity_for({"brand_id": payload.brand_id})
-        try:
-            out = hero_ai.generate_hero(
-                entity=entity,
-                brief=(payload.brief or "").strip()[:600],
-                with_text=bool(payload.with_text),
-                headline=(payload.headline or "").strip()[:120],
-                subtitle=(payload.subtitle or "").strip()[:160],
-                visual_style=payload.visual_style if payload.visual_style in
-                    ("auto", "photo", "illustration", "render3d") else "auto",
-                people=payload.people if payload.people in ("any", "none") else "any",
-                avoid=(payload.avoid or "").strip()[:200],
-                direction_override=(payload.direction_override or "").strip()[:900],
-            )
-        except LookupError:
+        """AI hero image as a BACKGROUND JOB.
+
+        The request only registers the job; the pipeline runs on a worker
+        thread and writes the finished image into the campaign server-side —
+        a refresh, navigation or closed laptop does not stop a generation,
+        and an abandoned one still lands. The missing-key case stays a
+        synchronous 424 so the UI can say so immediately.
+        """
+        from . import hero_ai, jobs
+        from ..secrets import get_secret
+        if not get_secret("OPENAI_API_KEY"):
             raise HTTPException(424, detail={"missing_secrets": ["OPENAI_API_KEY"],
                                              "error": "OPENAI_API_KEY is not configured."})
-        except ValueError as e:
-            raise HTTPException(422, str(e))
-        except RuntimeError as e:
-            raise HTTPException(502, str(e))
-        return {"id": out["id"], "url": _asset_url(out["id"]),
-                "direction": out["direction"]}
+        cid = (payload.campaign_id or "").strip()
+        iid = (payload.iid or "").strip()
+        with core.lock():
+            c = core.campaigns().get(cid)
+            if not c or not any(s.get("iid") == iid for s in c.get("sections") or []):
+                raise HTTPException(404, "Campaign or block not found.")
+        # One generation per block at a time: a second click adopts the
+        # running job instead of paying for a duplicate render.
+        running = jobs.active_for(cid, iid, "hero")
+        if running:
+            return jobs.public(running)
+
+        entity = _entity_for({"brand_id": payload.brand_id})
+        kwargs = dict(
+            entity=entity,
+            brief=(payload.brief or "").strip()[:600],
+            with_text=bool(payload.with_text),
+            headline=(payload.headline or "").strip()[:120],
+            subtitle=(payload.subtitle or "").strip()[:160],
+            visual_style=payload.visual_style if payload.visual_style in
+                ("auto", "photo", "illustration", "render3d") else "auto",
+            people=payload.people if payload.people in ("any", "none") else "any",
+            avoid=(payload.avoid or "").strip()[:200],
+            direction_override=(payload.direction_override or "").strip()[:900],
+        )
+
+        def work() -> dict:
+            out = hero_ai.generate_hero(**kwargs)
+            return {"value": out["id"], "url": _asset_url(out["id"]),
+                    "direction": out["direction"]}
+
+        def apply(result: dict) -> None:
+            # Server-side write-back: the whole point. If the user edited and
+            # autosaved a stale copy in the tiny window before their page
+            # learns the result, the UI re-applies on poll completion and the
+            # next autosave converges — the hero cannot stay lost.
+            with core.lock():
+                camp = core.campaigns().get(cid)
+                if not camp:
+                    return
+                for sct in camp.get("sections") or []:
+                    if sct.get("iid") == iid:
+                        sct.setdefault("images", {})["hero"] = result["value"]
+                        camp["updated_at"] = core._now()
+                        core.persist_campaign(camp)
+                        return
+
+        return jobs.public(jobs.start("hero", cid, iid, work, apply))
+
+    @router.get("/hero/jobs/{job_id}")
+    def hero_job(job_id: str, _user: dict = Depends(require_user)):
+        from . import jobs
+        j = jobs.get(job_id)
+        if not j:
+            raise HTTPException(404, "Job not found.")
+        return jobs.public(j)
+
+    @router.get("/hero/jobs")
+    def hero_jobs(campaign_id: str = "", _user: dict = Depends(require_user)):
+        from . import jobs
+        return {"jobs": [jobs.public(j) for j in jobs.for_campaign(campaign_id)]}
 
     # ------------------------------------------------------------ assets
     @router.post("/assets")

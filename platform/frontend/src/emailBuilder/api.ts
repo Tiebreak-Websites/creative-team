@@ -204,32 +204,58 @@ export async function campaignThumb(id: string): Promise<string> {
   return (await r.json()).html ?? ''
 }
 
-/** AI hero image — art-director pass + image model, styled from the brand's
- *  Settings. `direction` is the art direction actually used, for transparency. */
+/** A background generation job. The pipeline runs server-side and writes its
+ *  result into the campaign there — refresh or navigate away freely; polling
+ *  is only how the page SHOWS progress, not what keeps the job alive. */
+export interface GenJob {
+  id: string
+  kind: string
+  campaign_id: string
+  iid: string
+  status: 'running' | 'done' | 'failed'
+  error: string | null
+  result: { value: string; url: string; direction: string; applied?: boolean } | null
+  created_at: string
+}
+
 export async function generateHeroImage(payload: {
   brand_id: string
+  campaign_id: string
+  iid: string
   brief: string
   with_text: boolean
   headline?: string
   subtitle?: string
-  /** Art-director pins — whitelisted server-side. */
   visual_style?: 'auto' | 'photo' | 'illustration' | 'render3d'
   people?: 'any' | 'none'
   avoid?: string
-  /** An edited direction is used VERBATIM; the director pass is skipped. */
   direction_override?: string
-}): Promise<{ id: string; url: string; direction: string }> {
+}): Promise<GenJob> {
   const r = await fetch(`${EB}/hero/generate`, {
     method: 'POST', headers: j, credentials: 'include', body: JSON.stringify(payload),
   })
   if (!r.ok) {
     const body = await asJson(r)
-    const detail = body.detail
     if (r.status === 424) throw new Error('OPENAI_API_KEY is not configured on this server.')
     throw new Error(
-      (typeof detail === 'string' && detail) || 'Could not generate the image.')
+      (typeof body.detail === 'string' && body.detail) || 'Could not start the generation.')
   }
   return r.json()
+}
+
+export async function getHeroJob(id: string): Promise<GenJob> {
+  const r = await fetch(`${EB}/hero/jobs/${id}`, { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Could not check the generation')
+  return r.json()
+}
+
+/** Jobs for a campaign — how a freshly-loaded page finds a generation that a
+ *  previous page started. */
+export async function listHeroJobs(campaignId: string): Promise<GenJob[]> {
+  const r = await fetch(`${EB}/hero/jobs?campaign_id=${encodeURIComponent(campaignId)}`,
+    { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Could not check generations')
+  return (await r.json()).jobs ?? []
 }
 
 export async function uploadEmailAsset(file: File): Promise<{ id: string; url: string }> {

@@ -239,3 +239,8 @@ def rehydrate() -> None:
                     _CAMPAIGNS[rec["id"]] = rec
 
     log.info("email-builder: %d blocks, %d campaigns", len(_BLOCKS), len(_CAMPAIGNS))
+
+    # Generation jobs rehydrate with the same startup pass — anything that was
+    # mid-flight when the process died is marked failed, honestly.
+    from . import jobs as _jobs
+    _jobs.rehydrate()

@@ -26,7 +26,7 @@ import { flagUrl } from '@/lib/flags'
 import type { Language } from '@/lpBuilder/api'
 import type { Brand } from '@/bannerBuilder/brandsApi'
 import {
-  SIZE_LIMIT, SIZE_WARN, composeEmail, generateHeroImage, saveCampaign, uploadEmailAsset,
+  SIZE_LIMIT, SIZE_WARN, composeEmail, generateHeroImage, getHeroJob, listHeroJobs, saveCampaign, uploadEmailAsset,
   type BlockDef, type BlockInstance, type Campaign,
 } from './api'
 
@@ -514,6 +514,7 @@ export function Editor({
                             inst={inst}
                             ai={{
                               brandId: campaign.brand_id,
+                              campaignId: campaign.id,
                               headline: (() => {
                                 const h = campaign.sections.find((x) => x.block_key === 'em-headline')
                                 return h?.texts?.headline
@@ -641,9 +642,10 @@ function BlockFields({
 }: {
   block: BlockDef
   inst: BlockInstance
-  /** Context the AI hero generator needs: which brand styles it, and the
-   *  campaign's current headline as the with-text default. */
-  ai: { brandId: string; headline: string }
+  /** Context the AI hero generator needs: which brand styles it, the campaign
+   *  and block identity for the background job, and the campaign's current
+   *  headline as the with-text default. */
+  ai: { brandId: string; campaignId: string; headline: string }
   onText: (k: string, v: string) => void
   onLink: (k: string, v: string) => void
   onImage: (k: string, v: string) => void
@@ -718,7 +720,7 @@ function BlockFields({
                 <span className="truncate">{val ? 'Replace image' : 'Upload image'}</span>
               </button>
               {f.key === 'hero' && (
-                <HeroGenerator ai={ai} onDone={(id) => onImage(f.key, id)} onError={onError} />
+                <HeroGenerator ai={ai} iid={inst.iid} onDone={(v) => onImage(f.key, v)} onError={onError} />
               )}
             </div>
           )
@@ -771,29 +773,71 @@ function BlockFields({
  *  a brief, a with/without-text switch, an art-director pass server-side,
  *  brand styling from Settings. */
 function HeroGenerator({
-  ai, onDone, onError,
+  ai, iid, onDone, onError,
 }: {
-  ai: { brandId: string; headline: string }
-  onDone: (assetId: string) => void
+  ai: { brandId: string; campaignId: string; headline: string }
+  iid: string
+  onDone: (assetValue: string) => void
   onError: (m: string) => void
 }) {
   const [brief, setBrief] = useState('')
   const [withText, setWithText] = useState(false)
   const [headline, setHeadline] = useState(ai.headline)
   const [subtitle, setSubtitle] = useState('')
-  const [busy, setBusy] = useState(false)
   const [more, setMore] = useState(false)
   const [visualStyle, setVisualStyle] = useState<'auto' | 'photo' | 'illustration' | 'render3d'>('auto')
   const [people, setPeople] = useState<'any' | 'none'>('any')
   const [avoid, setAvoid] = useState('')
-  /** The art direction of the last run — editable, and "Regenerate" reuses it
-   *  verbatim (skipping the director), so an edit is final. */
+  /** The running job id. Generation is a SERVER job — polling only shows
+   *  progress; refresh/navigation cannot stop it, and on mount we look for a
+   *  job an earlier page started and adopt it. */
+  const [jobId, setJobId] = useState<string | null>(null)
+  const busy = jobId !== null
   const [direction, setDirection] = useState<string | null>(null)
 
+  // Adopt a generation a previous page left running.
+  useEffect(() => {
+    let gone = false
+    listHeroJobs(ai.campaignId)
+      .then((js) => {
+        const running = js.find((j) => j.iid === iid && j.status === 'running')
+        if (running && !gone) setJobId(running.id)
+      })
+      .catch(() => { /* nothing to adopt */ })
+    return () => { gone = true }
+  }, [ai.campaignId, iid])
+
+  // Poll while a job runs; apply its result exactly once.
+  useEffect(() => {
+    if (!jobId) return
+    let gone = false
+    const tick = () =>
+      getHeroJob(jobId)
+        .then((j) => {
+          if (gone) return
+          if (j.status === 'running') return
+          setJobId(null)
+          if (j.status === 'done' && j.result) {
+            // The server already wrote this into the campaign; applying it
+            // locally too keeps this page's state (and its next autosave)
+            // convergent with what the server did.
+            onDone(j.result.value)
+            setDirection(j.result.direction)
+          } else if (j.status === 'failed') {
+            onError(j.error || 'Generation failed.')
+          }
+        })
+        .catch(() => { /* transient poll miss — next tick retries */ })
+    tick()
+    const t = window.setInterval(tick, 2000)
+    return () => { gone = true; window.clearInterval(t) }
+  }, [jobId])
+
   const run = (directionOverride?: string) => {
-    setBusy(true)
     generateHeroImage({
       brand_id: ai.brandId,
+      campaign_id: ai.campaignId,
+      iid,
       brief: brief.trim(),
       with_text: withText,
       headline: headline.trim(),
@@ -803,12 +847,8 @@ function HeroGenerator({
       avoid: avoid.trim(),
       direction_override: directionOverride,
     })
-      .then((r) => {
-        onDone(r.id)
-        setDirection(r.direction)
-      })
+      .then((j) => setJobId(j.id))
       .catch((e) => onError(e.message))
-      .finally(() => setBusy(false))
   }
 
   return (
@@ -923,7 +963,9 @@ function HeroGenerator({
           : <><Sparkles className="h-3.5 w-3.5" /> Generate hero</>}
       </Button>
       <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
-        Styled from the brand's colours and fonts in Settings.
+        {busy
+          ? 'Generating on the server — you can navigate away or refresh; the image lands in the campaign when ready.'
+          : "Styled from the brand's colours and fonts in Settings."}
       </p>
 
       {direction !== null && (
