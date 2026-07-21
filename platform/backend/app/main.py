@@ -202,6 +202,8 @@ def create_app() -> FastAPI:
         checks["supabase_storage"] = _supa_storage.enabled()
         checks["n8n_events"] = _events.configured()
         checks["tinify"] = bool(get_secret("TINIFY_API_KEY"))
+        from . import monday as _monday
+        checks["monday"] = _monday.configured()
         try:
             art = runner.settings.ARTIFACT_ROOT
             art.mkdir(parents=True, exist_ok=True)

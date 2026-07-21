@@ -5,17 +5,19 @@
 // are different products carrying different compliance footers.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, X } from 'lucide-react'
+import { CalendarClock, Link2, Loader2, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { listSections, type Language } from '@/lpBuilder/api'
 import { ENTITY_KINDS, KIND_LABEL, kindOf, listBrands, type Brand } from '@/bannerBuilder/brandsApi'
-import { Dashboard } from './Dashboard'
+import { Chip, Dashboard } from './Dashboard'
 import { Editor } from './Editor'
 import {
   createCampaign, deleteCampaign, getCampaign, listBlocks, listCampaigns,
+  mondayItem, mondayReady, mondaySearch,
   type BlockDef, type Campaign, type CampaignSummary, type Layout,
+  type MondayItem, type MondayPull,
 } from './api'
 
 type View = { kind: 'home' } | { kind: 'editor'; campaign: Campaign }
@@ -31,6 +33,9 @@ export function EmailBuilder() {
   // null = closed; otherwise the brand id the folder was opened from, so a
   // campaign created inside a folder lands in that folder.
   const [creating, setCreating] = useState<string | null>(null)
+  // The Monday work queue — CRM tasks at "Ready for design". Loaded best-
+  // effort: with no token configured the strip simply doesn't exist.
+  const [ready, setReady] = useState<MondayPull[]>([])
 
   const refresh = () => listCampaigns().then(setCampaigns).catch((e) => setError(e.message))
 
@@ -41,11 +46,27 @@ export function EmailBuilder() {
       .catch((e) => setError(e.message))
     listBrands().then(setBrands).catch(() => { /* the picker just stays empty */ })
     listSections().then((d) => setLanguages(d.languages)).catch(() => { /* ditto */ })
+    mondayReady().then(setReady).catch(() => { /* dormant or down — no strip */ })
   }, [])
 
   const open = (id: string) =>
     getCampaign(id)
       .then((c) => setView({ kind: 'editor', campaign: c }))
+      .catch((e) => setError(e.message))
+
+  /** One click from a Monday task to a working campaign: the task's name,
+   *  brand and layout, the snapshot attached — and always the English source
+   *  first; the task's language list drives the variant fan-out later. */
+  const startFromTask = (t: MondayPull) =>
+    createCampaign({
+      name: t.item.name,
+      brand_id: t.match.brand_id,
+      language: 'en',
+      layout: t.match.layout || undefined,
+      monday_id: t.item.id,
+      monday: t.item,
+    })
+      .then((c) => { setView({ kind: 'editor', campaign: c }); refresh() })
       .catch((e) => setError(e.message))
 
   if (view.kind === 'editor') {
@@ -73,6 +94,8 @@ export function EmailBuilder() {
         campaigns={campaigns}
         brands={brands}
         languages={languages}
+        ready={ready}
+        onStartTask={startFromTask}
         onOpen={open}
         onCreate={(brandId) => setCreating(brandId)}
         onChanged={refresh}
@@ -150,6 +173,53 @@ function CreateModal({
   // Layout first, details second: the shape decides what you are writing, so
   // it is the first question — the same order every ESP asks in.
   const [layout, setLayout] = useState<string | null>(null)
+  // ---- Monday pull: link the campaign to its Creative Board task and let
+  // the task fill the form (name, brand, language) instead of re-typing it.
+  const [monday, setMonday] = useState<MondayItem | null>(null)
+  const [mQuery, setMQuery] = useState('')
+  const [mResults, setMResults] = useState<MondayItem[] | null>(null)
+  const [mBusy, setMBusy] = useState(false)
+  const [mNote, setMNote] = useState<string | null>(null)
+
+  const applyPull = (p: MondayPull) => {
+    setMonday(p.item)
+    setMResults(null)
+    setMNote(null)
+    setMQuery('')
+    // Prefill, never clobber: anything already typed wins over the pull.
+    if (!name.trim()) setName(p.item.name)
+    if (p.match.brand_id) setBrandId(p.match.brand_id)
+    // The task's "Layout #" label decides the starting shape.
+    if (p.match.layout) setLayout(p.match.layout)
+    // Campaigns ALWAYS start from the English source — the task's language
+    // list is for the variant fan-out after the source is approved.
+    setLanguage('en')
+  }
+
+  const pull = () => {
+    const q = mQuery.trim()
+    if (q.length < 2 || mBusy) return
+    setMBusy(true)
+    setMNote(null)
+    const digits = /^\d+$/.test(q)
+    ;(digits
+      ? mondayItem(q).then(applyPull)
+      : mondaySearch(q).then((items) => {
+          setMResults(items)
+          if (!items.length) setMNote('Nothing on the Creative Board matches that.')
+        })
+    )
+      .catch((e) => setMNote(e.message))
+      .finally(() => setMBusy(false))
+  }
+
+  const pick = (id: string) => {
+    setMBusy(true)
+    mondayItem(id)
+      .then(applyPull)
+      .catch((e) => setMNote(e.message))
+      .finally(() => setMBusy(false))
+  }
 
   // A brand's declared languages narrow the picker — offering all 15 when the
   // brand sells in 3 invites a campaign nobody can send.
@@ -166,7 +236,11 @@ function CreateModal({
   const submit = () => {
     if (!name.trim()) return
     setBusy(true)
-    createCampaign({ name: name.trim(), brand_id: brandId, language, subject: subject.trim(), layout: layout ?? undefined })
+    createCampaign({
+      name: name.trim(), brand_id: brandId, language, subject: subject.trim(),
+      layout: layout ?? undefined,
+      monday_id: monday?.id, monday: monday ?? undefined,
+    })
       .then(onCreated)
       .catch((e) => onError(e.message))
       .finally(() => setBusy(false))
@@ -217,6 +291,82 @@ function CreateModal({
           </button>
         </p>
         <div className="mt-4 space-y-3">
+          {/* Monday pull — link the Creative Board task and it fills the form. */}
+          <div className="rounded-xl border border-border bg-secondary/40 p-2.5">
+            <Label htmlFor="nc-monday" className="text-xs">Monday task (optional)</Label>
+            {monday ? (
+              <div className="mt-1.5 flex items-start gap-2 rounded-lg border border-primary/40 bg-card px-2.5 py-2">
+                <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="min-w-0 flex-1">
+                  <a
+                    href={monday.url} target="_blank" rel="noreferrer"
+                    className="block truncate text-sm font-medium underline-offset-2 hover:underline"
+                  >
+                    {monday.name}
+                  </a>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                    <span className="tabular-nums">#{monday.id}</span>
+                    {monday.status && <Chip>{monday.status}</Chip>}
+                    {monday.brand && <Chip>{monday.brand}</Chip>}
+                    {monday.language && <Chip>{monday.language}</Chip>}
+                    {monday.deadline && (
+                      <Chip><CalendarClock className="h-2.5 w-2.5" /> {monday.deadline}</Chip>
+                    )}
+                  </span>
+                  {monday.brief && (
+                    <span className="mt-1 block text-[10px] leading-snug text-muted-foreground">
+                      Brief attached — the AI hero generator will start from it.
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button" aria-label="Unlink Monday task"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setMonday(null)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="mt-1 flex gap-1.5">
+                  <Input
+                    id="nc-monday" value={mQuery}
+                    onChange={(e) => setMQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); pull() } }}
+                    className="h-9" placeholder="Paste a Monday ID or search the Creative Board"
+                  />
+                  <Button
+                    variant="outline" className="h-9 shrink-0"
+                    disabled={mBusy || mQuery.trim().length < 2}
+                    onClick={pull}
+                  >
+                    {mBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                    Pull
+                  </Button>
+                </div>
+                {mResults && mResults.length > 0 && (
+                  <div className="mt-1.5 max-h-40 space-y-1 overflow-y-auto">
+                    {mResults.map((it) => (
+                      <button
+                        key={it.id} type="button" disabled={mBusy}
+                        onClick={() => pick(it.id)}
+                        className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-left transition-colors hover:border-primary/50"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-xs font-medium">{it.name}</span>
+                        {it.brand && <Chip>{it.brand}</Chip>}
+                        {it.language && <Chip>{it.language}</Chip>}
+                        {it.status && <Chip>{it.status}</Chip>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+            {/* Pull outcome notes — including a language the brand doesn't
+                declare, which must stay visible next to the linked card. */}
+            {mNote && <p className="mt-1.5 text-[10px] leading-snug text-amber-600 dark:text-amber-500">{mNote}</p>}
+          </div>
           <div>
             <Label htmlFor="nc-name" className="text-xs">Campaign name</Label>
             <Input

@@ -15,13 +15,16 @@ from __future__ import annotations
 import io
 import json
 import logging
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File
 from pydantic import BaseModel
 
 from .. import brands as brands_mod
+from .. import monday
 from ..auth import require_admin, require_user
+from ..lp_builder import core as lp_core
 from ..settings import settings
 from . import core, export
 from .blocks import LAYOUTS, layout_blocks
@@ -56,6 +59,10 @@ def _public_campaign(c: dict) -> dict:
         # Monday.com item id. Blank until someone pastes it; each variant gets
         # its own, because Monday tracks them as separate items.
         "monday_id": c.get("monday_id") or "",
+        # Snapshot of the linked Monday item at pull time (name, status, brand,
+        # language, brief, subitems…). What the task LOOKED LIKE when linked —
+        # a prefill source and provenance record, not a live mirror.
+        "monday": c.get("monday") or None,
         # Draft until someone approves it — the UI's Approved/Draft switch.
         # A campaign is written before it is ready, so the safe default is the
         # one that is not live. Field name kept as `active` so existing stored
@@ -141,6 +148,66 @@ def _asset_url(raw: str) -> str:
     return f"{base}/e/img/{raw}" if base else f"/e/img/{raw}"
 
 
+# ------------------------------------------------------------- monday pull
+
+# What a stored Monday snapshot may carry — a whitelist, because the payload
+# arrives from the browser and lands in our campaign records verbatim.
+_MONDAY_KEEP = ("id", "name", "url", "board", "group", "status", "priority",
+                "type", "asset_type", "brand", "label", "white_label",
+                "language", "languages", "layout_label", "market", "deadline",
+                "start_date", "brief", "topic", "figma_url", "requestor",
+                "owner")
+_MONDAY_SUB_KEEP = ("id", "name", "status", "language", "brand", "asset_type",
+                    "topic")
+
+
+def _monday_snapshot(raw: Optional[dict]) -> Optional[dict]:
+    if not isinstance(raw, dict):
+        return None
+    snap = {k: str(raw[k])[:4000] for k in _MONDAY_KEEP
+            if isinstance(raw.get(k), (str, int)) and str(raw[k]).strip()}
+    subs = [{k: str(s[k])[:300] for k in _MONDAY_SUB_KEEP
+             if isinstance(s.get(k), (str, int)) and str(s[k]).strip()}
+            for s in (raw.get("subitems") or []) if isinstance(s, dict)][:40]
+    if subs:
+        snap["subitems"] = subs
+    return snap or None
+
+
+def _match_layout(label: str) -> str:
+    """The task's "Layout #" label → a builder layout key ("Classic promo" →
+    classic-promo), or '' when the label isn't one of ours."""
+    want = re.sub(r"[^a-z0-9]+", "", (label or "").lower())
+    if not want:
+        return ""
+    for l in LAYOUTS:
+        for probe in (l.get("name") or "", l.get("key") or ""):
+            if re.sub(r"[^a-z0-9]+", "", probe.lower()) == want:
+                return l.get("key") or ""
+    return ""
+
+
+def _monday_match(item: dict) -> dict:
+    """Resolve the item's Monday labels into builder vocabulary: a brand id,
+    a layout key, and the task's language list as builder codes. The create
+    flow itself always starts campaigns in English — the language list is for
+    the variant fan-out that follows."""
+    langs = lp_core.languages() or lp_core.DEFAULT_LANGS
+    return {
+        "brand_id": monday.match_brand(item.get("brand") or "",
+                                       brands_mod.list_brands()),
+        "language": monday.match_language(item.get("language") or "", langs),
+        "languages": monday.match_languages(item.get("languages") or "", langs),
+        "layout": _match_layout(item.get("layout_label") or ""),
+    }
+
+
+def _monday_dormant() -> HTTPException:
+    return HTTPException(424, detail={
+        "missing_secrets": ["MONDAY_API_TOKEN"],
+        "error": "The Monday integration activates once MONDAY_API_TOKEN is configured."})
+
+
 # ---------------------------------------------------------------- payloads
 
 class CampaignCreate(BaseModel):
@@ -150,6 +217,9 @@ class CampaignCreate(BaseModel):
     subject: str = ""
     monday_id: str = ""
     layout: str = ""
+    # Snapshot of the pulled Monday item, stored on the campaign (whitelisted
+    # by _monday_snapshot — never trusted verbatim).
+    monday: Optional[dict] = None
 
 
 class HeroGen(BaseModel):
@@ -229,12 +299,18 @@ def build_email_builder_router() -> APIRouter:
                          # instance's own text, so it is edited, not fought.
                          "texts": dict(seed or {}), "images": {}, "links": {}}
                         for k, seed in layout_blocks(payload.layout) if k in available]
+            snap = _monday_snapshot(payload.monday)
             c = {"id": core.new_campaign_id(), "name": name,
                  "subject": (payload.subject or "").strip()[:200], "preheader": "",
                  "brand_id": (payload.brand_id or "").strip(),
                  "language": (payload.language or "en").strip()[:8],
                  "sections": sections, "tokens": {},
-                 "parent_id": "", "monday_id": (payload.monday_id or "").strip()[:32],
+                 "parent_id": "",
+                 # A pulled snapshot implies the link even when the field was
+                 # not typed — the snapshot's id IS the Monday id.
+                 "monday_id": ((payload.monday_id or "").strip()
+                               or (snap or {}).get("id") or "")[:32],
+                 "monday": snap,
                  "active": False,
                  "created_by": user.get("email", ""), "created_at": now, "updated_at": now}
             core.campaigns()[c["id"]] = c
@@ -328,6 +404,59 @@ def build_email_builder_router() -> APIRouter:
                 core.delete_campaign_file(i)
         return Response(status_code=204)
 
+    # ------------------------------------------------------------- monday
+    # The PULL half of the Monday bridge: the create dialog asks for a task
+    # and gets back the item plus builder-vocabulary matches to prefill with.
+    # (The PUSH half is events.py → n8n.)
+
+    @router.get("/monday/item/{item_id}")
+    def monday_item(item_id: str, _user: dict = Depends(require_user)):
+        if not monday.configured():
+            raise _monday_dormant()
+        clean = item_id.strip()
+        if not clean.isdigit():
+            raise HTTPException(422, "A Monday item ID is a number.")
+        try:
+            item = monday.get_item(clean)
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
+        if not item:
+            raise HTTPException(404, "No Monday item with that ID (or the "
+                                     "token cannot see it).")
+        return {"item": item, "match": _monday_match(item)}
+
+    @router.get("/monday/ready")
+    def monday_ready(_user: dict = Depends(require_user)):
+        """The work queue: CRM tasks whose Status is "Ready for design",
+        each with its labels resolved into builder vocabulary. The dashboard
+        surfaces these under their brand for one-click campaign creation."""
+        if not monday.configured():
+            raise _monday_dormant()
+        try:
+            items = monday.ready_for_design()
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
+        return {"tasks": [{"item": i, "match": _monday_match(i)} for i in items]}
+
+    @router.get("/monday/search")
+    def monday_search(q: str = "", _user: dict = Depends(require_user)):
+        if not monday.configured():
+            raise _monday_dormant()
+        term = q.strip()
+        if len(term) < 2:
+            return {"items": []}
+        # A pasted number is a lookup, not a search.
+        if term.isdigit():
+            try:
+                item = monday.get_item(term)
+            except RuntimeError as e:
+                raise HTTPException(502, str(e))
+            return {"items": [item] if item else []}
+        try:
+            return {"items": monday.search(term)}
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
+
     # ----------------------------------------------------------- compose
     @router.post("/compose")
     def compose(payload: dict, _user: dict = Depends(require_user)):
@@ -364,6 +493,17 @@ def build_email_builder_router() -> APIRouter:
                         if c.get("parent_id") == cid}
             existing.add(parent.get("language"))
 
+            # Monday tracks each language as its own subitem with its own id.
+            # If the parent was pulled from Monday, hand every variant the
+            # subitem whose language matches — nobody should re-type ids that
+            # were already fetched.
+            langs = lp_core.languages() or lp_core.DEFAULT_LANGS
+            subs_by_code: dict = {}
+            for s in (parent.get("monday") or {}).get("subitems") or []:
+                code = monday.match_language(s.get("language") or "", langs)
+                if code and code not in subs_by_code:
+                    subs_by_code[code] = str(s.get("id") or "")
+
             now = core._now()
             made = []
             for lang in wanted:
@@ -381,7 +521,7 @@ def build_email_builder_router() -> APIRouter:
                     "sections": json.loads(json.dumps(parent.get("sections") or [])),
                     "tokens": dict(parent.get("tokens") or {}),
                     "parent_id": cid,
-                    "monday_id": "",
+                    "monday_id": subs_by_code.get(lang, ""),
                     # Never live on arrival: an untranslated copy of the source
                     # is exactly what must not go out.
                     "active": False,

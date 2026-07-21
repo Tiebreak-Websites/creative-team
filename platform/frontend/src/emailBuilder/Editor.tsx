@@ -15,7 +15,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, Copy, GripVertical,
-  Image as ImageIcon, Loader2, Monitor, Moon, Plus, Smartphone, Sparkles, Sun, Upload, X,
+  Image as ImageIcon, Link2, Loader2, Monitor, Moon, Plus, Smartphone, Sparkles,
+  Sun, Upload, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -303,6 +304,19 @@ export function Editor({
             {brands.find((b) => b.id === campaign.brand_id)?.name ?? campaign.brand_id}
           </span>
         )}
+        {campaign.monday_id && (
+          <a
+            href={campaign.monday?.url || `https://tiebreak.monday.com/pulses/${campaign.monday_id}`}
+            target="_blank" rel="noreferrer"
+            title={campaign.monday?.name
+              ? `Monday: ${campaign.monday.name}${campaign.monday.status ? ` — ${campaign.monday.status}` : ''}`
+              : 'Open the linked Monday task'}
+            className="flex items-center gap-1 rounded-lg bg-secondary px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Link2 className="h-3 w-3" />
+            <span className="tabular-nums">M#{campaign.monday_id}</span>
+          </a>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           {/* Live size against Gmail's clip limit — the constraint people
@@ -520,6 +534,9 @@ export function Editor({
                                 return h?.texts?.headline
                                   ?? blockMap['em-headline']?.texts?.en?.headline ?? ''
                               })(),
+                              // The creative brief pulled from Monday — the
+                              // generator starts from what the task asked for.
+                              brief: campaign.monday?.brief ?? '',
                             }}
                             onText={(k, v) => setField(inst.iid, 'texts', k, v)}
                             onLink={(k, v) => setField(inst.iid, 'links', k, v)}
@@ -645,7 +662,7 @@ function BlockFields({
   /** Context the AI hero generator needs: which brand styles it, the campaign
    *  and block identity for the background job, and the campaign's current
    *  headline as the with-text default. */
-  ai: { brandId: string; campaignId: string; headline: string }
+  ai: { brandId: string; campaignId: string; headline: string; brief?: string }
   onText: (k: string, v: string) => void
   onLink: (k: string, v: string) => void
   onImage: (k: string, v: string) => void
@@ -775,12 +792,14 @@ function BlockFields({
 function HeroGenerator({
   ai, iid, onDone, onError,
 }: {
-  ai: { brandId: string; campaignId: string; headline: string }
+  ai: { brandId: string; campaignId: string; headline: string; brief?: string }
   iid: string
   onDone: (assetValue: string) => void
   onError: (m: string) => void
 }) {
-  const [brief, setBrief] = useState('')
+  // Seeded from the Monday task's creative brief when one was pulled —
+  // the generator opens already knowing what the task asked for.
+  const [brief, setBrief] = useState(ai.brief ?? '')
   const [withText, setWithText] = useState(false)
   const [headline, setHeadline] = useState(ai.headline)
   const [subtitle, setSubtitle] = useState('')

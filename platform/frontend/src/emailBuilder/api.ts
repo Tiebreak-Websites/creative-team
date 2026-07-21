@@ -47,6 +47,50 @@ export interface BlockInstance {
   props?: Record<string, string>
 }
 
+/** A Monday.com language subtask — each language variant is its own item. */
+export interface MondaySubitem {
+  id: string
+  name: string
+  status?: string
+  language?: string
+  brand?: string
+  asset_type?: string
+  topic?: string
+}
+
+/** A Monday.com task as the builder sees it — normalized from the CRM Tasks
+ *  board's columns by the backend. */
+export interface MondayItem {
+  id: string
+  name: string
+  url: string
+  board?: string
+  group?: string
+  status?: string
+  priority?: string
+  /** CRM board's Type column — WTL, ACQ/RND, RTN, Dormant… */
+  type?: string
+  asset_type?: string
+  brand?: string
+  /** Brand_LANG segment labels, comma-joined ("Tradit_EN, Tradit_IT"). */
+  label?: string
+  white_label?: string
+  language?: string
+  /** The task's language list, comma-joined as Monday sends it ("EN, IT"). */
+  languages?: string
+  /** The board's "Layout #" label — e.g. "Classic promo". */
+  layout_label?: string
+  market?: string
+  deadline?: string
+  start_date?: string
+  brief?: string
+  topic?: string
+  figma_url?: string
+  requestor?: string
+  owner?: string
+  subitems?: MondaySubitem[]
+}
+
 export interface Campaign {
   id: string
   /** '' for a parent, the parent's id for a language variant. Authoring is
@@ -54,6 +98,9 @@ export interface Campaign {
   parent_id: string
   /** Monday.com item id — each variant is tracked as its own Monday item. */
   monday_id: string
+  /** Snapshot of the linked Monday task at pull time — prefill source and
+   *  provenance, not a live mirror. */
+  monday?: MondayItem | null
   /** Draft until someone approves it. The UI calls this Approved/Draft; the
    *  field keeps its original name so stored campaigns need no migration.
    *  Campaigns are never deleted, only un-approved — a sent campaign is a
@@ -101,6 +148,9 @@ async function fail(r: Response, fallback: string): Promise<never> {
   const body = await asJson(r)
   const message =
     (typeof body.detail === 'string' && body.detail) ||
+    // Dormant features answer 424 with detail: {missing_secrets, error} —
+    // the .error sentence is the human-readable half.
+    (typeof body.detail?.error === 'string' && body.detail.error) ||
     (typeof body.error === 'string' && body.error) ||
     `${fallback} (HTTP ${r.status}).`
   throw new Error(message)
@@ -135,6 +185,8 @@ export async function createCampaign(payload: {
   language?: string
   subject?: string
   monday_id?: string
+  /** The pulled Monday task — stored on the campaign as its snapshot. */
+  monday?: MondayItem
   /** Layout key from listBlocks().layouts — which shape to seed. */
   layout?: string
 }): Promise<Campaign> {
@@ -143,6 +195,36 @@ export async function createCampaign(payload: {
   })
   if (!r.ok) return fail(r, 'Could not create the campaign')
   return r.json()
+}
+
+/** What the builder should prefill from a pulled Monday task — the item plus
+ *  its labels resolved into builder vocabulary: a brand id, a layout key,
+ *  and the task's language list as builder codes (for the variant fan-out;
+ *  campaigns themselves always start in English). */
+export interface MondayPull {
+  item: MondayItem
+  match: { brand_id: string; language: string; languages: string[]; layout: string }
+}
+
+export async function mondayItem(id: string): Promise<MondayPull> {
+  const r = await fetch(`${EB}/monday/item/${encodeURIComponent(id.trim())}`,
+    { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Could not pull the Monday task')
+  return r.json()
+}
+
+/** The work queue: CRM tasks with Status "Ready for design". */
+export async function mondayReady(): Promise<MondayPull[]> {
+  const r = await fetch(`${EB}/monday/ready`, { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Could not load the Monday queue')
+  return (await r.json()).tasks ?? []
+}
+
+export async function mondaySearch(q: string): Promise<MondayItem[]> {
+  const r = await fetch(`${EB}/monday/search?q=${encodeURIComponent(q.trim())}`,
+    { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Monday search failed')
+  return (await r.json()).items ?? []
 }
 
 export async function getCampaign(id: string): Promise<Campaign> {
