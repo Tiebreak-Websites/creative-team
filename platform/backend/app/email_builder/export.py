@@ -226,6 +226,15 @@ def compose_block(block: dict, inst: dict, lang: str,
             url = _safe_url(links.get(key) or "")
             if url:
                 html = _fill_attr(html, "data-em-link", key, "href", _attr(url))
+
+    # Anchor the block's first row with its instance id so the editor can
+    # scroll the preview to the block being edited. The first "<tr" is always
+    # the block's own outer row (nested tables come later in the string).
+    # ~25 bytes per block; mail clients ignore unknown data attributes, so the
+    # single-compositor rule holds — no editor/export divergence.
+    iid = str(inst.get("iid") or "")
+    if iid:
+        html = html.replace("<tr", f'<tr data-em-iid="{_attr(iid)}"', 1)
     return html
 
 

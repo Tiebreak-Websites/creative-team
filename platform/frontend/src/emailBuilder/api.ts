@@ -17,6 +17,11 @@ export interface BlockField {
 export interface BlockDef {
   key: string
   name: string
+  /** Which of the three stacked tables the block renders into:
+   *  'header' above the card, 'card' inside it, 'footer' below it.
+   *  Reordering is constrained to within a zone — a card block cannot move
+   *  above the logo, because it physically cannot render there. */
+  zone: 'header' | 'card' | 'footer'
   category: string
   position: number
   enabled: boolean

@@ -1,4 +1,11 @@
-// Campaign editor — fields on the left, live composed email on the right.
+// Campaign editor — structure panel on the left, live composed email right.
+//
+// The panel follows the shape every major builder (Klaviyo, Stripo, Beefree,
+// MailerLite) converged on: a list of the email's blocks in order, one open at
+// a time, with move/duplicate/remove on each row and an Add picker. What we
+// deliberately DON'T copy is their free-form drag-anything canvas — our blocks
+// are locked Outlook-safe tables, and that constraint is the product: you
+// cannot build an email here that breaks in Outlook.
 //
 // The preview is the REAL composed output from the backend compositor, not a
 // frontend approximation. Same rule the LP builder follows: an approximation is
@@ -7,8 +14,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertTriangle, ArrowLeft, Check, Image as ImageIcon, Loader2, Monitor,
-  Smartphone, Upload,
+  AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, Copy,
+  Image as ImageIcon, Loader2, Monitor, Plus, Smartphone, Upload, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,6 +37,12 @@ function labelFor(block: BlockDef, key: string): string {
   return key.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
 }
 
+const newIid = () => Math.random().toString(16).slice(2, 10)
+
+/** Display order of the three zones — mirrors how the compositor stacks them. */
+const ZONE_ORDER: Record<string, number> = { header: 0, card: 1, footer: 2 }
+const ZONE_LABEL: Record<string, string> = { header: 'Header', card: 'Content', footer: 'Footer' }
+
 export function Editor({
   campaign: initial,
   blocks,
@@ -50,10 +63,19 @@ export function Editor({
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  /** The one expanded block — an accordion, so the panel stays scannable with
+   *  eleven blocks instead of eleven stacked forms. */
+  const [openIid, setOpenIid] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
+  const frameRef = useRef<HTMLIFrameElement>(null)
 
   const blockMap = useMemo(
     () => Object.fromEntries(blocks.map((b) => [b.key, b])) as Record<string, BlockDef>,
     [blocks],
+  )
+  const zoneOf = useCallback(
+    (inst: BlockInstance) => blockMap[inst.block_key]?.zone ?? 'card',
+    [blockMap],
   )
 
   const mutate = (fn: (c: Campaign) => Campaign) => {
@@ -95,6 +117,16 @@ export function Editor({
     return () => window.clearTimeout(t)
   }, [dirty, save])
 
+  // Opening a block scrolls the preview to it — the panel and the email stay
+  // one thing. Re-runs when a fresh compose lands so the scroll survives the
+  // iframe being re-rendered.
+  useEffect(() => {
+    if (!openIid) return
+    const doc = frameRef.current?.contentDocument
+    const el = doc?.querySelector(`[data-em-iid="${openIid}"]`)
+    if (el) (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [openIid, composed])
+
   const setField = (iid: string, bucket: 'texts' | 'images' | 'links', key: string, value: string) =>
     mutate((c) => {
       const inst = c.sections.find((s) => s.iid === iid)
@@ -102,10 +134,89 @@ export function Editor({
       return c
     })
 
+  /** Swap with the nearest neighbour IN THE SAME ZONE. Crossing a zone would
+   *  claim an order the compositor cannot render (zones are separate tables),
+   *  so the arrows simply stop at the zone edge. */
+  const move = (iid: string, dir: -1 | 1) =>
+    mutate((c) => {
+      const arr = c.sections
+      const i = arr.findIndex((s) => s.iid === iid)
+      if (i === -1) return c
+      const zone = zoneOf(arr[i])
+      let j = i + dir
+      while (j >= 0 && j < arr.length && zoneOf(arr[j]) !== zone) j += dir
+      if (j < 0 || j >= arr.length) return c
+      ;[arr[i], arr[j]] = [arr[j], arr[i]]
+      return c
+    })
+
+  const duplicate = (iid: string) => {
+    const copyIid = newIid()
+    mutate((c) => {
+      const i = c.sections.findIndex((s) => s.iid === iid)
+      if (i === -1) return c
+      const copy = structuredClone(c.sections[i])
+      copy.iid = copyIid
+      c.sections.splice(i + 1, 0, copy)
+      return c
+    })
+    setOpenIid(copyIid)
+  }
+
+  const remove = (iid: string) => {
+    const inst = campaign.sections.find((s) => s.iid === iid)
+    const name = blockMap[inst?.block_key ?? '']?.name ?? 'this block'
+    if (!window.confirm(`Remove ${name}? Its text is lost.`)) return
+    mutate((c) => ({ ...c, sections: c.sections.filter((s) => s.iid !== iid) }))
+    if (openIid === iid) setOpenIid(null)
+  }
+
+  /** Insert at the end of the block's own zone segment, so a new card block
+   *  lands above the footer no matter what. */
+  const addBlock = (key: string) => {
+    const iid = newIid()
+    mutate((c) => {
+      const zone = blockMap[key]?.zone ?? 'card'
+      const inst: BlockInstance = { iid, block_key: key, texts: {}, images: {}, links: {} }
+      let at = -1
+      c.sections.forEach((s, i) => {
+        if (ZONE_ORDER[zoneOf(s)] <= ZONE_ORDER[zone]) at = i
+      })
+      c.sections.splice(at + 1, 0, inst)
+      return c
+    })
+    setAdding(false)
+    setOpenIid(iid)
+  }
+
+  // Zone bounds per row, so the arrows can disable at the edges.
+  const zoneMates = (iid: string) => {
+    const inst = campaign.sections.find((s) => s.iid === iid)
+    if (!inst) return { first: true, last: true }
+    const mates = campaign.sections.filter((s) => zoneOf(s) === zoneOf(inst))
+    const i = mates.findIndex((s) => s.iid === iid)
+    return { first: i === 0, last: i === mates.length - 1 }
+  }
+
   const sizePct = composed ? Math.min(100, (composed.size / SIZE_LIMIT) * 100) : 0
   const sizeState = !composed ? 'ok'
     : composed.size > SIZE_LIMIT ? 'over'
     : composed.size > SIZE_WARN ? 'near' : 'ok'
+
+  // The panel renders in zone order regardless of array quirks, with one
+  // heading per zone — the same three regions the composed email has.
+  const grouped = useMemo(() => {
+    const out: { zone: string; items: BlockInstance[] }[] = []
+    for (const zone of ['header', 'card', 'footer']) {
+      const items = campaign.sections.filter((s) => zoneOf(s) === zone)
+      if (items.length) out.push({ zone, items })
+    }
+    return out
+  }, [campaign.sections, zoneOf])
+
+  // Only card-zone blocks are offered by Add: the logo and the compliance
+  // footer are furniture, and a second footer is a compliance bug waiting.
+  const addable = blocks.filter((b) => b.enabled && b.zone === 'card')
 
   return (
     <div className="flex h-full flex-col">
@@ -199,7 +310,7 @@ export function Editor({
       )}
 
       <div className="flex min-h-0 flex-1">
-        {/* ------------------------------------------------------- fields */}
+        {/* ---------------------------------------------- structure panel */}
         <div className="w-[340px] shrink-0 overflow-y-auto border-r border-border p-3">
           <div className="mb-4 space-y-2">
             <div>
@@ -227,27 +338,105 @@ export function Editor({
             </div>
           </div>
 
-          {campaign.sections.map((inst) => {
-            const block = blockMap[inst.block_key]
-            if (!block) return null
-            return (
-              <BlockFields
-                key={inst.iid}
-                block={block}
-                inst={inst}
-                onText={(k, v) => setField(inst.iid, 'texts', k, v)}
-                onLink={(k, v) => setField(inst.iid, 'links', k, v)}
-                onImage={(k, v) => setField(inst.iid, 'images', k, v)}
-                onError={onError}
-              />
-            )
-          })}
+          {grouped.map(({ zone, items }) => (
+            <div key={zone} className="mb-3">
+              <div className="mb-1.5 flex items-baseline justify-between">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                  {ZONE_LABEL[zone]}
+                </p>
+                {zone === 'card' && (
+                  <button
+                    type="button"
+                    onClick={() => setAdding(true)}
+                    className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/10"
+                  >
+                    <Plus className="h-3 w-3" /> Add block
+                  </button>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {items.map((inst) => {
+                  const block = blockMap[inst.block_key]
+                  if (!block) return null
+                  const open = openIid === inst.iid
+                  const { first, last } = zoneMates(inst.iid)
+                  const canReorder = items.length > 1
+                  return (
+                    <div
+                      key={inst.iid}
+                      className={cn(
+                        'rounded-xl border bg-card transition-colors',
+                        open ? 'border-primary/50 shadow-sm' : 'border-border',
+                      )}
+                    >
+                      {/* row header: name + actions, click to open */}
+                      <div className="group flex items-center gap-0.5 px-2 py-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setOpenIid(open ? null : inst.iid)}
+                          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                          aria-expanded={open}
+                        >
+                          <ChevronDown
+                            className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
+                              !open && '-rotate-90')}
+                          />
+                          <span className="truncate font-display text-xs font-semibold">{block.name}</span>
+                        </button>
+                        <span className={cn('flex shrink-0 items-center transition-opacity',
+                          open ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}>
+                          {canReorder && (
+                            <>
+                              <RowAction title="Move up" disabled={first} onClick={() => move(inst.iid, -1)}>
+                                <ChevronUp className="h-3.5 w-3.5" />
+                              </RowAction>
+                              <RowAction title="Move down" disabled={last} onClick={() => move(inst.iid, 1)}>
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              </RowAction>
+                            </>
+                          )}
+                          {/* The compliance footer can be neither removed nor
+                              duplicated: no unsubscribe link is a spam
+                              complaint, and two of them is a mess — neither is
+                              a design choice. */}
+                          {block.key !== 'em-footer' && (
+                            <RowAction title={`Duplicate ${block.name}`} onClick={() => duplicate(inst.iid)}>
+                              <Copy className="h-3 w-3" />
+                            </RowAction>
+                          )}
+                          {block.key !== 'em-footer' && (
+                            <RowAction title={`Remove ${block.name}`} onClick={() => remove(inst.iid)}>
+                              <X className="h-3.5 w-3.5" />
+                            </RowAction>
+                          )}
+                        </span>
+                      </div>
+
+                      {open && (
+                        <div className="border-t border-border px-2.5 pb-2.5 pt-2">
+                          <BlockFields
+                            block={block}
+                            inst={inst}
+                            onText={(k, v) => setField(inst.iid, 'texts', k, v)}
+                            onLink={(k, v) => setField(inst.iid, 'links', k, v)}
+                            onImage={(k, v) => setField(inst.iid, 'images', k, v)}
+                            onError={onError}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* ------------------------------------------------------ preview */}
         <div className="flex min-w-0 flex-1 justify-center overflow-y-auto bg-secondary/40 p-6">
           {composed ? (
             <iframe
+              ref={frameRef}
               // srcDoc, not a URL: the composed HTML is already complete and
               // self-contained, and this keeps the preview free of our app's
               // stylesheet bleeding in.
@@ -264,7 +453,59 @@ export function Editor({
           )}
         </div>
       </div>
+
+      {/* ------------------------------------------------- add-block picker */}
+      {adding && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setAdding(false)}>
+          <div
+            className="w-full max-w-sm rounded-2xl border border-border bg-card p-4 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-display text-base font-bold">Add a block</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Added at the end of the content — move it with the arrows.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-1.5">
+              {addable.map((b) => (
+                <button
+                  key={b.key}
+                  type="button"
+                  onClick={() => addBlock(b.key)}
+                  className="rounded-lg border border-border px-2.5 py-2 text-left text-xs font-medium transition-colors hover:border-primary/40 hover:bg-primary/5"
+                >
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  )
+}
+
+function RowAction({
+  title, disabled, onClick, children,
+}: {
+  title: string
+  disabled?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'rounded-md p-1 text-muted-foreground transition-colors',
+        disabled ? 'cursor-not-allowed opacity-30' : 'hover:bg-secondary hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -303,82 +544,79 @@ function BlockFields({
   }
 
   return (
-    <div className="mb-3 rounded-xl border border-border bg-card p-2.5">
-      <p className="mb-2 font-display text-xs font-semibold">{block.name}</p>
-      <div className="space-y-2">
-        {block.fields.map((f) => {
-          const id = `${inst.iid}-${f.key}`
-          const label = labelFor(block, f.key)
+    <div className="space-y-2">
+      {block.fields.map((f) => {
+        const id = `${inst.iid}-${f.key}`
+        const label = labelFor(block, f.key)
 
-          if (derived.has(f.key)) {
-            return (
-              <div key={f.key}>
-                <Label className="text-[11px]">{label}</Label>
-                <p className="mt-1 rounded-lg bg-secondary px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
-                  Set automatically from the brand's regulation (EU or International).
-                </p>
-              </div>
-            )
-          }
+        if (derived.has(f.key)) {
+          return (
+            <div key={f.key}>
+              <Label className="text-[11px]">{label}</Label>
+              <p className="mt-1 rounded-lg bg-secondary px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
+                Set automatically from the brand's regulation (EU or International).
+              </p>
+            </div>
+          )
+        }
 
-          if (f.kind === 'img') {
-            const val = inst.images?.[f.key] ?? ''
-            return (
-              <div key={f.key}>
-                <Label className="text-[11px]">{label}</Label>
-                <button
-                  type="button"
-                  onClick={() => pick(f.key)}
-                  className="mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-border px-2 py-2 text-left text-[11px] text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                >
-                  {busy === f.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    : val ? <ImageIcon className="h-3.5 w-3.5 text-emerald-600" />
-                    : <Upload className="h-3.5 w-3.5" />}
-                  <span className="truncate">{val ? 'Replace image' : 'Upload image'}</span>
-                </button>
-              </div>
-            )
-          }
+        if (f.kind === 'img') {
+          const val = inst.images?.[f.key] ?? ''
+          return (
+            <div key={f.key}>
+              <Label className="text-[11px]">{label}</Label>
+              <button
+                type="button"
+                onClick={() => pick(f.key)}
+                className="mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-border px-2 py-2 text-left text-[11px] text-muted-foreground hover:border-primary/40 hover:text-foreground"
+              >
+                {busy === f.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : val ? <ImageIcon className="h-3.5 w-3.5 text-emerald-600" />
+                  : <Upload className="h-3.5 w-3.5" />}
+                <span className="truncate">{val ? 'Replace image' : 'Upload image'}</span>
+              </button>
+            </div>
+          )
+        }
 
-          if (f.kind === 'link') {
-            return (
-              <div key={f.key}>
-                <Label htmlFor={id} className="text-[11px]">{label}</Label>
-                <Input
-                  id={id}
-                  value={inst.links?.[f.key] ?? ''}
-                  onChange={(e) => onLink(f.key, e.target.value)}
-                  className="mt-1 h-8 text-xs"
-                  placeholder="https://…"
-                />
-              </div>
-            )
-          }
-
-          const value = inst.texts?.[f.key] ?? defaults[f.key] ?? ''
+        if (f.kind === 'link') {
           return (
             <div key={f.key}>
               <Label htmlFor={id} className="text-[11px]">{label}</Label>
-              {f.kind === 'rich' ? (
-                <Textarea
-                  id={id}
-                  value={value}
-                  onChange={(e) => onText(f.key, e.target.value)}
-                  rows={4}
-                  className="mt-1 text-xs"
-                />
-              ) : (
-                <Input
-                  id={id}
-                  value={value}
-                  onChange={(e) => onText(f.key, e.target.value)}
-                  className="mt-1 h-8 text-xs"
-                />
-              )}
+              <Input
+                id={id}
+                value={inst.links?.[f.key] ?? ''}
+                onChange={(e) => onLink(f.key, e.target.value)}
+                className="mt-1 h-8 text-xs"
+                placeholder="https://…"
+              />
             </div>
           )
-        })}
-      </div>
+        }
+
+        const value = inst.texts?.[f.key] ?? defaults[f.key] ?? ''
+        return (
+          <div key={f.key}>
+            <Label htmlFor={id} className="text-[11px]">{label}</Label>
+            {f.kind === 'rich' ? (
+              <Textarea
+                id={id}
+                value={value}
+                onChange={(e) => onText(f.key, e.target.value)}
+                rows={4}
+                className="mt-1 text-xs"
+              />
+            ) : (
+              <Input
+                id={id}
+                value={value}
+                onChange={(e) => onText(f.key, e.target.value)}
+                className="mt-1 h-8 text-xs"
+              />
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
