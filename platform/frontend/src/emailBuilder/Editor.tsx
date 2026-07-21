@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, Copy, GripVertical,
-  Image as ImageIcon, Loader2, Monitor, Plus, Smartphone, Upload, X,
+  Image as ImageIcon, Loader2, Monitor, Moon, Plus, Smartphone, Sun, Upload, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,6 +39,26 @@ function labelFor(block: BlockDef, key: string): string {
 
 const newIid = () => Math.random().toString(16).slice(2, 10)
 
+/** Wrap the composed email in a dark-mode viewing lens.
+
+ * What it simulates is FORCED inversion — the Gmail app's behaviour, which
+ * recolours emails whether or not they define dark styles. (Apple Mail merely
+ * honours `prefers-color-scheme`, and since our emails define no dark styles
+ * it would show no change at all — a useless preview.) invert+hue-rotate is
+ * the standard simulator trick: colours flip to a dark scheme while hues stay
+ * recognisable, and images get the same filter again to cancel it, since
+ * clients never invert photos.
+ *
+ * Injected ONLY at display time. The composed artifact never contains it. */
+function darkLens(html: string): string {
+  const lens =
+    '<style id="em-dark-sim">' +
+    'html{filter:invert(1) hue-rotate(180deg);background:#111}' +
+    'img{filter:invert(1) hue-rotate(180deg)}' +
+    '</style>'
+  return html.includes('</head>') ? html.replace('</head>', lens + '</head>') : lens + html
+}
+
 /** Display order of the three zones — mirrors how the compositor stacks them. */
 const ZONE_ORDER: Record<string, number> = { header: 0, card: 1, footer: 2 }
 const ZONE_LABEL: Record<string, string> = { header: 'Header', card: 'Content', footer: 'Footer' }
@@ -61,6 +81,7 @@ export function Editor({
   const [campaign, setCampaign] = useState<Campaign>(initial)
   const [composed, setComposed] = useState<{ html: string; size: number; warnings: string[] } | null>(null)
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
+  const [scheme, setScheme] = useState<'light' | 'dark'>('light')
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   /** The one expanded block — an accordion, so the panel stays scannable with
@@ -302,6 +323,22 @@ export function Editor({
             </span>
           )}
           <div className="flex items-center rounded-lg border border-border bg-secondary p-0.5">
+            {([['light', Sun], ['dark', Moon]] as const).map(([m, Icon]) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setScheme(m)}
+                aria-pressed={scheme === m}
+                title={m === 'light' ? 'Light preview'
+                  : 'Dark preview — simulates the Gmail app forcing its own dark scheme'}
+                className={cn('rounded-md px-2 py-1 transition-colors',
+                  scheme === m ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}
+              >
+                <Icon className="h-4 w-4" />
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center rounded-lg border border-border bg-secondary p-0.5">
             {([['desktop', Monitor], ['mobile', Smartphone]] as const).map(([d, Icon]) => (
               <button
                 key={d}
@@ -518,7 +555,7 @@ export function Editor({
               // srcDoc, not a URL: the composed HTML is already complete and
               // self-contained, and this keeps the preview free of our app's
               // stylesheet bleeding in.
-              srcDoc={composed.html}
+              srcDoc={scheme === 'dark' ? darkLens(composed.html) : composed.html}
               title="Email preview"
               className="h-full border-0 bg-white shadow-sm"
               style={{ width: device === 'mobile' ? 375 : 680 }}
