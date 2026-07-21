@@ -86,13 +86,48 @@ SECURITY-DEFINER `auth_role()` reading `users.role`,
 `security_invoker = on` views, `_touch_updated_at` triggers, append-only
 `audit_log`, soft `text` taxonomy references.
 
-## Phase 4 — n8n + Monday
+## Phase 4 — n8n + Monday  ✅ builder side shipped, awaiting the workflow
 
-Same house pattern, our own wiring: database webhooks OUT of our project
-(Header Auth `Bearer <secret>`) → n8n workflows dedicated to the builder;
-n8n writes back with **our** project's service key; Monday item ids land in
-`email_campaigns.monday_id` / LP `monday_id`. The org's n8n instance can
-host the workflows — instance sharing is fine, data sharing is not.
+- **Instance:** https://courses.n8n.plexop.dev (org n8n; instance sharing is
+  fine, data sharing is not — the builder gets its own workflows + secrets).
+- **The builder now EMITS events** (`app/events.py`): fire-and-forget POST
+  with `Authorization: Bearer <secret>` — the same header-auth contract
+  CreativeOPS's webhooks use. Dormant until env exists; an automation hop
+  can never slow or fail a user's save. Delivery order between events is not
+  guaranteed (independent threads) — switch on `event`, not order.
+
+Event catalog (payload: `{event, source:"creative-builder", data}`):
+
+| event | fired when | data |
+|---|---|---|
+| `email.campaign.created` | new campaign (incl. via gallery) | campaign snapshot |
+| `email.campaign.approved` | Approved toggled ON | campaign snapshot |
+| `email.campaign.unapproved` | Approved toggled OFF | campaign snapshot |
+| `email.variants.created` | language fan-out | parent_id, languages, ids |
+
+Snapshot fields: id, name, subject, brand_id, language, parent_id,
+monday_id, approved.
+
+**To activate — in n8n create a Webhook node (POST, Header Auth) and put its
+URL + secret into Render env and `.env`:**
+
+```
+N8N_WEBHOOK_URL=<the n8n webhook URL>
+N8N_WEBHOOK_SECRET=<the header-auth secret>
+```
+
+First workflow to build: `email.campaign.approved` → create/update the
+Monday item → write the Monday id back via
+`PATCH /api/tools/email-builder/campaigns/{id}` `{"monday_id": "..."}`
+(n8n authenticates with a builder service token — small auth addition when
+we get there).
+
+Verified end to end 2026-07-21 against a local receiver: all four events
+delivered with correct Bearer auth through the real create → approve →
+un-approve → fan-out flow.
+
+After Phase 3 (data in Postgres), these same events can move to Supabase
+database webhooks without the n8n side changing shape.
 
 ## Patterns adopted from CreativeOPS (reference only)
 

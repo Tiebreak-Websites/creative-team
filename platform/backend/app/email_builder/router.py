@@ -232,6 +232,8 @@ def build_email_builder_router() -> APIRouter:
                  "created_by": user.get("email", ""), "created_at": now, "updated_at": now}
             core.campaigns()[c["id"]] = c
             core.persist_campaign(c)
+        from .. import events
+        events.emit("email.campaign.created", events.campaign_snapshot(c))
         return _public_campaign(c)
 
     @router.get("/campaigns/{cid}")
@@ -259,6 +261,11 @@ def build_email_builder_router() -> APIRouter:
                 # campaign's images through Tinify exactly once, best effort.
                 # Never blocks the save: a compression hiccup is not a reason
                 # a finished campaign cannot ship.
+                from .. import events
+                if c["active"] != was_active:
+                    events.emit(
+                        "email.campaign.approved" if c["active"] else "email.campaign.unapproved",
+                        events.campaign_snapshot(c))
                 if c["active"] and not was_active:
                     try:
                         from . import compress
@@ -379,6 +386,13 @@ def build_email_builder_router() -> APIRouter:
                 made.append(child)
                 existing.add(lang)
 
+        if made:
+            from .. import events
+            events.emit("email.variants.created", {
+                "parent_id": cid,
+                "languages": [c["language"] for c in made],
+                "ids": [c["id"] for c in made],
+            })
         return {"created": [_public_campaign(c) for c in made],
                 "skipped": [l for l in wanted if l not in {c["language"] for c in made}]}
 
