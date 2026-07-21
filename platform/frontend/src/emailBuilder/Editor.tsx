@@ -231,28 +231,20 @@ export function Editor({
           className="h-8 w-56 text-sm font-medium"
           aria-label="Campaign name"
         />
-        <span className="flex items-center gap-1.5 rounded-lg bg-secondary px-2 py-1 text-xs">
+        {/* Brand and language are facts of the campaign, not knobs: both are
+            chosen at creation and a variant IS its language, so a mid-edit
+            switcher only invites accidents. Shown, not selectable. */}
+        <span className="flex items-center gap-1.5 rounded-lg bg-secondary px-2.5 py-1.5 text-xs text-muted-foreground">
           {flagUrl(campaign.language) && (
             <img src={flagUrl(campaign.language)!} alt="" className="h-3 w-[18px] rounded-[2px] object-cover ring-1 ring-inset ring-black/10" />
           )}
-          <select
-            value={campaign.language}
-            onChange={(e) => mutate((c) => ({ ...c, language: e.target.value }))}
-            className="bg-transparent text-xs outline-none"
-            aria-label="Language"
-          >
-            {languages.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
-          </select>
+          {languages.find((l) => l.code === campaign.language)?.label ?? campaign.language.toUpperCase()}
         </span>
-        <select
-          value={campaign.brand_id}
-          onChange={(e) => mutate((c) => ({ ...c, brand_id: e.target.value }))}
-          className="h-8 rounded-lg border border-border bg-card px-2 text-xs"
-          aria-label="Brand"
-        >
-          <option value="">No brand</option>
-          {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-        </select>
+        {campaign.brand_id && (
+          <span className="rounded-lg bg-secondary px-2.5 py-1.5 text-xs text-muted-foreground">
+            {brands.find((b) => b.id === campaign.brand_id)?.name ?? campaign.brand_id}
+          </span>
+        )}
 
         <div className="ml-auto flex items-center gap-2">
           {/* Live size against Gmail's clip limit — the constraint people

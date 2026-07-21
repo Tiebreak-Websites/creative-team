@@ -399,6 +399,20 @@ def _hosted_logo(entity: dict) -> Optional[str]:
     png: Optional[bytes] = None
     if raw.startswith("<svg"):
         png = export.rasterise_svg(raw, width=_LOGO_PX)
+        if not png:
+            # No rasteriser on this machine (libcairo is in the Docker image,
+            # not in a local macOS venv). Serve the SVG itself so the logo is
+            # visible in previews TODAY — mail clients cannot render SVG, but
+            # a deployed compose rasterises to PNG before anything is sent.
+            if "<script" in raw.lower() or "onload=" in raw.lower():
+                log.warning("email-builder: refusing scripted SVG logo")
+                return None
+            aid_svg = "logo-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24] + ".svg"
+            path_svg = core.ASSETS_DIR / aid_svg
+            if not path_svg.exists():
+                core.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+                path_svg.write_text(raw, encoding="utf-8")
+            return aid_svg
     elif raw.startswith("data:"):
         try:
             head, _, b64 = raw.partition(",")
@@ -470,11 +484,12 @@ def build_public_email_router() -> APIRouter:
             path.relative_to(core.ASSETS_DIR.resolve())
         except Exception:
             raise HTTPException(404, "Not found.")
-        if not path.is_file() or path.suffix.lower() != ".png":
+        media = {".png": "image/png", ".svg": "image/svg+xml"}.get(path.suffix.lower())
+        if not path.is_file() or not media:
             raise HTTPException(404, "Not found.")
         return Response(
             content=path.read_bytes(),
-            media_type="image/png",
+            media_type=media,
             # Immutable: the filename is content-derived, so a sent email keeps
             # rendering the image it was composed with.
             headers={"Cache-Control": "public, max-age=31536000, immutable"},
