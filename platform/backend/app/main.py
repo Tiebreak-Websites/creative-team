@@ -194,6 +194,14 @@ def create_app() -> FastAPI:
         from .secrets import get_secret
         from . import runner
         checks = {"openai_key": bool(get_secret("OPENAI_API_KEY")), "disk_writable": False}
+        # Integration switches — booleans only, never values. Lets a deploy be
+        # verified from outside: after setting env vars on Render, this shows
+        # whether the new code actually sees them.
+        from .email_builder import storage as _supa_storage
+        from . import events as _events
+        checks["supabase_storage"] = _supa_storage.enabled()
+        checks["n8n_events"] = _events.configured()
+        checks["tinify"] = bool(get_secret("TINIFY_API_KEY"))
         try:
             art = runner.settings.ARTIFACT_ROOT
             art.mkdir(parents=True, exist_ok=True)
