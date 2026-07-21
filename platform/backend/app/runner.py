@@ -28,7 +28,8 @@ from typing import Dict, List, Optional
 from . import brands as brands_store
 from . import creative_director, engine, references as references_store
 from .banner_engine import intent as intent_engine
-from .banner_engine import logo_overlay, outpaint, reshape
+from .banner_engine import export_weight, logo_overlay, outpaint, reshape
+from .banner_engine import prompts as bprompts
 from .models import RunRequest
 from .settings import settings
 
@@ -56,6 +57,15 @@ def _approval_mode() -> bool:
     (default ON); set it to off/false/0/no to revert to straight auto-recompose."""
     import os
     return os.environ.get("BANNER_APPROVAL_MODE", "on").strip().lower() not in ("off", "false", "0", "no")
+
+
+def _vision_qa_mode() -> bool:
+    """Whether recomposed frames get a GPT-5.5 vision proof-read (verbatim copy
+    check) with ONE automatic re-roll on failure. Recomps run unattended after
+    approval — this is the only text check between the approved master and the
+    export. Env kill-switch BANNER_VISION_QA (default ON)."""
+    import os
+    return os.environ.get("BANNER_VISION_QA", "on").strip().lower() not in ("off", "false", "0", "no")
 
 
 def _now() -> str:
@@ -93,6 +103,7 @@ class FrameResult:
     gen_ms: Optional[int] = None
     bytes: int = 0
     png_path: Optional[str] = None
+    web_path: Optional[str] = None     # ad-network weight-capped sidecar (≤150 KB), when produced
     error: Optional[str] = None
     prompt: Optional[str] = None       # the exact prompt sent to the image model
     prompt_override: Optional[str] = None  # user-edited prompt; when set, used VERBATIM instead of building one
@@ -115,6 +126,7 @@ class Run:
     api_key: str = ""                  # never serialized
     error: Optional[str] = None
     created_by: str = ""               # email of the user who started the run (shown in the gallery)
+    brand_id: Optional[str] = None     # brand this run was generated for (drives style memory)
     style: str = ""                    # campaign look/vibe (fed to the director)
     art_tags: List[dict] = field(default_factory=list)  # Art-Director selections [{label,value}] — display-only
     effort: Optional[str] = None       # per-run GPT-5.5 thinking effort (None -> admin default)
@@ -561,6 +573,16 @@ def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
                 concepts[ck]["creative_brief"] = _synthesize_brief(c.subtitle or "", style)
     # Resolve style-only reference images to existing local paths (drop unknowns).
     ref_paths = references_store.resolve_paths(req.references)
+    # Brand style memory: when the user supplied no references of their own, feed
+    # the director the brand's most recent APPROVED masters as style anchors — so
+    # "BrandX always looks like BrandX" without re-uploading references each run.
+    brand_id = (getattr(req, "brand_id", None) or "").strip() or None
+    if brand_id and not ref_paths:
+        memory = _brand_memory_refs(brand_id)
+        if memory:
+            ref_paths = memory
+            logo_status.setdefault(
+                "brand_memory", f"{len(memory)} approved master(s) attached as style refs")
     # Art-Director selections → short display tags (capped + trimmed; never trusted
     # for generation, only shown in the detail view).
     art_tags = [
@@ -572,7 +594,7 @@ def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
         sizes=sizes, concepts=concepts, frames_plan=plan,
         frame_results=frame_results, dir=run_dir,
         created_at=now, updated_at=now, api_key=api_key,
-        created_by=created_by,
+        created_by=created_by, brand_id=brand_id,
         style=style, effort=req.effort, cards=cards, art_tags=art_tags,
         references=ref_paths, logo_raster=logo_raster, logo_corner=logo_corner,
         logo=logo_status,
@@ -586,6 +608,32 @@ def create_and_start_run(req: RunRequest, concepts: Dict[str, dict],
 # ---------------------------------------------------------------------------
 # Post-generation QA — cheap, deterministic checks that the output is sane
 # ---------------------------------------------------------------------------
+def _brand_memory_refs(brand_id: str, limit: int = 2) -> List[str]:
+    """The brand's most recent APPROVED master PNGs (existing files only) —
+    style-memory references handed to the creative director exactly like
+    user-uploaded style refs. Newest runs first; capped so the director's
+    vision context stays small."""
+    out: List[str] = []
+    try:
+        for r in sorted(STORE.all(), key=lambda x: x.created_at, reverse=True):
+            if (r.brand_id or "") != brand_id:
+                continue
+            for ck, st in (r.approval_state or {}).items():
+                if st != "approved":
+                    continue
+                fr = r.frame_results.get(_label(ck, engine.MASTER_SIZE))
+                if fr is None or fr.status != "ok" or not fr.png_path:
+                    continue
+                p = Path(fr.png_path)
+                if p.is_file():
+                    out.append(str(p))
+                    if len(out) >= limit:
+                        return out
+    except Exception:  # noqa: BLE001 — style memory is a bonus, never a blocker
+        pass
+    return out
+
+
 def _qa_check(png_bytes: bytes, width: int, height: int,
               master_png_path: Optional[str] = None) -> Optional[str]:
     """Return a short QA warning for a freshly-generated banner, or None if it
@@ -621,10 +669,38 @@ def _qa_check(png_bytes: bytes, width: int, height: int,
         return None
 
 
+def _vision_qa_frame(run: Run, frame: dict, png: bytes) -> Optional[str]:
+    """GPT-5.5 vision proof-read of a recomposed frame: every copy string the
+    prompt demanded verbatim (title, subtitle, CTA) must read EXACTLY on the
+    banner. Returns a short failure description, or None when it passes / is
+    unavailable. Reuses banner_edit's proofreader; never raises."""
+    try:
+        from .banner_edit import _qa_candidate  # lazy — banner_edit imports runner
+        base = run.concepts.get(frame["concept"], {})
+        present = [t for t in (base.get("title"),) if t]
+        subtitle = (run.cards.get(frame["concept"], {}).get("subtitle") or "").strip()
+        if subtitle and not bprompts._is_strip(frame["size"]):
+            present.append(subtitle)
+        cta = (base.get("cta") or "").strip()
+        if cta:
+            present.append(bprompts.normalize_cta(cta))
+        if not present or not run.api_key:
+            return None
+        verdict = _qa_candidate(run.api_key, png, present, [])
+        if verdict.get("qa_ok") is False:
+            read = (verdict.get("qa_read") or "").strip()
+            return f"copy mismatch — image reads: {read[:200]}" if read else "copy mismatch"
+        return None
+    except Exception:  # noqa: BLE001 — vision QA must never break a frame
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Execution
 # ---------------------------------------------------------------------------
-def _gen_one_frame(run: Run, frame: dict):
+def _gen_one_frame(run: Run, frame: dict, shared: Optional[dict] = None,
+                   shared_key=None, qa_feedback: Optional[str] = None,
+                   qa_retry: bool = False):
     fr = run.fr(frame["concept"], frame["size"])
     # Cancellation barrier: a frame still pending when cancel landed is left
     # untouched (status stays "pending"/marked cancelled) and never calls OpenAI.
@@ -667,6 +743,12 @@ def _gen_one_frame(run: Run, frame: dict):
             fr.status, fr.error = "prompt_failed", f"{type(e).__name__}: {e}"
             run.touch()
             return
+    if qa_feedback:
+        prompt += (
+            "\n\nPREVIOUS ATTEMPT FAILED PROOFREADING: "
+            f"{qa_feedback}. Render every copy string EXACTLY as specified above — "
+            "letter for letter, including diacritics and punctuation. Fix precisely this."
+        )
     fr.prompt = prompt  # surface the exact generation prompt in the viewer
 
     ok, reason = engine.check_moderation(concept)
@@ -714,7 +796,9 @@ def _gen_one_frame(run: Run, frame: dict):
     # those get their side margins OUTPAINTED (a second masked edits call that
     # continues the background for real; the render itself is pixel-composited
     # back untouched). If the outpaint fails for any reason, fall back to the
-    # old blur-pad so the export always completes.
+    # edge-pad so the export always completes — but SURFACE it as a QA note so
+    # a padded frame is never mistaken for a painted one.
+    outpaint_note = None
     try:
         _w, _h = (int(x) for x in frame["size"].split("x"))
         reshaped = None
@@ -727,12 +811,47 @@ def _gen_one_frame(run: Run, frame: dict):
                         timeout=settings.OPENAI_IMAGE_TIMEOUT,
                         max_retries=settings.OPENAI_IMAGE_MAX_RETRIES,
                     )
-            except Exception as e:  # noqa: BLE001 — blur-pad fallback below
-                log.warning("outpaint failed for %s (%s: %s) - falling back to blur-pad",
+            except Exception as e:  # noqa: BLE001 — edge-pad fallback below
+                outpaint_note = ("background extension failed "
+                                 f"({type(e).__name__}) — exported with padded margins")
+                log.warning("outpaint failed for %s (%s: %s) - falling back to edge-pad",
                             frame["size"], type(e).__name__, e)
         png = reshaped or reshape.fit_export(png, _w, _h)
     except Exception:  # noqa: BLE001 — never drop a frame over reshaping
         pass
+
+    final_png = _finish_frame(run, frame, fr, png, master_png=master_png,
+                              outpaint_note=outpaint_note, t0=t0,
+                              shared=shared, shared_key=shared_key)
+
+    # Vision proof-read (recomps only — masters pass through human approval).
+    # One automatic re-roll with the failure fed back into the prompt; the
+    # second attempt ships regardless, annotated if it still reads wrong.
+    if (final_png is not None and mode == "edit" and not override
+            and _vision_qa_mode()):
+        fail = _vision_qa_frame(run, frame, final_png)
+        if fail and not qa_retry:
+            log.info("vision QA failed for %s/%s (%s) - re-rolling once",
+                     frame["concept"], frame["size"], fail)
+            _gen_one_frame(run, frame, shared=shared, shared_key=shared_key,
+                           qa_feedback=fail, qa_retry=True)
+            return
+        if fail:
+            note = f"vision QA: {fail} (after retry)"
+            fr.qa = f"{note} · {fr.qa}" if fr.qa else note
+            run.touch()
+
+
+def _finish_frame(run: Run, frame: dict, fr, png: bytes, *, master_png,
+                  outpaint_note, t0, shared: Optional[dict] = None,
+                  shared_key=None) -> Optional[bytes]:
+    """Common export tail for a frame whose final-size PNG is in hand: stash the
+    pre-logo bytes for same-aspect followers, composite the logo, write to disk,
+    produce the ad-network web variant, and run the cheap QA."""
+    # Pre-logo bytes are what followers derive from (the logo is re-applied
+    # per size so its clamps track the absolute pixel box).
+    if shared is not None and shared_key is not None:
+        shared[shared_key] = png
 
     # Composite the brand logo (raster only) into the chosen corner. Best-effort:
     # a failure leaves the un-overlaid banner rather than dropping the frame.
@@ -749,23 +868,147 @@ def _gen_one_frame(run: Run, frame: dict):
     except Exception as e:  # noqa: BLE001 — a disk failure must FAIL the frame, never strand it as "running"
         fr.status, fr.error = "gen_failed", f"disk write failed: {type(e).__name__}: {e}"
         run.touch()
-        return
+        return None
+
+    # Display-slot weight cap (~150 KB): write a compliant "web" sidecar next to
+    # the archival PNG so trafficking never needs a manual re-compress.
+    weight_note = None
+    try:
+        variant, ext, weight_note = export_weight.web_variant(png, frame["size"])
+        if variant is not None:
+            web_path = out_png.with_suffix(f".web.{ext}")
+            web_path.write_bytes(variant)
+            fr.web_path = str(web_path)
+    except Exception:  # noqa: BLE001 — the web variant must never fail a frame
+        pass
+
     # Cheap post-gen QA — surface (don't fail) blank/wrong-size/palette-drift tiles
     # so the recompose stage isn't a black box between the master and the export.
     try:
         _w, _h = (int(x) for x in frame["size"].split("x"))
-        fr.qa = _qa_check(png, _w, _h, master_png if mode == "edit" else None)
+        fr.qa = _qa_check(png, _w, _h, master_png)
     except Exception:  # noqa: BLE001
         fr.qa = None
+    for note in (outpaint_note, weight_note):
+        if note:
+            fr.qa = f"{note} · {fr.qa}" if fr.qa else note
     fr.status, fr.gen_ms, fr.bytes, fr.png_path = "ok", int((time.time() - t0) * 1000), len(png), str(out_png)
     run.touch()
+    return png
+
+
+def _derive_frame(run: Run, frame: dict, leader_frame: dict, prelogo_png: bytes):
+    """Produce a follower frame from its group leader's pre-logo export: same
+    concept, same render aspect — so the pixels are a pure LANCZOS resample of
+    the leader (which is the LARGEST size of the group; followers only ever
+    downscale). No API call. The logo, web variant and QA run per size."""
+    fr = run.fr(frame["concept"], frame["size"])
+    if run.cancelled:
+        if fr.status == "pending":
+            fr.status, fr.error = "cancelled", "run cancelled"
+        return
+    fr.status = "running"
+    run.touch()
+    t0 = time.time()
+    try:
+        import io as _io
+        from PIL import Image
+        _w, _h = (int(x) for x in frame["size"].split("x"))
+        img = Image.open(_io.BytesIO(prelogo_png)).convert("RGB")
+        if img.size != (_w, _h):
+            img = img.resize((_w, _h), Image.LANCZOS)
+        buf = _io.BytesIO()
+        img.save(buf, format="PNG")
+        png = buf.getvalue()
+    except Exception as e:  # noqa: BLE001
+        fr.status, fr.error = "gen_failed", f"derive failed: {type(e).__name__}: {e}"
+        run.touch()
+        return
+    # Surface the leader's prompt so the viewer shows what produced these pixels.
+    fr.prompt = run.fr(leader_frame["concept"], leader_frame["size"]).prompt
+    try:
+        master_png = str(_frame_png_path(run.dir, frame["concept"], engine.MASTER_SIZE))
+    except Exception:  # noqa: BLE001
+        master_png = None
+    _finish_frame(run, frame, fr, png, master_png=master_png, outpaint_note=None, t0=t0)
+
+
+def _aspect_bucket(size: str) -> Optional[float]:
+    try:
+        w, h = (int(x) for x in size.lower().split("x"))
+        return round(w / h, 3)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _dedup_plan(run: Run, frames: List[dict]):
+    """Split a phase into API-bearing leaders and derivable followers.
+
+    Recomp frames that share (concept, openai render size, exact target aspect)
+    are visually identical except for output pixels — e.g. the whole 4:5 family
+    960x1200 / 1080x1350 / 1200x1500 / 1440x1800 at aspect 0.800 — so ONE
+    render (+ outpaint) serves the group and the rest are pure resamples. The
+    LARGEST size leads so followers only downscale. Frames with a user prompt
+    override, and all masters, stay solo. Returns (leaders, followers) where
+    leaders is [(frame, shared_key|None)] and followers is
+    [(frame, leader_frame, shared_key)].
+    """
+    groups: dict = {}
+    solo: List[dict] = []
+    for f in frames:
+        fr = run.fr(f["concept"], f["size"])
+        ar = _aspect_bucket(f["size"])
+        if f["mode"] != "edit" or ar is None or (fr.prompt_override or "").strip():
+            solo.append(f)
+            continue
+        groups.setdefault((f["concept"], f["openai_size"], ar), []).append(f)
+
+    leaders: List[tuple] = [(f, None) for f in solo]
+    followers: List[tuple] = []
+    for key, members in groups.items():
+        members.sort(key=lambda f: -_area(f["size"]))
+        leader = members[0]
+        leaders.append((leader, key if len(members) > 1 else None))
+        for m in members[1:]:
+            followers.append((m, leader, key))
+    return leaders, followers
+
+
+def _area(size: str) -> int:
+    try:
+        w, h = (int(x) for x in size.lower().split("x"))
+        return w * h
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 def _run_phase(run: Run, frames: List[dict]):
     if not frames:
         return
+    # Wave 1 — every frame that needs the image API (group leaders + solos).
+    # Wave 2 — followers derived from their leader's pre-logo export; a follower
+    # whose leader failed falls back to its own full generation, so dedup can
+    # only ever save calls, never lose a frame.
+    leaders, followers = _dedup_plan(run, frames)
+    shared: dict = {}
     with ThreadPoolExecutor(max_workers=settings.OPENAI_CONCURRENCY) as ex:
-        list(ex.map(lambda f: _gen_one_frame(run, f), frames))
+        list(ex.map(lambda item: _gen_one_frame(run, item[0],
+                                                shared=shared, shared_key=item[1]),
+                    leaders))
+    fallback: List[dict] = []
+    derivable: List[tuple] = []
+    for frame, leader, key in followers:
+        if shared.get(key):
+            derivable.append((frame, leader, key))
+        else:
+            fallback.append(frame)
+    if derivable:
+        with ThreadPoolExecutor(max_workers=settings.OPENAI_CONCURRENCY) as ex:
+            list(ex.map(lambda it: _derive_frame(run, it[0], it[1], shared[it[2]]),
+                        derivable))
+    if fallback:
+        with ThreadPoolExecutor(max_workers=settings.OPENAI_CONCURRENCY) as ex:
+            list(ex.map(lambda f: _gen_one_frame(run, f), fallback))
 
 
 def _finalize(run: Run) -> str:
@@ -1507,6 +1750,9 @@ def run_to_dict(run: Run) -> dict:
                 "error": fr.error, "qa": fr.qa,
                 "url": (f"/api/tools/{TOOL_ID}/runs/{run.id}/banners/{label}.png"
                         if fr.status == "ok" else None),
+                "web_url": (f"/api/tools/{TOOL_ID}/runs/{run.id}/banners/{label}.web"
+                            f"{Path(fr.web_path).suffix}"
+                            if fr.status == "ok" and fr.web_path else None),
             })
         return {
             "run_id": run.id, "status": run.status, "error": run.error,
@@ -1517,6 +1763,7 @@ def run_to_dict(run: Run) -> dict:
             "counts": _counts(run),
             "created_at": run.created_at, "updated_at": run.updated_at,
             "created_by": run.created_by,
+            "brand_id": run.brand_id,
             "intent": run.intent,
             "intent_meta": run.intent_meta,
             "director": run.director,
@@ -1599,6 +1846,8 @@ def delete_frame(run: Run, label: str) -> bool:
         return False
     try:
         (run.dir / f"{label}.png").unlink(missing_ok=True)
+        for _ext in ("jpg", "png"):
+            (run.dir / f"{label}.web.{_ext}").unlink(missing_ok=True)
     except OSError:
         pass
     run.frames_plan = [f for f in run.frames_plan if _label(f["concept"], f["size"]) != label]
@@ -1640,11 +1889,18 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
         # clean "unavailable" placeholder instead.
         if status == "ok" and not png.is_file():
             status, error = "missing", "image file is no longer on disk"
+        # Restore the web sidecar only if its file survived the restart.
+        web_path = None
+        for _ext in ("jpg", "png"):
+            _w = run_dir / f"{_label(ck, size)}.web.{_ext}"
+            if _w.is_file():
+                web_path = str(_w)
+                break
         frame_results[_label(ck, size)] = FrameResult(
             concept=ck, size=size, openai_size=openai_size, mode=mode, phase=phase,
             status=status, attempts=b.get("attempts", 0),
             gen_ms=b.get("gen_ms"), bytes=b.get("bytes", 0),
-            png_path=str(png), error=error, prompt=b.get("prompt"),
+            png_path=str(png), web_path=web_path, error=error, prompt=b.get("prompt"),
             prompt_override=b.get("prompt_override"), qa=b.get("qa"),
         )
         concepts.setdefault(ck, {"title": b.get("title", "")})
@@ -1672,6 +1928,7 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
         art_tags=d.get("art_tags") or [],
         created_at=d.get("created_at", now), updated_at=d.get("updated_at", now),
         created_by=d.get("created_by", ""),
+        brand_id=d.get("brand_id"),
         intent=d.get("intent", "general_ad"), intent_meta=d.get("intent_meta") or {},
         director=d.get("director") or {}, logo=d.get("logo") or {},
         approval_state=d.get("approval_state") or {},

@@ -217,6 +217,28 @@ def build_router() -> APIRouter:
             headers={"Content-Disposition": f'{disposition}; filename="{fname}"'},
         )
 
+    @router.get("/runs/{run_id}/banners/{label}.web.{ext}")
+    def get_banner_web(run_id: str, label: str, ext: str, download: int = 0, name: str = ""):
+        """The ad-network weight-capped sidecar (≤150 KB) for display slots — same
+        pixels as the PNG, re-encoded to fit uploaded-display-creative limits."""
+        if ext not in ("png", "jpg"):
+            raise HTTPException(status_code=404, detail="unknown variant")
+        run = runner.STORE.get(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        if label not in {runner._label(f["concept"], f["size"]) for f in run.frames_plan}:
+            raise HTTPException(status_code=404, detail="unknown banner")
+        path = run.dir / f"{label}.web.{ext}"
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="no web variant for this banner")
+        disposition = "attachment" if download else "inline"
+        concept, _, size = label.partition("__")
+        fname = (_slug(name) or runner.export_name(run, concept, size)) + f"-web.{ext}"
+        return FileResponse(
+            str(path), media_type="image/jpeg" if ext == "jpg" else "image/png",
+            headers={"Content-Disposition": f'{disposition}; filename="{fname}"'},
+        )
+
     @router.delete("/runs/{run_id}/banners/{label}.png", status_code=204)
     def delete_banner(run_id: str, label: str, user: dict = Depends(require_user)):
         """Delete one banner for EVERYONE — removes the PNG from the disk and drops

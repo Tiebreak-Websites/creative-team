@@ -322,6 +322,9 @@ export function OutputPane({
           createdBy: g.createdBy,
           src,
           downloadHref: `${src}?download=1&name=${encodeURIComponent(fileName)}`,
+          webHref: b.web_url
+            ? `${assetUrl(b.web_url)}?download=1&name=${encodeURIComponent(fileName)}`
+            : undefined,
           size: b.size,
           version: g.number,
           title: g.title,
