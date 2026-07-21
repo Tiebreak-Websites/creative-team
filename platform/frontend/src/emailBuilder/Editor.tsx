@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, Copy, GripVertical,
-  Image as ImageIcon, Loader2, Monitor, Moon, Plus, Smartphone, Sun, Upload, X,
+  Image as ImageIcon, Loader2, Monitor, Moon, Plus, Smartphone, Sparkles, Sun, Upload, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,7 +26,7 @@ import { flagUrl } from '@/lib/flags'
 import type { Language } from '@/lpBuilder/api'
 import type { Brand } from '@/bannerBuilder/brandsApi'
 import {
-  SIZE_LIMIT, SIZE_WARN, composeEmail, saveCampaign, uploadEmailAsset,
+  SIZE_LIMIT, SIZE_WARN, composeEmail, generateHeroImage, saveCampaign, uploadEmailAsset,
   type BlockDef, type BlockInstance, type Campaign,
 } from './api'
 
@@ -512,6 +512,14 @@ export function Editor({
                           <BlockFields
                             block={block}
                             inst={inst}
+                            ai={{
+                              brandId: campaign.brand_id,
+                              headline: (() => {
+                                const h = campaign.sections.find((x) => x.block_key === 'em-headline')
+                                return h?.texts?.headline
+                                  ?? blockMap['em-headline']?.texts?.en?.headline ?? ''
+                              })(),
+                            }}
                             onText={(k, v) => setField(inst.iid, 'texts', k, v)}
                             onLink={(k, v) => setField(inst.iid, 'links', k, v)}
                             onImage={(k, v) => setField(inst.iid, 'images', k, v)}
@@ -629,10 +637,13 @@ function RowAction({
 }
 
 function BlockFields({
-  block, inst, onText, onLink, onImage, onError,
+  block, inst, ai, onText, onLink, onImage, onError,
 }: {
   block: BlockDef
   inst: BlockInstance
+  /** Context the AI hero generator needs: which brand styles it, and the
+   *  campaign's current headline as the with-text default. */
+  ai: { brandId: string; headline: string }
   onText: (k: string, v: string) => void
   onLink: (k: string, v: string) => void
   onImage: (k: string, v: string) => void
@@ -706,6 +717,9 @@ function BlockFields({
                   : <Upload className="h-3.5 w-3.5" />}
                 <span className="truncate">{val ? 'Replace image' : 'Upload image'}</span>
               </button>
+              {f.key === 'hero' && (
+                <HeroGenerator ai={ai} onDone={(id) => onImage(f.key, id)} onError={onError} />
+              )}
             </div>
           )
         }
@@ -748,6 +762,114 @@ function BlockFields({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+
+/** The AI hero generator — the banner engine's shape scaled to one image:
+ *  a brief, a with/without-text switch, an art-director pass server-side,
+ *  brand styling from Settings. */
+function HeroGenerator({
+  ai, onDone, onError,
+}: {
+  ai: { brandId: string; headline: string }
+  onDone: (assetId: string) => void
+  onError: (m: string) => void
+}) {
+  const [brief, setBrief] = useState('')
+  const [withText, setWithText] = useState(false)
+  const [headline, setHeadline] = useState(ai.headline)
+  const [subtitle, setSubtitle] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [direction, setDirection] = useState<string | null>(null)
+
+  return (
+    <div className="mt-2 rounded-lg border border-border bg-secondary/40 p-2">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1 text-[11px] font-semibold">
+          <Sparkles className="h-3 w-3 text-primary" /> Generate with AI
+        </span>
+        <span className="flex items-center rounded-md border border-border bg-card p-0.5">
+          {([['without', 'No text'], ['with', 'With text']] as const).map(([m, l]) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setWithText(m === 'with')}
+              aria-pressed={withText === (m === 'with')}
+              className={cn('rounded px-1.5 py-0.5 text-[10px] transition-colors',
+                withText === (m === 'with')
+                  ? 'bg-secondary font-medium text-foreground'
+                  : 'text-muted-foreground hover:text-foreground')}
+            >
+              {l}
+            </button>
+          ))}
+        </span>
+      </div>
+
+      {withText && (
+        <div className="mt-1.5 space-y-1.5">
+          <Input
+            value={headline}
+            onChange={(e) => setHeadline(e.target.value)}
+            className="h-8 text-xs"
+            placeholder="Headline painted into the image"
+            aria-label="Image headline"
+          />
+          <Input
+            value={subtitle}
+            onChange={(e) => setSubtitle(e.target.value)}
+            className="h-8 text-xs"
+            placeholder="Subtitle (optional)"
+            aria-label="Image subtitle"
+          />
+        </div>
+      )}
+
+      <Textarea
+        value={brief}
+        onChange={(e) => setBrief(e.target.value)}
+        rows={2}
+        className="mt-1.5 text-xs"
+        placeholder="What should the image show? e.g. a confident beginner at a laptop, upbeat, daylight"
+        aria-label="Image brief"
+      />
+
+      <Button
+        size="sm"
+        className="mt-1.5 w-full"
+        disabled={busy || (withText && !headline.trim())}
+        onClick={() => {
+          setBusy(true)
+          setDirection(null)
+          generateHeroImage({
+            brand_id: ai.brandId,
+            brief: brief.trim(),
+            with_text: withText,
+            headline: headline.trim(),
+            subtitle: subtitle.trim(),
+          })
+            .then((r) => {
+              onDone(r.id)
+              setDirection(r.direction)
+            })
+            .catch((e) => onError(e.message))
+            .finally(() => setBusy(false))
+        }}
+      >
+        {busy ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating…</>
+          : <><Sparkles className="h-3.5 w-3.5" /> Generate hero</>}
+      </Button>
+      <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+        Styled from the brand's colours and fonts in Settings.
+      </p>
+
+      {direction && (
+        <p className="mt-1.5 rounded-md bg-card px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
+          <span className="font-semibold">Art direction used:</span> {direction}
+        </p>
+      )}
     </div>
   )
 }

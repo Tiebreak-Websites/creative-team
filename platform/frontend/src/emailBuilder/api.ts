@@ -204,6 +204,28 @@ export async function campaignThumb(id: string): Promise<string> {
   return (await r.json()).html ?? ''
 }
 
+/** AI hero image — art-director pass + image model, styled from the brand's
+ *  Settings. `direction` is the art direction actually used, for transparency. */
+export async function generateHeroImage(payload: {
+  brand_id: string
+  brief: string
+  with_text: boolean
+  headline?: string
+  subtitle?: string
+}): Promise<{ id: string; url: string; direction: string }> {
+  const r = await fetch(`${EB}/hero/generate`, {
+    method: 'POST', headers: j, credentials: 'include', body: JSON.stringify(payload),
+  })
+  if (!r.ok) {
+    const body = await asJson(r)
+    const detail = body.detail
+    if (r.status === 424) throw new Error('OPENAI_API_KEY is not configured on this server.')
+    throw new Error(
+      (typeof detail === 'string' && detail) || 'Could not generate the image.')
+  }
+  return r.json()
+}
+
 export async function uploadEmailAsset(file: File): Promise<{ id: string; url: string }> {
   const fd = new FormData()
   fd.append('file', file)

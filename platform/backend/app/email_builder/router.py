@@ -140,6 +140,17 @@ class CampaignCreate(BaseModel):
     layout: str = ""
 
 
+class HeroGen(BaseModel):
+    # Module level, not nested in the router builder: `from __future__ import
+    # annotations` defers resolution to module scope, and a function-local
+    # model silently degrades into a QUERY parameter there.
+    brand_id: str = ""
+    brief: str = ""
+    with_text: bool = False
+    headline: str = ""
+    subtitle: str = ""
+
+
 class CampaignPatch(BaseModel):
     name: Optional[str] = None
     subject: Optional[str] = None
@@ -361,6 +372,31 @@ def build_email_builder_router() -> APIRouter:
         out = export.compose_email(_with_brand_logo(c, entity), blocks_map, _asset_url, entity)
         return {"html": out["html"]}
 
+    @router.post("/hero/generate")
+    def hero_generate(payload: HeroGen, _user: dict = Depends(require_user)):
+        """AI hero image: art-director pass + gpt-image-2, brand styling from
+        Settings. Same secret discipline as the banner engine — a missing key
+        is 424 with the machine-readable field, not a 500."""
+        from . import hero_ai
+        entity = _entity_for({"brand_id": payload.brand_id})
+        try:
+            out = hero_ai.generate_hero(
+                entity=entity,
+                brief=(payload.brief or "").strip()[:600],
+                with_text=bool(payload.with_text),
+                headline=(payload.headline or "").strip()[:120],
+                subtitle=(payload.subtitle or "").strip()[:160],
+            )
+        except LookupError:
+            raise HTTPException(424, detail={"missing_secrets": ["OPENAI_API_KEY"],
+                                             "error": "OPENAI_API_KEY is not configured."})
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
+        return {"id": out["id"], "url": _asset_url(out["id"]),
+                "direction": out["direction"]}
+
     # ------------------------------------------------------------ assets
     @router.post("/assets")
     async def upload_asset(file: UploadFile = File(...), _user: dict = Depends(require_user)):
@@ -544,7 +580,8 @@ def build_public_email_router() -> APIRouter:
             path.relative_to(core.ASSETS_DIR.resolve())
         except Exception:
             raise HTTPException(404, "Not found.")
-        media = {".png": "image/png", ".svg": "image/svg+xml"}.get(path.suffix.lower())
+        media = {".png": "image/png", ".svg": "image/svg+xml",
+                 ".jpg": "image/jpeg"}.get(path.suffix.lower())
         if not path.is_file() or not media:
             raise HTTPException(404, "Not found.")
         return Response(
