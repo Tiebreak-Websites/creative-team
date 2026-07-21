@@ -84,7 +84,13 @@ def _ensure_placeholder(name: str) -> str:
     """
     aid = f"placeholder-{name}.png"
     path = core.ASSETS_DIR / aid
-    if path.exists():
+    from . import storage as supa
+    if supa.enabled():
+        if path.exists():
+            url = supa.upload(aid, path.read_bytes())
+            if url:
+                return url
+    elif path.exists():
         return aid
     from PIL import Image, ImageDraw
 
@@ -101,7 +107,8 @@ def _ensure_placeholder(name: str) -> str:
     d.polygon([(x0 + 112, y0 + fh - 20), (x0 + 166, y0 + 88), (x0 + fw - 16, y0 + fh - 20)], fill=grey)
     core.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     im.save(path, "PNG", optimize=True)
-    return aid
+    url = supa.upload(aid, path.read_bytes())
+    return url or aid
 
 
 def _asset_url(raw: str) -> str:
@@ -466,6 +473,12 @@ def _store_asset_bytes(data: bytes) -> str:
         im.save(buf, format="JPEG", quality=85, optimize=True, progressive=True)
         ext = ".jpg"
     aid = core.new_asset_id() + ext
+    # Supabase first (returns the full CDN URL as the stored value); the
+    # Render disk stays as the fallback and the home of pre-migration assets.
+    from . import storage as supa
+    url = supa.upload(aid, buf.getvalue())
+    if url:
+        return url
     core.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     (core.ASSETS_DIR / aid).write_bytes(buf.getvalue())
     return aid
@@ -518,8 +531,9 @@ def _materialise_logo(raw: str) -> Optional[str]:
 
     aid = "logo-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24] + ".png"
     path = core.ASSETS_DIR / aid
+    from . import storage as supa
     if path.exists():
-        return aid
+        return supa.upload(aid, path.read_bytes()) or aid
 
     png: Optional[bytes] = None
     if raw.startswith("<svg"):
@@ -537,7 +551,8 @@ def _materialise_logo(raw: str) -> Optional[str]:
             if not path_svg.exists():
                 core.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
                 path_svg.write_text(raw, encoding="utf-8")
-            return aid_svg
+            from . import storage as supa
+            return supa.upload(aid_svg, path_svg.read_bytes()) or aid_svg
     elif raw.startswith("data:"):
         try:
             head, _, b64 = raw.partition(",")
@@ -551,7 +566,7 @@ def _materialise_logo(raw: str) -> Optional[str]:
 
     core.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     path.write_bytes(png)
-    return aid
+    return supa.upload(aid, png) or aid
 
 
 def _normalise_logo_png(data: bytes) -> Optional[bytes]:

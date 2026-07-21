@@ -216,6 +216,10 @@ def _finish(png: bytes) -> Tuple[str, int]:
     buf = io.BytesIO()
     im.save(buf, format="JPEG", quality=85, optimize=True, progressive=True)
     aid = uuid.uuid4().hex + ".jpg"
+    from . import storage as supa
+    url = supa.upload(aid, buf.getvalue())
+    if url:
+        return url, buf.getbuffer().nbytes
     core.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
     (core.ASSETS_DIR / aid).write_bytes(buf.getvalue())
     return aid, buf.getbuffer().nbytes
