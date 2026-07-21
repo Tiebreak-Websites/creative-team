@@ -7,8 +7,8 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  ArrowLeft, CalendarClock, Check, Copy, FilePlus2, Languages, Link2, Loader2,
-  Mail, Search, Trash2,
+  ArrowLeft, CalendarClock, Check, ChevronDown, ChevronRight, Copy, FilePlus2,
+  Languages, Link2, Loader2, Mail, Search, Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,12 +19,21 @@ import { FolderGrid, type FolderItem } from '@/components/FolderGrid'
 import { Toggle } from '@/components/Toggle'
 import type { Language } from '@/lpBuilder/api'
 import {
-  ENTITY_KINDS, KIND_HINT, KIND_LABEL, kindOf, type Brand,
+  KIND_HINT, KIND_LABEL, kindOf, type Brand, type EntityKind,
 } from '@/bannerBuilder/brandsApi'
 import {
   campaignThumb, createVariants, deleteCampaign, setCampaignActive,
   type CampaignSummary, type MondayPull,
 } from './api'
+
+/** CRM shelf order — deliberately different from the global ENTITY_KINDS.
+ *  The team works brokers, academies and prop firms actively; white labels
+ *  are parked, so they sit last and start collapsed. */
+const CRM_KIND_ORDER: EntityKind[] = ['broker', 'academy', 'prop', 'whitelabel']
+
+/** Kinds that render collapsed by default — not in active use, kept out of
+ *  the way but one click from view. */
+const COLLAPSED_KINDS = new Set<EntityKind>(['whitelabel'])
 
 /** Tiny inline metadata chip — shared by the Monday strips here and the
  *  create dialog's task rows. */
@@ -81,6 +90,9 @@ export function Dashboard({
   const [addingTo, setAddingTo] = useState<CampaignSummary | null>(null)
   /** Task id mid-creation, so its Start button shows a spinner. */
   const [starting, setStarting] = useState<string | null>(null)
+  /** Which kind sections the user has expanded past their default state.
+   *  White label starts collapsed (parked); a click toggles it. */
+  const [openKinds, setOpenKinds] = useState<Set<EntityKind>>(new Set())
 
   const brandById = useMemo(
     () => Object.fromEntries(brands.map((b) => [b.id, b])) as Record<string, Brand>,
@@ -103,7 +115,7 @@ export function Dashboard({
   // own mail, so it owns its own shelf space.
   const buckets = useMemo(() => {
     const list = campaigns ?? []
-    return ENTITY_KINDS.map((kind) => {
+    return CRM_KIND_ORDER.map((kind) => {
       const items: FolderItem[] = brands
         .filter((b) => kindOf(b) === kind)
         .map((b) => {
@@ -368,17 +380,50 @@ export function Dashboard({
       )}
 
       <div className="space-y-6">
-        {buckets.map(({ kind, items }) => (
-          <section key={kind}>
-            <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
-              <h2 className="font-display text-sm font-semibold">{KIND_LABEL[kind]}</h2>
-              <span className="text-[11px] tabular-nums text-muted-foreground">{items.length}</span>
-              <span className="text-[11px] text-muted-foreground">{KIND_HINT[kind]}</span>
-            </div>
-            <FolderGrid folders={items} dark={dark} noun="email"
-                        onOpen={(id) => setFolder(id)} />
-          </section>
-        ))}
+        {buckets.map(({ kind, items }) => {
+          // White label defaults collapsed; toggling flips it. Any other kind
+          // is always open (COLLAPSED_KINDS is empty of them).
+          const startsCollapsed = COLLAPSED_KINDS.has(kind)
+          const open = startsCollapsed ? openKinds.has(kind) : true
+          const toggle = () =>
+            setOpenKinds((cur) => {
+              const next = new Set(cur)
+              next.has(kind) ? next.delete(kind) : next.add(kind)
+              return next
+            })
+          return (
+            <section key={kind}>
+              <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
+                {startsCollapsed ? (
+                  <button
+                    type="button"
+                    onClick={toggle}
+                    aria-expanded={open}
+                    className="group -ml-1 flex items-center gap-1 rounded px-1 py-0.5 hover:bg-secondary/60"
+                  >
+                    {open
+                      ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                      : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <h2 className="font-display text-sm font-semibold">{KIND_LABEL[kind]}</h2>
+                    <span className="text-[11px] tabular-nums text-muted-foreground">{items.length}</span>
+                  </button>
+                ) : (
+                  <>
+                    <h2 className="font-display text-sm font-semibold">{KIND_LABEL[kind]}</h2>
+                    <span className="text-[11px] tabular-nums text-muted-foreground">{items.length}</span>
+                  </>
+                )}
+                <span className="text-[11px] text-muted-foreground">
+                  {startsCollapsed && !open ? 'Not in active use — click to show.' : KIND_HINT[kind]}
+                </span>
+              </div>
+              {open && (
+                <FolderGrid folders={items} dark={dark} noun="email"
+                            onOpen={(id) => setFolder(id)} />
+              )}
+            </section>
+          )
+        })}
 
         {orphans.length > 0 && (
           <section>
