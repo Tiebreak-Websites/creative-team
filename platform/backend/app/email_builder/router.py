@@ -246,7 +246,24 @@ def build_email_builder_router() -> APIRouter:
                 if k in patch:
                     c[k] = str(patch[k]).strip()[:200]
             if "active" in patch:
+                was_active = bool(c.get("active"))
                 c["active"] = bool(patch["active"])
+                # Approval is the "design is final" moment — squeeze the
+                # campaign's images through Tinify exactly once, best effort.
+                # Never blocks the save: a compression hiccup is not a reason
+                # a finished campaign cannot ship.
+                if c["active"] and not was_active:
+                    try:
+                        from . import compress
+                        summary = compress.compress_campaign_assets(c)
+                        if summary["files"]:
+                            log.info("email-builder: tinified %d image(s), saved %d bytes (%s)",
+                                     summary["files"], summary["saved_bytes"], cid)
+                    except LookupError:
+                        log.info("email-builder: TINIFY_API_KEY not set — approval "
+                                 "compression skipped")
+                    except Exception:
+                        log.exception("email-builder: approval compression failed")
             if "tokens" in patch and isinstance(patch["tokens"], dict):
                 c["tokens"] = {str(k)[:24]: str(v)[:40] for k, v in patch["tokens"].items()}
             if "sections" in patch and isinstance(patch["sections"], list):
