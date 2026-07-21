@@ -300,6 +300,7 @@ a {{ text-decoration:none; }}
   .em-w {{ width:100% !important; }}
   .em-pad {{ padding-left:20px !important; padding-right:20px !important; }}
   .em-h1 {{ font-size:24px !important; line-height:31px !important; }}
+  .em-logo {{ width:130px !important; max-width:130px !important; }}
 }}
 </style>
 </head>
