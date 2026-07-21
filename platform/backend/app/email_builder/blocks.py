@@ -82,7 +82,7 @@ BUILTIN_BLOCKS: List[dict] = [
         "position": 110,
         "enabled": True,
         "html": (
-            f'<tr><td style="padding:36px {PAD_X}px 20px {PAD_X}px;'
+            f'<tr><td style="padding:8px {PAD_X}px 20px {PAD_X}px;'
             'background-color:{{card}};">'
             '<h1 data-em-text="headline" style="margin:0;padding:0;'
             f'font-family:{FONT};font-size:30px;line-height:38px;font-weight:800;'
@@ -113,7 +113,7 @@ BUILTIN_BLOCKS: List[dict] = [
         "position": 130,
         "enabled": True,
         "html": (
-            f'<tr><td style="padding:0 {PAD_X}px 28px {PAD_X}px;'
+            f'<tr><td style="padding:32px {PAD_X}px 24px {PAD_X}px;'
             'background-color:{{card}};">'
             f'<img data-em-img="hero" src="" alt="" width="{W - PAD_X * 2}" '
             f'style="display:block;border:0;outline:none;width:100%;'
@@ -283,14 +283,14 @@ BUILTIN_BLOCKS: List[dict] = [
     },
 ]
 
-# The order a new campaign is seeded in — the reference design: logo, headline,
-# CTA, hero, body, highlight, body, CTA, support, sign-off, footer. Blocks
+# The order a new campaign is seeded in: logo, hero, headline, CTA, body,
+# highlight, body, CTA, support, sign-off, footer. Blocks
 # repeat by design; each placement is its own instance with its own text.
 DEFAULT_LAYOUT = [
     "em-logo-header",
+    "em-hero",
     "em-headline",
     "em-cta",
-    "em-hero",
     "em-body",
     "em-highlight",
     "em-body",
