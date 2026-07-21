@@ -15,8 +15,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle, ArrowLeft, Check, ChevronDown, ChevronUp, Copy, GripVertical,
-  Image as ImageIcon, Link2, Loader2, Monitor, Moon, Plus, Smartphone, Sparkles,
-  Sun, Upload, X,
+  Image as ImageIcon, Link2, Loader2, Monitor, Moon, PenLine, Plus, Smartphone,
+  Sparkles, Sun, Upload, X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,8 +27,9 @@ import { flagUrl } from '@/lib/flags'
 import type { Language } from '@/lpBuilder/api'
 import type { Brand } from '@/bannerBuilder/brandsApi'
 import {
-  SIZE_LIMIT, SIZE_WARN, composeEmail, generateHeroImage, getHeroJob, listHeroJobs, saveCampaign, uploadEmailAsset,
-  type BlockDef, type BlockInstance, type Campaign,
+  SIZE_LIMIT, SIZE_WARN, composeEmail, generateCopy, generateHeroImage, getCopyJob,
+  getHeroJob, listCopyJobs, listHeroJobs, saveCampaign, uploadEmailAsset,
+  type BlockDef, type BlockInstance, type Campaign, type CopyResult,
 } from './api'
 
 /** Slot label: the block's own name for the key, else the key humanised. */
@@ -96,6 +97,11 @@ export function Editor({
   // HTML5 drag state: what is being dragged, and which row it hovers.
   const [dragIid, setDragIid] = useState<string | null>(null)
   const [overIid, setOverIid] = useState<string | null>(null)
+  // AI copy: the brief is lifted here so the hero generator can inherit it
+  // (the "approved content -> image" chain), and the subject A/B variants the
+  // last generation produced, offered as one-click swaps under the subject.
+  const [copyBrief, setCopyBrief] = useState('')
+  const [subjectVariants, setSubjectVariants] = useState<string[]>([])
   const frameRef = useRef<HTMLIFrameElement>(null)
 
   const blockMap = useMemo(
@@ -110,6 +116,28 @@ export function Editor({
   const mutate = (fn: (c: Campaign) => Campaign) => {
     setCampaign((cur) => fn(structuredClone(cur)))
     setDirty(true)
+  }
+
+  /** Apply generated copy locally. The server already wrote it into the
+   *  campaign; mirroring it here keeps this page (and its next autosave)
+   *  convergent with the server, exactly as the hero job does. */
+  const applyCopy = (r: CopyResult) => {
+    mutate((c) => {
+      if (r.subjects[0]) c.subject = r.subjects[0]
+      if (r.preheader) c.preheader = r.preheader
+      const byIid = new Map<string, Record<string, string>>()
+      for (const it of r.items) {
+        const m = byIid.get(it.iid) ?? {}
+        m[it.key] = it.value
+        byIid.set(it.iid, m)
+      }
+      for (const s of c.sections) {
+        const fields = byIid.get(s.iid)
+        if (fields) s.texts = { ...s.texts, ...fields }
+      }
+      return c
+    })
+    setSubjectVariants(r.subjects)
   }
 
   // Compose is debounced: it is a network round trip on every keystroke
@@ -392,6 +420,18 @@ export function Editor({
       <div className="flex min-h-0 flex-1">
         {/* ---------------------------------------------- structure panel */}
         <div className="w-[340px] shrink-0 overflow-y-auto border-r border-border p-3">
+          {/* Brief -> house copywriter -> the whole email's copy. Sits at the
+              top because it is where a campaign starts; the hero generator
+              chains off the copy it produces. */}
+          <CopyGenerator
+            campaignId={campaign.id}
+            brand={brands.find((b) => b.id === campaign.brand_id)}
+            brief={copyBrief}
+            onBrief={setCopyBrief}
+            onDone={applyCopy}
+            onError={onError}
+          />
+
           <div className="mb-4 space-y-2">
             <div>
               <Label htmlFor="em-subject" className="text-xs">Subject line</Label>
@@ -402,6 +442,25 @@ export function Editor({
                 className="mt-1 h-8 text-sm"
                 placeholder="What lands in the inbox"
               />
+              {/* A/B subject variants the last generation produced — click to
+                  swap the live subject. Dismisses once none differ. */}
+              {subjectVariants.filter((s) => s !== campaign.subject).length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {subjectVariants
+                    .filter((s) => s !== campaign.subject)
+                    .map((s, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        title={`Use: ${s}`}
+                        onClick={() => mutate((c) => ({ ...c, subject: s }))}
+                        className="max-w-full truncate rounded-full border border-border bg-secondary/60 px-2 py-0.5 text-[10px] text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                </div>
+              )}
             </div>
             <div>
               <Label htmlFor="em-pre" className="text-xs">Preheader</Label>
@@ -534,9 +593,11 @@ export function Editor({
                                 return h?.texts?.headline
                                   ?? blockMap['em-headline']?.texts?.en?.headline ?? ''
                               })(),
-                              // The creative brief pulled from Monday — the
-                              // generator starts from what the task asked for.
-                              brief: campaign.monday?.brief ?? '',
+                              // The hero brief chains off the approved copy:
+                              // the brief the copywriter just used, falling back
+                              // to the Monday task's brief. Either way the image
+                              // starts from what the email is actually about.
+                              brief: copyBrief || campaign.monday?.brief || '',
                             }}
                             onText={(k, v) => setField(inst.iid, 'texts', k, v)}
                             onLink={(k, v) => setField(inst.iid, 'links', k, v)}
@@ -781,6 +842,175 @@ function BlockFields({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+
+/** AI copy generation — brief in, the whole email's copy out, written by the
+ *  house CRM copywriter (crm_copywriter.md) into the campaign's actual blocks.
+ *  The compliance segment is pre-set from the brand's regulation so a bonus can
+ *  never be written for an EU audience. Runs as a background job that survives
+ *  refresh, same as the hero generator. */
+type Segment = 'REG' | 'NONREG' | 'NONE'
+
+const SEGMENT_OPTS: { value: Segment; label: string }[] = [
+  { value: 'REG', label: 'EU / regulated — discounts only' },
+  { value: 'NONREG', label: 'Non-EU — bonuses allowed' },
+  { value: 'NONE', label: 'No specific offer' },
+]
+
+function defaultSegment(brand?: Brand): Segment {
+  const reg = (brand as { regulation?: string } | undefined)?.regulation
+  return reg === 'eu' ? 'REG' : reg === 'international' ? 'NONREG' : 'NONE'
+}
+
+function CopyGenerator({
+  campaignId, brand, brief, onBrief, onDone, onError,
+}: {
+  campaignId: string
+  brand?: Brand
+  brief: string
+  onBrief: (v: string) => void
+  onDone: (r: CopyResult) => void
+  onError: (m: string) => void
+}) {
+  const [segment, setSegment] = useState<Segment>(() => defaultSegment(brand))
+  const [tier, setTier] = useState<'Retail' | 'Pro'>('Retail')
+  const [open, setOpen] = useState(false)
+  const [jobId, setJobId] = useState<string | null>(null)
+  const busy = jobId !== null
+
+  // The brand loads/changes after mount — keep the segment default in sync
+  // until the user has opened the panel to choose for themselves.
+  useEffect(() => {
+    if (!open) setSegment(defaultSegment(brand))
+  }, [brand, open])
+
+  // Adopt a copy generation a previous page left running.
+  useEffect(() => {
+    let gone = false
+    listCopyJobs(campaignId)
+      .then((js) => {
+        const running = js.find((jb) => jb.status === 'running')
+        if (running && !gone) { setJobId(running.id); setOpen(true) }
+      })
+      .catch(() => { /* nothing to adopt */ })
+    return () => { gone = true }
+  }, [campaignId])
+
+  // Poll while a job runs; apply its result exactly once.
+  useEffect(() => {
+    if (!jobId) return
+    let gone = false
+    const tick = () =>
+      getCopyJob(jobId)
+        .then((jb) => {
+          if (gone) return
+          if (jb.status === 'running') return
+          setJobId(null)
+          if (jb.status === 'done' && jb.result) onDone(jb.result)
+          else if (jb.status === 'failed') onError(jb.error || 'Copy generation failed.')
+        })
+        .catch(() => { /* transient poll miss — next tick retries */ })
+    tick()
+    const t = window.setInterval(tick, 2000)
+    return () => { gone = true; window.clearInterval(t) }
+  }, [jobId])
+
+  const run = () => {
+    generateCopy({ campaign_id: campaignId, brief: brief.trim(), segment, tier })
+      .then((jb) => setJobId(jb.id))
+      .catch((e) => onError(e.message))
+  }
+
+  return (
+    <div className="mb-3 rounded-xl border border-primary/30 bg-primary/[0.04] p-2.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1.5 text-left"
+        aria-expanded={open}
+      >
+        <PenLine className="h-3.5 w-3.5 text-primary" />
+        <span className="text-xs font-semibold">Write copy with AI</span>
+        {busy
+          ? <Loader2 className="ml-auto h-3.5 w-3.5 animate-spin text-primary" />
+          : (open ? <ChevronUp className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
+                  : <ChevronDown className="ml-auto h-3.5 w-3.5 text-muted-foreground" />)}
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-2">
+          <Textarea
+            value={brief}
+            onChange={(e) => onBrief(e.target.value)}
+            rows={3}
+            className="text-xs"
+            placeholder="The brief: what's the campaign? e.g. Nonfarm Payrolls this Friday — educate on why the jobs report moves markets, invite them to trade the volatility."
+            aria-label="Copy brief"
+          />
+
+          <div>
+            <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+              Offer type (compliance)
+            </label>
+            <select
+              value={segment}
+              onChange={(e) => setSegment(e.target.value as Segment)}
+              className="mt-0.5 h-8 w-full rounded-lg border border-border bg-card px-2 text-xs"
+              aria-label="Compliance segment"
+            >
+              {SEGMENT_OPTS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+              {brand
+                ? `Preset from ${brand.name}'s regulation. `
+                : 'No brand set. '}
+              EU audiences may only be offered discounts, never bonuses.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+              Tier
+            </span>
+            <span className="flex items-center rounded-md border border-border bg-card p-0.5">
+              {(['Retail', 'Pro'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTier(t)}
+                  aria-pressed={tier === t}
+                  className={cn('rounded px-2 py-0.5 text-[10px] transition-colors',
+                    tier === t ? 'bg-secondary font-medium text-foreground'
+                               : 'text-muted-foreground hover:text-foreground')}
+                >
+                  {t}
+                </button>
+              ))}
+            </span>
+          </div>
+
+          <Button size="sm" className="w-full" onClick={run} disabled={busy}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PenLine className="h-3.5 w-3.5" />}
+            {busy ? 'Writing…' : 'Generate copy'}
+          </Button>
+
+          {busy && (
+            <p className="text-[10px] leading-snug text-muted-foreground">
+              Writing on the server — you can navigate away or refresh; the copy
+              lands in the blocks when ready.
+            </p>
+          )}
+          <p className="text-[10px] leading-snug text-muted-foreground">
+            Fills the subject, preheader and every text block for this layout.
+            Review and edit inline, then generate the hero image from it.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

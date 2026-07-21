@@ -340,6 +340,63 @@ export async function listHeroJobs(campaignId: string): Promise<GenJob[]> {
   return (await r.json()).jobs ?? []
 }
 
+// ---------------------------------------------------------------- AI copy
+
+/** The house copywriter's output: subject A/B variants, the pre-header, and one
+ *  value per filled block field (mapped back onto the campaign server-side, so a
+ *  finished job has already updated the blocks). */
+export interface CopyResult {
+  subjects: string[]
+  preheader: string
+  items: { iid: string; key: string; value: string }[]
+  segment: 'REG' | 'NONREG' | 'NONE'
+  tier: 'Retail' | 'Pro'
+  applied?: boolean
+}
+
+export interface CopyJob {
+  id: string
+  kind: string
+  campaign_id: string
+  iid: string
+  status: 'running' | 'done' | 'failed'
+  error: string | null
+  result: CopyResult | null
+  created_at: string
+}
+
+export async function generateCopy(payload: {
+  campaign_id: string
+  brief: string
+  /** '' lets the brand's regulation decide; explicit REG/NONREG/NONE overrides. */
+  segment?: 'REG' | 'NONREG' | 'NONE' | ''
+  tier?: 'Retail' | 'Pro'
+}): Promise<CopyJob> {
+  const r = await fetch(`${EB}/copy/generate`, {
+    method: 'POST', headers: j, credentials: 'include', body: JSON.stringify(payload),
+  })
+  if (!r.ok) {
+    const body = await asJson(r)
+    if (r.status === 424) throw new Error('OPENAI_API_KEY is not configured on this server.')
+    throw new Error(
+      (typeof body.detail === 'string' && body.detail) || 'Could not start copy generation.')
+  }
+  return r.json()
+}
+
+export async function getCopyJob(id: string): Promise<CopyJob> {
+  const r = await fetch(`${EB}/copy/jobs/${id}`, { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Could not check copy generation')
+  return r.json()
+}
+
+export async function listCopyJobs(campaignId: string): Promise<CopyJob[]> {
+  const r = await fetch(`${EB}/copy/jobs?campaign_id=${encodeURIComponent(campaignId)}`,
+    { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Could not check copy generations')
+  return (await r.json()).jobs ?? []
+}
+
 export async function uploadEmailAsset(file: File): Promise<{ id: string; url: string }> {
   const fd = new FormData()
   fd.append('file', file)

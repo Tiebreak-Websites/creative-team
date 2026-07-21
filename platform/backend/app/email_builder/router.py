@@ -239,6 +239,18 @@ class HeroGen(BaseModel):
     direction_override: str = ""
 
 
+class CopyGen(BaseModel):
+    # Module level for the same reason as HeroGen — a function-local model
+    # degrades to query params under `from __future__ import annotations`.
+    campaign_id: str = ""
+    brief: str = ""
+    # "" lets the brand's regulation decide the segment; an explicit value
+    # (REG / NONREG / NONE) overrides it — the compliance choice, made once,
+    # up front, so a % bonus can never reach a REG/EU audience.
+    segment: str = ""
+    tier: str = "Retail"
+
+
 class CampaignPatch(BaseModel):
     name: Optional[str] = None
     subject: Optional[str] = None
@@ -637,6 +649,85 @@ def build_email_builder_router() -> APIRouter:
     def hero_jobs(campaign_id: str = "", _user: dict = Depends(require_user)):
         from . import jobs
         return {"jobs": [jobs.public(j) for j in jobs.for_campaign(campaign_id)]}
+
+    # -------------------------------------------------------------- AI copy
+    @router.post("/copy/generate")
+    def copy_generate(payload: CopyGen, _user: dict = Depends(require_user)):
+        """AI copy for the whole email as a BACKGROUND JOB.
+
+        The house copywriter (crm_copywriter.md) writes into the campaign's
+        actual blocks — headline, each body paragraph, the CTA label, the offer
+        callout, support and sign-off — plus subject A/B variants and the
+        pre-header. Like the hero job it runs on a worker thread and writes the
+        result server-side, so a refresh or a closed page never loses it.
+        """
+        from . import copy_ai, jobs
+        from ..secrets import get_secret
+        if not get_secret("OPENAI_API_KEY"):
+            raise HTTPException(424, detail={"missing_secrets": ["OPENAI_API_KEY"],
+                                             "error": "OPENAI_API_KEY is not configured."})
+        cid = (payload.campaign_id or "").strip()
+        with core.lock():
+            c = core.campaigns().get(cid)
+            if not c:
+                raise HTTPException(404, "Campaign not found.")
+            sections = [dict(s) for s in (c.get("sections") or [])]
+        entity = _entity_for(c)
+        spec = copy_ai.build_spec(sections)
+        if not spec:
+            raise HTTPException(422, "This layout has no copy blocks to write.")
+
+        # One copy generation per campaign at a time (iid="" — it is the whole
+        # email, not a single block); a second click adopts the running job.
+        running = jobs.active_for(cid, "", "copy")
+        if running:
+            return jobs.public(running)
+
+        segment = copy_ai.segment_for(entity, payload.segment)
+        kwargs = dict(entity=entity, brief=(payload.brief or "").strip()[:1200],
+                      segment=segment, tier=payload.tier, language=c.get("language") or "en",
+                      spec=spec)
+
+        def work() -> dict:
+            return copy_ai.generate_copy(**kwargs)
+
+        def apply(result: dict) -> None:
+            # Server-side write-back: subject + pre-header on the campaign, and
+            # each generated value onto its block instance by iid+key.
+            by_iid_key = {(it["iid"], it["key"]): it["value"] for it in result.get("items", [])}
+            with core.lock():
+                camp = core.campaigns().get(cid)
+                if not camp:
+                    return
+                subs = result.get("subjects") or []
+                if subs:
+                    camp["subject"] = subs[0]
+                if result.get("preheader"):
+                    camp["preheader"] = result["preheader"]
+                for sct in camp.get("sections") or []:
+                    iid = sct.get("iid")
+                    texts = sct.setdefault("texts", {})
+                    for (k_iid, k_key), val in by_iid_key.items():
+                        if k_iid == iid:
+                            texts[k_key] = val
+                camp["updated_at"] = core._now()
+                core.persist_campaign(camp)
+
+        return jobs.public(jobs.start("copy", cid, "", work, apply))
+
+    @router.get("/copy/jobs/{job_id}")
+    def copy_job(job_id: str, _user: dict = Depends(require_user)):
+        from . import jobs
+        j = jobs.get(job_id)
+        if not j:
+            raise HTTPException(404, "Job not found.")
+        return jobs.public(j)
+
+    @router.get("/copy/jobs")
+    def copy_jobs(campaign_id: str = "", _user: dict = Depends(require_user)):
+        from . import jobs
+        return {"jobs": [jobs.public(j) for j in jobs.for_campaign(campaign_id)
+                         if j.get("kind") == "copy"]}
 
     # ------------------------------------------------------------ assets
     @router.post("/assets")
