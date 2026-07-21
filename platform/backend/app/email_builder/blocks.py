@@ -121,7 +121,10 @@ BUILTIN_BLOCKS: List[dict] = [
             '</td></tr>'
         ),
         "texts": {"en": {}},
-        "assets": {},
+        # Visible before an upload, instead of silently absent — a layout with
+        # an image slot should LOOK like it has an image slot. The compositor
+        # warns while this is still in place, so it cannot ship quietly.
+        "assets": {"hero": "placeholder:hero"},
         "names": {"hero": "Hero image"},
     },
     {

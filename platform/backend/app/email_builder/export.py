@@ -385,11 +385,15 @@ def compose_email(project: dict, blocks_map: Dict[str, dict],
     elif size > core.SIZE_WARN_BYTES:
         warnings.append(f"{size // 1024}KB — approaching Gmail's ~102KB clip limit.")
 
-    empty_slots = sum(1 for i in project.get("sections") or []
-                      for f in core.parse_fields((blocks_map.get(i.get("block_key") or "") or {}).get("html") or "")["fields"]
-                      if f["kind"] == "img" and not (i.get("images") or {}).get(f["key"]))
-    if empty_slots:
-        warnings.append(f"{empty_slots} image slot(s) empty — those images are omitted "
+    # Count what was actually DROPPED from the markup, not what lacks an
+    # instance upload: a slot filled by a block default (the hero placeholder,
+    # a brand logo) is present in the email and must not be reported missing.
+    expected_imgs = sum(1 for i in project.get("sections") or []
+                        for f in core.parse_fields((blocks_map.get(i.get("block_key") or "") or {}).get("html") or "")["fields"]
+                        if f["kind"] == "img")
+    dropped = expected_imgs - html.count("data-em-img=")
+    if dropped > 0:
+        warnings.append(f"{dropped} image slot(s) empty — those images are omitted "
                         "from the email entirely.")
 
     # A relative src works in this preview and in no inbox anywhere. Surfacing
@@ -455,6 +459,10 @@ def _content_checks(project: dict, html: str) -> List[str]:
        'data-em-link="unsubscribe_url" href="#"' in html:
         out.append("The unsubscribe link has no URL. Sending without a working "
                    "unsubscribe is a legal problem, not just a spam-score one.")
+
+    if "placeholder-" in html:
+        out.append("An image is still the grey placeholder — upload a real one "
+                   "or remove the block before sending.")
 
     # Text-to-image ratio: filters treat image-heavy/text-light mail as evasion.
     visible = to_plain_text(html)

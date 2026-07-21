@@ -75,6 +75,35 @@ def _entity_for(project: dict) -> Optional[dict]:
         return None
 
 
+def _ensure_placeholder(name: str) -> str:
+    """Generate (once) and return the grey placeholder graphic for a slot.
+
+    Drawn with Pillow rather than bundled: no binary in git, and the artifact
+    disk is where every other email asset already lives. 1072x536 = 2x the
+    536px the hero renders at.
+    """
+    aid = f"placeholder-{name}.png"
+    path = core.ASSETS_DIR / aid
+    if path.exists():
+        return aid
+    from PIL import Image, ImageDraw
+
+    W, H = 1072, 536
+    grey = (178, 188, 204)
+    im = Image.new("RGB", (W, H), (238, 241, 246))
+    d = ImageDraw.Draw(im)
+    fw, fh = 220, 160
+    x0, y0 = (W - fw) // 2, (H - fh) // 2
+    # the universal "image goes here" glyph: frame, sun, two mountains
+    d.rounded_rectangle([x0, y0, x0 + fw, y0 + fh], radius=18, outline=grey, width=8)
+    d.ellipse([x0 + 36, y0 + 30, x0 + 72, y0 + 66], fill=grey)
+    d.polygon([(x0 + 20, y0 + fh - 20), (x0 + 88, y0 + 62), (x0 + 146, y0 + fh - 20)], fill=grey)
+    d.polygon([(x0 + 112, y0 + fh - 20), (x0 + 166, y0 + 88), (x0 + fw - 16, y0 + fh - 20)], fill=grey)
+    core.ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    im.save(path, "PNG", optimize=True)
+    return aid
+
+
 def _asset_url(raw: str) -> str:
     """Storage value -> the absolute URL that goes in the email.
 
@@ -87,6 +116,13 @@ def _asset_url(raw: str) -> str:
         return ""
     if raw.startswith(("http://", "https://", "data:")):
         return raw
+    if raw.startswith("placeholder:"):
+        # A block-level default (e.g. the hero) so an image slot is VISIBLE
+        # before anything is uploaded, instead of silently absent. A pre-send
+        # check refuses to let it ship quietly.
+        raw = _ensure_placeholder(raw.split(":", 1)[1])
+        base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
+        return f"{base}/e/img/{raw}" if base else f"/e/img/{raw}"
     if raw.startswith("token:"):
         return ""  # resolved before compose, not here
     base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
