@@ -24,7 +24,7 @@ from .. import brands as brands_mod
 from ..auth import require_admin, require_user
 from ..settings import settings
 from . import core, export
-from .blocks import DEFAULT_LAYOUT
+from .blocks import LAYOUTS, layout_blocks
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +101,7 @@ class CampaignCreate(BaseModel):
     language: str = "en"
     subject: str = ""
     monday_id: str = ""
+    layout: str = ""
 
 
 class CampaignPatch(BaseModel):
@@ -125,7 +126,7 @@ def build_email_builder_router() -> APIRouter:
             bs = sorted(core.blocks().values(), key=lambda b: b.get("position", 500))
         if not all:
             bs = [b for b in bs if b.get("enabled", True)]
-        return {"blocks": [_public_block(b) for b in bs]}
+        return {"blocks": [_public_block(b) for b in bs], "layouts": LAYOUTS}
 
     # --------------------------------------------------------- campaigns
     @router.get("/campaigns")
@@ -160,7 +161,7 @@ def build_email_builder_router() -> APIRouter:
             available = {k: b for k, b in core.blocks().items() if b.get("enabled", True)}
             sections = [{"iid": core.new_asset_id()[:8], "block_key": k,
                          "texts": {}, "images": {}, "links": {}}
-                        for k in DEFAULT_LAYOUT if k in available]
+                        for k in layout_blocks(payload.layout) if k in available]
             c = {"id": core.new_campaign_id(), "name": name,
                  "subject": (payload.subject or "").strip()[:200], "preheader": "",
                  "brand_id": (payload.brand_id or "").strip(),

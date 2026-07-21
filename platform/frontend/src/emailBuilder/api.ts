@@ -106,10 +106,19 @@ async function fail(r: Response, fallback: string): Promise<never> {
 
 const j = { 'Content-Type': 'application/json' }
 
-export async function listBlocks(all = false): Promise<BlockDef[]> {
+/** A starting shape for a new campaign — a named sequence of block keys. */
+export interface Layout {
+  key: string
+  name: string
+  description: string
+  blocks: string[]
+}
+
+export async function listBlocks(all = false): Promise<{ blocks: BlockDef[]; layouts: Layout[] }> {
   const r = await fetch(`${EB}/blocks${all ? '?all=1' : ''}`, { credentials: 'include' })
   if (!r.ok) return fail(r, 'Failed to load the block library')
-  return (await r.json()).blocks ?? []
+  const d = await r.json()
+  return { blocks: d.blocks ?? [], layouts: d.layouts ?? [] }
 }
 
 export async function listCampaigns(): Promise<CampaignSummary[]> {
@@ -124,6 +133,8 @@ export async function createCampaign(payload: {
   language?: string
   subject?: string
   monday_id?: string
+  /** Layout key from listBlocks().layouts — which shape to seed. */
+  layout?: string
 }): Promise<Campaign> {
   const r = await fetch(`${EB}/campaigns`, {
     method: 'POST', headers: j, credentials: 'include', body: JSON.stringify(payload),

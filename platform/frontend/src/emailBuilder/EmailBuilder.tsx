@@ -15,7 +15,7 @@ import { Dashboard } from './Dashboard'
 import { Editor } from './Editor'
 import {
   createCampaign, deleteCampaign, getCampaign, listBlocks, listCampaigns,
-  type BlockDef, type Campaign, type CampaignSummary,
+  type BlockDef, type Campaign, type CampaignSummary, type Layout,
 } from './api'
 
 type View = { kind: 'home' } | { kind: 'editor'; campaign: Campaign }
@@ -24,6 +24,7 @@ export function EmailBuilder() {
   const [view, setView] = useState<View>({ kind: 'home' })
   const [campaigns, setCampaigns] = useState<CampaignSummary[] | null>(null)
   const [blocks, setBlocks] = useState<BlockDef[]>([])
+  const [layouts, setLayouts] = useState<Layout[]>([])
   const [brands, setBrands] = useState<Brand[]>([])
   const [languages, setLanguages] = useState<Language[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -35,7 +36,9 @@ export function EmailBuilder() {
 
   useEffect(() => {
     refresh()
-    listBlocks().then(setBlocks).catch((e) => setError(e.message))
+    listBlocks()
+      .then((d) => { setBlocks(d.blocks); setLayouts(d.layouts) })
+      .catch((e) => setError(e.message))
     listBrands().then(setBrands).catch(() => { /* the picker just stays empty */ })
     listSections().then((d) => setLanguages(d.languages)).catch(() => { /* ditto */ })
   }, [])
@@ -80,6 +83,7 @@ export function EmailBuilder() {
         <CreateModal
           brands={brands}
           languages={languages}
+          layouts={layouts}
           initialBrandId={creating}
           onClose={() => setCreating(null)}
           onCreated={(c) => { setCreating(null); setView({ kind: 'editor', campaign: c }) }}
@@ -102,11 +106,35 @@ function ErrorBar({ message, onClose }: { message: string | null; onClose: () =>
   )
 }
 
+/** Schematic mini-preview of a layout — the abstract shape, the way every
+ *  ESP's template picker draws them. Real previews would need a composed email
+ *  per layout per brand; the wireframe answers the actual question (what order
+ *  is the content in?) for free. */
+function LayoutSketch({ blocks }: { blocks: string[] }) {
+  return (
+    <span className="flex h-full w-full flex-col items-center gap-[3px] overflow-hidden rounded-lg bg-secondary/60 p-2">
+      {blocks.map((k, i) => {
+        const key = k.replace('em-', '')
+        if (key === 'logo-header') return <span key={i} className="h-1.5 w-8 shrink-0 rounded-sm bg-muted-foreground/40" />
+        if (key === 'hero') return <span key={i} className="h-7 w-full shrink-0 rounded-sm bg-muted-foreground/25" />
+        if (key === 'headline') return <span key={i} className="h-2 w-3/4 shrink-0 rounded-sm bg-foreground/60" />
+        if (key === 'cta') return <span key={i} className="h-2.5 w-14 shrink-0 rounded-full bg-primary/70" />
+        if (key === 'highlight') return <span key={i} className="h-5 w-full shrink-0 rounded-sm bg-primary/15" />
+        if (key === 'support') return <span key={i} className="h-2 w-2/3 shrink-0 rounded-sm bg-muted-foreground/30" />
+        if (key === 'signoff') return <span key={i} className="h-1 w-1/3 shrink-0 self-start rounded-sm bg-muted-foreground/30" />
+        if (key === 'footer') return <span key={i} className="mt-auto h-2.5 w-full shrink-0 rounded-sm bg-muted-foreground/15" />
+        /* body */ return <span key={i} className="h-1 w-full shrink-0 rounded-sm bg-muted-foreground/30" />
+      })}
+    </span>
+  )
+}
+
 function CreateModal({
-  brands, languages, initialBrandId, onClose, onCreated, onError,
+  brands, languages, layouts, initialBrandId, onClose, onCreated, onError,
 }: {
   brands: Brand[]
   languages: Language[]
+  layouts: Layout[]
   /** Preselected when the modal was opened from inside a brand's folder — a
    *  campaign started in a folder should land in that folder. */
   initialBrandId: string
@@ -119,6 +147,9 @@ function CreateModal({
   const [language, setLanguage] = useState('en')
   const [subject, setSubject] = useState('')
   const [busy, setBusy] = useState(false)
+  // Layout first, details second: the shape decides what you are writing, so
+  // it is the first question — the same order every ESP asks in.
+  const [layout, setLayout] = useState<string | null>(null)
 
   // A brand's declared languages narrow the picker — offering all 15 when the
   // brand sells in 3 invites a campaign nobody can send.
@@ -135,7 +166,7 @@ function CreateModal({
   const submit = () => {
     if (!name.trim()) return
     setBusy(true)
-    createCampaign({ name: name.trim(), brand_id: brandId, language, subject: subject.trim() })
+    createCampaign({ name: name.trim(), brand_id: brandId, language, subject: subject.trim(), layout: layout ?? undefined })
       .then(onCreated)
       .catch((e) => onError(e.message))
       .finally(() => setBusy(false))
@@ -144,12 +175,46 @@ function CreateModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-lg"
+        className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
+        {layout === null ? (
+          <>
+            <h2 className="font-display text-lg font-bold">New campaign</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Pick a starting layout — you can reorder, add and remove blocks after.
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {layouts.map((l) => (
+                <button
+                  key={l.key}
+                  type="button"
+                  onClick={() => setLayout(l.key)}
+                  className="group flex flex-col rounded-xl border border-border p-2 text-left transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-sm"
+                >
+                  <span className="h-32 w-full">
+                    <LayoutSketch blocks={l.blocks} />
+                  </span>
+                  <span className="mt-2 font-display text-xs font-semibold">{l.name}</span>
+                  <span className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+                    {l.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <Button variant="outline" onClick={onClose}>Cancel</Button>
+            </div>
+          </>
+        ) : (
+          <>
         <h2 className="font-display text-lg font-bold">New campaign</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Starts with the standard layout, ready to fill in.
+          {layouts.find((l) => l.key === layout)?.name ?? 'Layout'} —{' '}
+          <button type="button" className="text-primary underline-offset-2 hover:underline"
+                  onClick={() => setLayout(null)}>
+            change layout
+          </button>
         </p>
         <div className="mt-4 space-y-3">
           <div>
@@ -214,6 +279,8 @@ function CreateModal({
             {busy && <Loader2 className="h-4 w-4 animate-spin" />} Create
           </Button>
         </div>
+          </>
+        )}
       </div>
     </div>
   )

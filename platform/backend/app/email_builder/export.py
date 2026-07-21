@@ -33,7 +33,11 @@ log = logging.getLogger(__name__)
 # origin. It is NOT good enough to send — an inbox has no origin to resolve
 # against — so compose_email raises a warning when any survives, rather than
 # silently dropping the image and looking like a missing asset.
-_URL_OK = re.compile(r"^(https?:|mailto:|tel:|#|/|\{\{)", re.I)
+# https/mailto/tel are real destinations; "/" keeps the in-app preview
+# working; the rest are ESP merge-tag syntaxes ({{x}} generic/Klaviyo,
+# *|X|* Mailchimp, %x% SFMC/Brevo, [x] misc) — the export is pasted into an
+# ESP, and its unsubscribe URL is a merge tag, not a literal link.
+_URL_OK = re.compile(r"^(https?:|mailto:|tel:|#|/|\{\{|\*\||%|\[)", re.I)
 
 
 def _esc(s: str) -> str:

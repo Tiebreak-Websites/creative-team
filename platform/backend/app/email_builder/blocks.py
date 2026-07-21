@@ -283,19 +283,56 @@ BUILTIN_BLOCKS: List[dict] = [
     },
 ]
 
-# The order a new campaign is seeded in: logo, hero, headline, CTA, body,
-# highlight, body, CTA, support, sign-off, footer. Blocks
-# repeat by design; each placement is its own instance with its own text.
-DEFAULT_LAYOUT = [
-    "em-logo-header",
-    "em-hero",
-    "em-headline",
-    "em-cta",
-    "em-body",
-    "em-highlight",
-    "em-body",
-    "em-cta",
-    "em-support",
-    "em-signoff",
-    "em-footer",
+# The five layouts a new campaign can start from — the shapes recurring across
+# every major ESP's template gallery (Mailchimp, Klaviyo, Brevo), built from
+# our own blocks. Every one begins with the logo and ends with the compliance
+# footer: those are not layout choices.
+LAYOUTS = [
+    {
+        "key": "classic-promo",
+        "name": "Classic promo",
+        "description": "Image-led with two CTAs — the full promotional shape.",
+        "blocks": ["em-logo-header", "em-hero", "em-headline", "em-cta", "em-body",
+                   "em-highlight", "em-body", "em-cta", "em-support", "em-signoff",
+                   "em-footer"],
+    },
+    {
+        "key": "announcement",
+        "name": "Announcement",
+        "description": "Headline and CTA first, image below — for one clear message.",
+        "blocks": ["em-logo-header", "em-headline", "em-cta", "em-hero", "em-body",
+                   "em-signoff", "em-footer"],
+    },
+    {
+        "key": "letter",
+        "name": "Personal letter",
+        "description": "Text only, reads person-to-person. The strongest deliverability.",
+        "blocks": ["em-logo-header", "em-headline", "em-body", "em-body", "em-cta",
+                   "em-signoff", "em-footer"],
+    },
+    {
+        "key": "newsletter",
+        "name": "Newsletter",
+        "description": "Several content sections in one send — a digest.",
+        "blocks": ["em-logo-header", "em-headline", "em-body", "em-hero", "em-body",
+                   "em-highlight", "em-body", "em-cta", "em-footer"],
+    },
+    {
+        "key": "reengagement",
+        "name": "Win-back",
+        "description": "Benefits list up front, support close — for cold contacts.",
+        "blocks": ["em-logo-header", "em-headline", "em-body", "em-highlight",
+                   "em-cta", "em-support", "em-signoff", "em-footer"],
+    },
 ]
+
+def layout_blocks(key: str) -> list:
+    """The block sequence for a layout key, defaulting to the classic promo —
+    an unknown key must still seed a working campaign, never a blank one."""
+    for l in LAYOUTS:
+        if l["key"] == key:
+            return list(l["blocks"])
+    return list(LAYOUTS[0]["blocks"])
+
+# Kept for existing imports: the default seeding order.
+DEFAULT_LAYOUT = list(LAYOUTS[0]["blocks"])
