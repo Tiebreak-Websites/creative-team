@@ -338,10 +338,15 @@ LAYOUTS = [
         "key": "classic-promo",
         "name": "Classic promo",
         "description": "Image-led with two CTAs — the full promotional shape.",
-        "blocks": ["em-logo-header", "em-hero", "em-headline", "em-cta", "em-body",
+        # Inverted pyramid, twice over: attention (hero+headline) -> interest
+        # (short body) -> ACTION, then desire (highlight+body) -> ACTION. The
+        # first CTA used to sit straight after the headline — a button before
+        # any reason to click it; the research is unanimous that support copy
+        # comes first and the pyramid narrows DOWN to the button.
+        "blocks": ["em-logo-header", "em-hero", "em-headline", "em-body", "em-cta",
                    "em-highlight", "em-body", "em-cta", "em-support", "em-signoff",
                    "em-footer"],
-        "seeds": [None, None, {"headline": _H}, _CTA, {"body": _P_SHORT},
+        "seeds": [None, None, {"headline": _H}, {"body": _P_SHORT}, _CTA,
                   _HIGHLIGHT, {"body": _P_MED}, _CTA, _SUPPORT, _SIGN, None],
     },
     {
