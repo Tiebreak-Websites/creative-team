@@ -203,6 +203,9 @@ def build_email_builder_router() -> APIRouter:
                     "texts": {str(k)[:64]: str(v)[:4000] for k, v in (s.get("texts") or {}).items()},
                     "images": {str(k)[:64]: str(v)[:400] for k, v in (s.get("images") or {}).items()},
                     "links": {str(k)[:64]: str(v)[:600] for k, v in (s.get("links") or {}).items()},
+                    # Spacing overrides only — whitelisted keys, integer px.
+                    "props": {str(k): str(v).strip() for k, v in (s.get("props") or {}).items()
+                              if str(k) in ("pad_top", "pad_bottom") and str(v).strip().isdigit()},
                 } for s in patch["sections"][:60] if isinstance(s, dict)]
             c["updated_at"] = core._now()
             core.persist_campaign(c)

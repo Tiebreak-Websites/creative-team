@@ -231,6 +231,22 @@ def compose_block(block: dict, inst: dict, lang: str,
             if url:
                 html = _fill_attr(html, "data-em-link", key, "href", _attr(url))
 
+    # Per-instance spacing: pad_top/pad_bottom (px) appended to the outer
+    # td's style. Inline styles are last-one-wins within an attribute, so the
+    # append cleanly overrides the block's own shorthand padding — no parsing
+    # of the existing value, and nothing Outlook cannot read.
+    props = inst.get("props") or {}
+    extra = []
+    for key, css in (("pad_top", "padding-top"), ("pad_bottom", "padding-bottom")):
+        v = str(props.get(key) or "").strip()
+        if v.isdigit():
+            extra.append(f"{css}:{min(int(v), 120)}px")
+    if extra:
+        m = re.search(r'<td[^>]*style="[^"]*"', html)
+        if m:
+            seg = m.group(0)[:-1] + ";" + ";".join(extra) + '"'
+            html = html[:m.start()] + seg + html[m.end():]
+
     # Anchor the block's first row with its instance id so the editor can
     # scroll the preview to the block being edited. The first "<tr" is always
     # the block's own outer row (nested tables come later in the string).
@@ -333,6 +349,18 @@ def compose_email(project: dict, blocks_map: Dict[str, dict],
         if not rows:
             return ""
         return _ZONE_TABLE.format(w=EMAIL_W, extra=extra, rows="\n".join(rows))
+
+    # The card's breathing room is the CARD's, not the first block's: block
+    # paddings used to assume a fixed order, so dragging the hero down left
+    # whatever came first cramped against the card edge. Outlook collapses
+    # empty cells, hence the &nbsp; at 1px font.
+    def _card_pad(h: int) -> str:
+        return (f'<tr><td height="{h}" style="height:{h}px;'
+                f'background-color:{tokens["card"]};'
+                'font-size:1px;line-height:1px;">&nbsp;</td></tr>')
+
+    if zones["card"]:
+        zones["card"] = [_card_pad(28)] + zones["card"] + [_card_pad(10)]
 
     html = _SKELETON.format(
         lang=_attr(lang),

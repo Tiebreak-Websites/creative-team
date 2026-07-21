@@ -43,6 +43,8 @@ export interface BlockInstance {
   texts: Record<string, string>
   images: Record<string, string>
   links: Record<string, string>
+  /** Spacing overrides in px: pad_top / pad_bottom on the block's outer cell. */
+  props?: Record<string, string>
 }
 
 export interface Campaign {

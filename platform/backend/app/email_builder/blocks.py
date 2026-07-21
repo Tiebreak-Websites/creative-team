@@ -113,7 +113,7 @@ BUILTIN_BLOCKS: List[dict] = [
         "position": 130,
         "enabled": True,
         "html": (
-            f'<tr><td class="em-pad" style="padding:32px {PAD_X}px 24px {PAD_X}px;'
+            f'<tr><td class="em-pad" style="padding:4px {PAD_X}px 24px {PAD_X}px;'
             'background-color:{{card}};">'
             f'<img data-em-img="hero" src="" alt="" width="{W - PAD_X * 2}" '
             f'style="display:block;border:0;outline:none;width:100%;'
@@ -222,6 +222,23 @@ BUILTIN_BLOCKS: List[dict] = [
         "texts": {"en": {"signoff": "Best regards,\nThe team"}},
         "assets": {},
         "names": {"signoff": "Sign-off"},
+    },
+
+    {
+        "key": "em-spacer",
+        "name": "Spacer",
+        "zone": "card",
+        "category": "elements",
+        "position": 175,
+        "enabled": True,
+        "html": (
+            f'<tr><td class="em-pad" height="24" style="height:24px;'
+            f'padding:0 {PAD_X}px;background-color:{{{{card}}}};'
+            'font-size:1px;line-height:1px;">&nbsp;</td></tr>'
+        ),
+        "texts": {"en": {}},
+        "assets": {},
+        "names": {},
     },
 
     # ------------------------------------------------------- footer zone

@@ -137,6 +137,17 @@ export function Editor({
       return c
     })
 
+  const setProp = (iid: string, key: 'pad_top' | 'pad_bottom', value: string) =>
+    mutate((c) => {
+      const inst = c.sections.find((s) => s.iid === iid)
+      if (!inst) return c
+      const props = { ...(inst.props ?? {}) }
+      if (!value.trim()) delete props[key]
+      else props[key] = value.trim()
+      inst.props = props
+      return c
+    })
+
   /** Swap with the nearest neighbour IN THE SAME ZONE. Crossing a zone would
    *  claim an order the compositor cannot render (zones are separate tables),
    *  so the arrows simply stop at the zone edge. */
@@ -199,7 +210,7 @@ export function Editor({
     const iid = newIid()
     mutate((c) => {
       const zone = blockMap[key]?.zone ?? 'card'
-      const inst: BlockInstance = { iid, block_key: key, texts: {}, images: {}, links: {} }
+      const inst: BlockInstance = { iid, block_key: key, texts: {}, images: {}, links: {}, props: {} }
       let at = -1
       c.sections.forEach((s, i) => {
         if (ZONE_ORDER[zoneOf(s)] <= ZONE_ORDER[zone]) at = i
@@ -465,6 +476,30 @@ export function Editor({
                             onImage={(k, v) => setField(inst.iid, 'images', k, v)}
                             onError={onError}
                           />
+                          {/* Every block exposes its outer spacing — the one
+                              layout property reordering actually needs. */}
+                          <div className={cn('border-border', block.fields.length > 0 && 'mt-2.5 border-t pt-2')}>
+                            <Label className="text-[11px]">Spacing (px)</Label>
+                            <div className="mt-1 flex items-center gap-2">
+                              <Input
+                                type="number" min={0} max={120} placeholder="top"
+                                aria-label={`${block.name} top spacing`}
+                                value={inst.props?.pad_top ?? ''}
+                                onChange={(e) => setProp(inst.iid, 'pad_top', e.target.value)}
+                                className="h-8 w-20 text-xs"
+                              />
+                              <Input
+                                type="number" min={0} max={120} placeholder="bottom"
+                                aria-label={`${block.name} bottom spacing`}
+                                value={inst.props?.pad_bottom ?? ''}
+                                onChange={(e) => setProp(inst.iid, 'pad_bottom', e.target.value)}
+                                className="h-8 w-20 text-xs"
+                              />
+                            </div>
+                            <p className="mt-1 text-[10px] leading-snug text-muted-foreground">
+                              Empty = the block's own spacing.
+                            </p>
+                          </div>
                         </div>
                       )}
                     </div>
