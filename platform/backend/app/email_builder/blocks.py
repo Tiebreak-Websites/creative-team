@@ -300,10 +300,39 @@ BUILTIN_BLOCKS: List[dict] = [
     },
 ]
 
+# Seed copy for new campaigns: lorem ipsum sized to the best-practice text
+# volumes from platform/EMAIL_HTML.md §9 — 50–125 words of body per email,
+# 1–3 sentence paragraphs, ~5-word headlines, 2-word CTAs. The point of the
+# filler is to TEACH the amounts: replace the words, keep the proportions.
+_H = "Lorem ipsum dolor sit amet"
+_CTA = {"cta_label": "Lorem ipsum"}
+_SIGN = {"signoff": "Lorem ipsum,\nDolor sit amet"}
+_HIGHLIGHT = {
+    "highlight_title": "Sed ut perspiciatis unde omnis.",
+    "highlight_items": "✔ Lorem ipsum dolor.\n✔ Consectetur adipiscing elit.\n✔ Sed do eiusmod tempor.",
+}
+_SUPPORT = {
+    "support_title": "Lorem ipsum dolor?",
+    "support_body": "Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium:",
+    "support_link_label": "[LOREM IPSUM]",
+    "support_footer": "Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit.",
+}
+_P_SHORT = ("Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n"
+            "Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.")
+_P_MED = ("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod "
+          "tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim "
+          "veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip.")
+_P_LONG = ("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod "
+           "tempor incididunt ut labore et dolore magna aliqua.\n\n"
+           "Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi "
+           "ut aliquip ex ea commodo consequat. Duis aute irure dolor in "
+           "reprehenderit in voluptate velit esse cillum.")
+
 # The five layouts a new campaign can start from — the shapes recurring across
 # every major ESP's template gallery (Mailchimp, Klaviyo, Brevo), built from
 # our own blocks. Every one begins with the logo and ends with the compliance
-# footer: those are not layout choices.
+# footer: those are not layout choices. `seeds` aligns 1:1 with `blocks` and
+# becomes the new instance's texts — visible, editable, deletable.
 LAYOUTS = [
     {
         "key": "classic-promo",
@@ -312,6 +341,8 @@ LAYOUTS = [
         "blocks": ["em-logo-header", "em-hero", "em-headline", "em-cta", "em-body",
                    "em-highlight", "em-body", "em-cta", "em-support", "em-signoff",
                    "em-footer"],
+        "seeds": [None, None, {"headline": _H}, _CTA, {"body": _P_SHORT},
+                  _HIGHLIGHT, {"body": _P_MED}, _CTA, _SUPPORT, _SIGN, None],
     },
     {
         "key": "announcement",
@@ -319,6 +350,8 @@ LAYOUTS = [
         "description": "Headline and CTA first, image below — for one clear message.",
         "blocks": ["em-logo-header", "em-headline", "em-cta", "em-hero", "em-body",
                    "em-signoff", "em-footer"],
+        "seeds": [None, {"headline": _H}, _CTA, None, {"body": _P_MED},
+                  _SIGN, None],
     },
     {
         "key": "letter",
@@ -326,6 +359,8 @@ LAYOUTS = [
         "description": "Text only, reads person-to-person. The strongest deliverability.",
         "blocks": ["em-logo-header", "em-headline", "em-body", "em-body", "em-cta",
                    "em-signoff", "em-footer"],
+        "seeds": [None, {"headline": _H}, {"body": _P_LONG}, {"body": _P_MED},
+                  _CTA, _SIGN, None],
     },
     {
         "key": "newsletter",
@@ -333,6 +368,8 @@ LAYOUTS = [
         "description": "Several content sections in one send — a digest.",
         "blocks": ["em-logo-header", "em-headline", "em-body", "em-hero", "em-body",
                    "em-highlight", "em-body", "em-cta", "em-footer"],
+        "seeds": [None, {"headline": _H}, {"body": _P_SHORT}, None,
+                  {"body": _P_MED}, _HIGHLIGHT, {"body": _P_SHORT}, _CTA, None],
     },
     {
         "key": "reengagement",
@@ -340,16 +377,20 @@ LAYOUTS = [
         "description": "Benefits list up front, support close — for cold contacts.",
         "blocks": ["em-logo-header", "em-headline", "em-body", "em-highlight",
                    "em-cta", "em-support", "em-signoff", "em-footer"],
+        "seeds": [None, {"headline": _H}, {"body": _P_SHORT}, _HIGHLIGHT,
+                  _CTA, _SUPPORT, _SIGN, None],
     },
 ]
 
 def layout_blocks(key: str) -> list:
-    """The block sequence for a layout key, defaulting to the classic promo —
-    an unknown key must still seed a working campaign, never a blank one."""
+    """(block_key, seed_texts) pairs for a layout, defaulting to the classic
+    promo — an unknown key must still seed a working campaign, never a blank
+    one."""
     for l in LAYOUTS:
         if l["key"] == key:
-            return list(l["blocks"])
-    return list(LAYOUTS[0]["blocks"])
+            return list(zip(l["blocks"], l["seeds"]))
+    l = LAYOUTS[0]
+    return list(zip(l["blocks"], l["seeds"]))
 
 # Kept for existing imports: the default seeding order.
 DEFAULT_LAYOUT = list(LAYOUTS[0]["blocks"])

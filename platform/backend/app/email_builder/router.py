@@ -160,8 +160,10 @@ def build_email_builder_router() -> APIRouter:
         with core.lock():
             available = {k: b for k, b in core.blocks().items() if b.get("enabled", True)}
             sections = [{"iid": core.new_asset_id()[:8], "block_key": k,
-                         "texts": {}, "images": {}, "links": {}}
-                        for k in layout_blocks(payload.layout) if k in available]
+                         # Seeded lorem sized to best practice — it lands as the
+                         # instance's own text, so it is edited, not fought.
+                         "texts": dict(seed or {}), "images": {}, "links": {}}
+                        for k, seed in layout_blocks(payload.layout) if k in available]
             c = {"id": core.new_campaign_id(), "name": name,
                  "subject": (payload.subject or "").strip()[:200], "preheader": "",
                  "brand_id": (payload.brand_id or "").strip(),
