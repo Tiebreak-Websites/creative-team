@@ -152,6 +152,10 @@ def create_app() -> FastAPI:
     from .auth import require_admin as _require_admin
     app.include_router(build_admin_users_router(),
                        prefix="/api/admin", dependencies=[Depends(_require_admin)])
+    # Target Markets + Domains — the Admin panel's taxonomy lists.
+    from .taxonomies import build_taxonomies_router
+    app.include_router(build_taxonomies_router(),
+                       prefix="/api/admin", dependencies=[Depends(_require_admin)])
 
     # Floating suggestions/bug-report widget — per-user threads, admin checkmarks.
     from .feedback import build_feedback_router
@@ -182,6 +186,9 @@ def create_app() -> FastAPI:
         # without keys) so every install sees the same brand list.
         from . import brands as _brands
         _brands.rehydrate()
+        # Markets + domains taxonomy lists — same merge discipline.
+        from . import taxonomies as _tax
+        _tax.rehydrate()
     except Exception:  # noqa: BLE001
         pass
 

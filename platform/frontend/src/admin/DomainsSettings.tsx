@@ -1,0 +1,110 @@
+// Admin › Domains — the domain list the team publishes and links against.
+// Pasting a full URL is fine; the backend keeps only the hostname.
+
+import { useEffect, useState } from 'react'
+import { Check, Globe, Loader2, Plus, Trash2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { getDomains, putDomains, type Domain } from './taxApi'
+
+export function DomainsSettings() {
+  const [draft, setDraft] = useState<Domain[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    getDomains().then(setDraft).catch((e) => setError(e.message))
+  }, [])
+
+  if (draft === null) {
+    return (
+      <div className="flex items-center gap-2 p-8 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      </div>
+    )
+  }
+
+  const set = (i: number, patch: Partial<Domain>) =>
+    setDraft((d) => (d ?? []).map((x, j) => (j === i ? { ...x, ...patch } : x)))
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <h2 className="font-display text-base font-bold">Domains</h2>
+      <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+        The domains the team publishes and links against. A pasted URL is
+        trimmed to its hostname on save.
+      </p>
+
+      {error && (
+        <p className="mb-3 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+      )}
+
+      <div className="space-y-1.5">
+        {draft.map((d, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="flex h-8 w-7 shrink-0 items-center justify-center">
+              <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+            </span>
+            <Input
+              value={d.domain}
+              onChange={(e) => set(i, { domain: e.target.value })}
+              className="h-8 w-64 text-xs"
+              placeholder="braintrade.com"
+              aria-label="Domain"
+            />
+            <Input
+              value={d.note}
+              onChange={(e) => set(i, { note: e.target.value })}
+              className="h-8 flex-1 text-xs"
+              placeholder="Note (optional)"
+              aria-label="Domain note"
+            />
+            <button
+              type="button"
+              onClick={() => setDraft((dd) => (dd ?? []).filter((_, j) => j !== i))}
+              className="rounded p-1 text-muted-foreground hover:text-destructive"
+              title="Remove domain"
+              aria-label={`Remove ${d.domain}`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+        {draft.length === 0 && (
+          <p className="rounded-xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+            No domains yet — add the first one.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <Button variant="outline" size="sm"
+                onClick={() => setDraft((d) => [...(d ?? []), { domain: '', note: '' }])}>
+          <Plus className="h-3.5 w-3.5" /> Add domain
+        </Button>
+        <Button
+          size="sm"
+          disabled={saving}
+          onClick={() => {
+            setSaving(true)
+            setSaved(false)
+            setError(null)
+            putDomains((draft ?? []).filter((d) => d.domain.trim()))
+              .then((ds) => {
+                setDraft(ds)
+                setSaved(true)
+                window.setTimeout(() => setSaved(false), 2000)
+              })
+              .catch((e) => setError(e.message))
+              .finally(() => setSaving(false))
+          }}
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+          Save domains
+        </Button>
+        {saved && <span className="text-xs text-muted-foreground">Saved</span>}
+      </div>
+    </div>
+  )
+}

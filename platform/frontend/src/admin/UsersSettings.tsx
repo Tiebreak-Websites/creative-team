@@ -1,4 +1,4 @@
-// Settings › Users — the CreativeOPS access model, on the builder's own
+// Admin › Users — the CreativeOPS access model, on the builder's own
 // Supabase project.
 //
 // The flow: Microsoft SSO first-login lands a person as viewer + PENDING;

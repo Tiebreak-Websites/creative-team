@@ -1,10 +1,7 @@
 // The global language registry — the list every brand's language picker and
 // every landing page draws from.
 //
-// It lives in Settings › Brands because that is where languages are assigned to
-// a brand: editing the master list next to the pickers that consume it keeps
-// "add a language" and "give it to a brand" one screen apart instead of two
-// tools apart. The Blocks page only *reads* this list.
+// It lives in Admin › Languages; brand pickers and the Blocks page read it.
 
 import { useEffect, useState } from 'react'
 import { Check, Loader2, Plus, Trash2 } from 'lucide-react'

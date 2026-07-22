@@ -170,20 +170,27 @@ def mirror_brands(brands: List[dict]) -> None:
     _queue(job)
 
 
-def mirror_languages(langs: List[dict]) -> None:
-    rows = [{"code": str(l.get("code") or ""), "label": str(l.get("label") or ""),
-             "sort_order": i} for i, l in enumerate(langs) if l.get("code")]
-    codes = {r["code"] for r in rows}
+def mirror_replace(table: str, pk: str, rows: List[dict]) -> None:
+    """Whole-list tables (languages, markets, domains): upsert every row and
+    delete anything the list no longer contains."""
+    keep = {r.get(pk) for r in rows if r.get(pk)}
 
     def job() -> None:
         if rows:
-            supa.rest("POST", "languages?on_conflict=code", rows,
+            supa.rest("POST", f"{table}?on_conflict={pk}", rows,
                       prefer="resolution=merge-duplicates,return=minimal")
-        for have in select_all("languages"):
-            if have.get("code") not in codes:
-                _delete("languages", "code", have["code"])
+        for have in select_all(table):
+            if have.get(pk) not in keep:
+                _delete(table, pk, have[pk])
 
     _queue(job)
+
+
+def mirror_languages(langs: List[dict]) -> None:
+    mirror_replace("languages", "code",
+                   [{"code": str(l.get("code") or ""),
+                     "label": str(l.get("label") or ""),
+                     "sort_order": i} for i, l in enumerate(langs) if l.get("code")])
 
 
 # ---- startup merge ----------------------------------------------------------

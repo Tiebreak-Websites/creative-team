@@ -5,7 +5,10 @@ import {
   Image as ImageIcon,
   Images,
   LayoutTemplate,
+  Globe,
+  Languages as LanguagesIcon,
   Mail,
+  MapPin,
   PanelsTopLeft,
   PenLine,
   RefreshCw,
@@ -36,6 +39,9 @@ import { VersionBadge } from './components/VersionBadge'
 import { BrandsSettings } from './admin/BrandsSettings'
 import { UsersSettings } from './admin/UsersSettings'
 import { SizesSettings } from './admin/SizesSettings'
+import { LanguagesEditor } from './admin/LanguagesEditor'
+import { MarketsSettings } from './admin/MarketsSettings'
+import { DomainsSettings } from './admin/DomainsSettings'
 import { DiskManager } from './admin/DiskManager'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -151,6 +157,19 @@ function StorageBadge({ onOpen, active }: { onOpen?: () => void; active?: boolea
   return (
     <div className={cn(base, 'border-border bg-secondary/50')} title={`Banner storage — ${usage}`}>
       {inner}
+    </div>
+  )
+}
+
+/** Admin › Languages — the global language registry, standalone. */
+function AdminLanguages() {
+  const [error, setError] = useState<string | null>(null)
+  return (
+    <div className="space-y-3">
+      {error && (
+        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
+      )}
+      <LanguagesEditor onError={setError} />
     </div>
   )
 }
@@ -296,7 +315,8 @@ function Workspace() {
   const [ws, setWs] = useState(initialWorkspace)
   const [disk, setDisk] = useState(false)
   const [view, setView] = useState<'home' | 'tool' | 'settings'>(initialView)
-  const [settingsTab, setSettingsTab] = useState<'brands' | 'sizes' | 'users'>('brands')
+  const [settingsTab, setSettingsTab] =
+    useState<'brands' | 'users' | 'languages' | 'markets' | 'domains' | 'sizes'>('brands')
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -385,11 +405,11 @@ function Workspace() {
               variant={view === 'settings' ? 'secondary' : 'ghost'}
               size="sm"
               className="font-display"
-              title="Admin settings — brands, sizes & bundles"
+              title="Admin — brands, users, languages, markets & domains"
               onClick={() => setView((v) => (v === 'settings' ? 'tool' : 'settings'))}
             >
               <Settings className="h-4 w-4" />
-              <span className="hidden 2xl:inline">Settings</span>
+              <span className="hidden 2xl:inline">Admin</span>
             </Button>
           )}
           <span className="hidden sm:inline-flex">
@@ -491,21 +511,49 @@ function Workspace() {
           />
         ) : view === 'settings' ? (
           <div className="h-full overflow-y-auto">
-            <div className="space-y-4 p-5">
-              <nav className="flex items-center gap-1">
-                <Tab active={settingsTab === 'brands'} onClick={() => setSettingsTab('brands')}>
-                  <Tag className="h-4 w-4" /> Brands
-                </Tab>
-                <Tab active={settingsTab === 'sizes'} onClick={() => setSettingsTab('sizes')}>
-                  <Ruler className="h-4 w-4" /> Sizes &amp; bundles
-                </Tab>
-                <Tab active={settingsTab === 'users'} onClick={() => setSettingsTab('users')}>
-                  <UsersRound className="h-4 w-4" /> Users
-                </Tab>
-              </nav>
-              {settingsTab === 'brands' ? <BrandsSettings />
-                : settingsTab === 'users' ? <UsersSettings />
-                : <SizesSettings />}
+            <div className="mx-auto flex max-w-6xl gap-6 p-5">
+              {/* CreativeOPS-style admin nav: one column of categories, the
+                  active one highlighted as a tinted pill. */}
+              <aside className="w-56 shrink-0">
+                <p className="px-3 pt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                  Admin
+                </p>
+                <nav className="mt-2 space-y-1">
+                  {([
+                    ['brands', 'Brands', Tag],
+                    ['users', 'Users', UsersRound],
+                    ['languages', 'Languages', LanguagesIcon],
+                    ['markets', 'Target Markets', MapPin],
+                    ['domains', 'Domains', Globe],
+                    ['sizes', 'Banner sizes', Ruler],
+                  ] as const).map(([key, label, Icon]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setSettingsTab(key)}
+                      aria-current={settingsTab === key ? 'page' : undefined}
+                      className={cn(
+                        'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors',
+                        settingsTab === key
+                          ? 'bg-primary/10 font-semibold text-primary'
+                          : 'text-foreground/80 hover:bg-secondary/70 hover:text-foreground',
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {label}
+                    </button>
+                  ))}
+                </nav>
+              </aside>
+
+              <main className="min-w-0 flex-1 pb-8">
+                {settingsTab === 'brands' ? <BrandsSettings />
+                  : settingsTab === 'users' ? <UsersSettings />
+                  : settingsTab === 'languages' ? <AdminLanguages />
+                  : settingsTab === 'markets' ? <MarketsSettings />
+                  : settingsTab === 'domains' ? <DomainsSettings />
+                  : <SizesSettings />}
+              </main>
             </div>
           </div>
         ) : disk && isAdmin ? (

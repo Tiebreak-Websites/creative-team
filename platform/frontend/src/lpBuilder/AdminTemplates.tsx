@@ -108,7 +108,7 @@ function BrandReachPanel({ brands }: { brands: { cat: string; langs: PillItem[];
         ))}
       </div>
       <p className="mt-3 border-t border-border pt-2 text-[10px] leading-snug text-muted-foreground">
-        Set in Settings › Brands.
+        Set in Admin › Brands.
       </p>
     </div>
   )

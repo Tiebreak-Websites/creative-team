@@ -1,5 +1,5 @@
 // The waiting room. A first Microsoft sign-in lands here: the account exists
-// (viewer + pending) but an admin hasn't opened the door yet in Settings →
+// (viewer + pending) but an admin hasn't opened the door yet in Admin →
 // Users. Approval applies within seconds of being granted — "Check again"
 // re-asks, no re-login needed.
 
@@ -36,7 +36,7 @@ export function PendingGate() {
           <h1 className="mt-4 font-display text-lg font-bold">Almost in</h1>
           <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
             Your Microsoft sign-in worked and your account is created — an admin
-            just needs to approve it in <span className="font-medium text-foreground">Settings → Users</span>.
+            just needs to approve it in <span className="font-medium text-foreground">Admin → Users</span>.
             Approval applies immediately; no need to sign in again.
           </p>
           <div className="mt-7 space-y-2">
