@@ -48,6 +48,8 @@ export interface QueueTask {
     figma_url?: string
     deadline?: string
     owner?: string // Monday Owner name(s), for display in the "All" view
+    priority?: string // Monday Priority label, e.g. "🔴 P1 - Urgent"
+    priority_color?: string // its hex, e.g. "#df2f4a" — tints the queue chip
   }
   match: {
     brand_id: string

@@ -205,6 +205,7 @@ def build_router() -> APIRouter:
                 "market": it.get("market") or "", "brief": it.get("brief") or "",
                 "figma_url": it.get("figma_url") or "", "deadline": it.get("deadline") or "",
                 "owner": it.get("owner") or "",
+                "priority": it.get("priority") or "", "priority_color": it.get("priority_color") or "",
             }, "match": {
                 "brand_id": monday.match_brand(it.get("brand") or "", brands),
                 "language": monday.match_language(it.get("language") or "", langs),

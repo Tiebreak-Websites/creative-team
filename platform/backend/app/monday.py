@@ -81,6 +81,7 @@ _TITLE_MAP = {
     "banner size": "sizes",
     "sizes": "sizes",
     "ad sizes": "sizes",
+    "priority": "priority",
     "requestor": "requestor",
     "owner": "owner",
     "campaign owner": "owner",
@@ -163,6 +164,7 @@ _COLS = """
       column { title }
       ... on BoardRelationValue { display_value }
       ... on PeopleValue { persons_and_teams { id kind } }
+      ... on StatusValue { label_style { color } }
     }"""
 
 
@@ -197,6 +199,20 @@ def _people_ids(item: dict, field: str = "owner") -> List[str]:
     return ids
 
 
+def _status_color(item: dict, field: str) -> str:
+    """The hex colour of the status/priority label on the column that maps to
+    `field` (e.g. "Priority" → priority). Lets the UI tint a task by its Monday
+    priority without re-deriving the label→colour map."""
+    for cv in item.get("column_values") or []:
+        title = re.sub(r"\s+", " ", _squash((cv.get("column") or {}).get("title") or ""))
+        if _TITLE_MAP.get(title) != field:
+            continue
+        color = ((cv.get("label_style") or {}).get("color") or "").strip()
+        if color:
+            return color
+    return ""
+
+
 def _norm_item(item: dict, *, with_subitems: bool = True) -> dict:
     out = {"id": str(item.get("id") or ""),
            "name": item.get("name") or "",
@@ -207,6 +223,9 @@ def _norm_item(item: dict, *, with_subitems: bool = True) -> dict:
     oids = _people_ids(item, "owner")
     if oids:
         out["owner_ids"] = oids
+    pcolor = _status_color(item, "priority")
+    if pcolor:
+        out["priority_color"] = pcolor
     if with_subitems:
         subs = []
         for s in item.get("subitems") or []:

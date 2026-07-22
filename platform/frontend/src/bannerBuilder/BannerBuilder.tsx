@@ -1039,14 +1039,20 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
                   <button type="button" onClick={() => setQueueScope('all')}
                           className="underline underline-offset-2 hover:text-foreground">see all {queueMeta.allCount}</button>.
                 </span>
-              ) : queue.map((t) => (
+              ) : queue.map((t) => {
+                // Tint the chip by the task's Monday Priority colour (dot +
+                // matching border, with a faint fill); plain border when unset.
+                const pc = t.item.priority_color
+                return (
                 <button
                   key={t.item.id}
                   type="button"
                   onClick={() => void startFromTask(t)}
-                  title={`${t.item.name} — open pre-filled${t.item.owner ? ` · ${t.item.owner}` : ''}`}
-                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-left transition-colors hover:border-primary/50"
+                  title={`${t.item.name} — open pre-filled${t.item.priority ? ` · ${t.item.priority}` : ''}${t.item.owner ? ` · ${t.item.owner}` : ''}`}
+                  style={pc ? { borderColor: pc, backgroundColor: `${pc}1f` } : undefined}
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-left transition-opacity hover:opacity-80"
                 >
+                  {pc && <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: pc }} title={t.item.priority} />}
                   <span className="flex min-w-0 flex-col">
                     <span className="max-w-[180px] truncate text-xs font-medium">{t.item.name}</span>
                     {queueScope === 'all' && t.item.owner && (
@@ -1060,7 +1066,8 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
                     <span className="shrink-0 text-[10px] text-muted-foreground">{t.match.sizes.length} sizes</span>
                   )}
                 </button>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>
