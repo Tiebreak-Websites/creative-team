@@ -186,10 +186,14 @@ def _flush_json(path: Path, data) -> None:
 
 def persist_block(b: dict) -> None:
     _flush_json(BLOCKS_DIR / f"{b['key']}.json", b)
+    from .. import pgdb
+    pgdb.mirror_upsert("email_blocks", "key", pgdb.email_block_row(b))
 
 
 def persist_campaign(c: dict) -> None:
     _flush_json(CAMPAIGNS_DIR / f"{c['id']}.json", c)
+    from .. import pgdb
+    pgdb.mirror_upsert("email_campaigns", "id", pgdb.campaign_row(c))
 
 
 def delete_campaign_file(cid: str) -> None:
@@ -197,6 +201,8 @@ def delete_campaign_file(cid: str) -> None:
         (CAMPAIGNS_DIR / f"{cid}.json").unlink(missing_ok=True)
     except Exception:
         log.exception("email-builder: could not delete campaign %s", cid)
+    from .. import pgdb
+    pgdb.mirror_delete("email_campaigns", "id", cid)
 
 
 def rehydrate() -> None:
@@ -206,12 +212,14 @@ def rehydrate() -> None:
     library must exist before the first /blocks request.
     """
     from .blocks import BUILTIN_BLOCKS
+    from .. import pgdb
 
     with _LOCK:
-        _BLOCKS.clear()
-        for b in BUILTIN_BLOCKS:
-            _BLOCKS[b["key"]] = {**b, "built_in": True}
-
+        # Overrides and campaigns are read from disk first, then merged with
+        # Postgres (newest wins per record, missing rows pushed up) — so the
+        # first boot with keys imports .runs automatically, and a fresh disk
+        # (new host) comes back fully populated from the database.
+        disk_overrides: Dict[str, dict] = {}
         if BLOCKS_DIR.exists():
             for p in sorted(BLOCKS_DIR.glob("*.json")):
                 try:
@@ -219,15 +227,21 @@ def rehydrate() -> None:
                 except Exception:
                     log.exception("email-builder: skipping unreadable block %s", p)
                     continue
-                key = rec.get("key")
-                if not key:
-                    continue
-                # A disk record for a built-in is an OVERRIDE, not a replacement:
-                # built_in stays true so the UI still refuses to delete it.
-                rec["built_in"] = key in _BLOCKS and _BLOCKS[key].get("built_in", False)
-                _BLOCKS[key] = rec
+                if rec.get("key"):
+                    disk_overrides[rec["key"]] = rec
+        overrides = pgdb.merge_records("email_blocks", "key", disk_overrides,
+                                       pgdb.email_block_row)
 
-        _CAMPAIGNS.clear()
+        _BLOCKS.clear()
+        for b in BUILTIN_BLOCKS:
+            _BLOCKS[b["key"]] = {**b, "built_in": True}
+        for key, rec in overrides.items():
+            # A stored record for a built-in is an OVERRIDE, not a replacement:
+            # built_in stays true so the UI still refuses to delete it.
+            rec["built_in"] = key in _BLOCKS and _BLOCKS[key].get("built_in", False)
+            _BLOCKS[key] = rec
+
+        disk_campaigns: Dict[str, dict] = {}
         if CAMPAIGNS_DIR.exists():
             for p in sorted(CAMPAIGNS_DIR.glob("*.json")):
                 try:
@@ -236,9 +250,23 @@ def rehydrate() -> None:
                     log.exception("email-builder: skipping unreadable campaign %s", p)
                     continue
                 if rec.get("id"):
-                    _CAMPAIGNS[rec["id"]] = rec
+                    disk_campaigns[rec["id"]] = rec
 
-    log.info("email-builder: %d blocks, %d campaigns", len(_BLOCKS), len(_CAMPAIGNS))
+        _CAMPAIGNS.clear()
+        _CAMPAIGNS.update(pgdb.merge_records("email_campaigns", "id",
+                                             disk_campaigns, pgdb.campaign_row))
+
+        # Records that came back FROM the database get their disk copy too —
+        # a later keyless start (or a lost env var) must not lose them.
+        for rid, rec in _CAMPAIGNS.items():
+            if rec is not disk_campaigns.get(rid):
+                _flush_json(CAMPAIGNS_DIR / f"{rid}.json", rec)
+        for key, rec in overrides.items():
+            if rec is not disk_overrides.get(key):
+                _flush_json(BLOCKS_DIR / f"{key}.json", rec)
+
+    log.info("email-builder: %d blocks, %d campaigns%s", len(_BLOCKS), len(_CAMPAIGNS),
+             " (merged with Supabase)" if pgdb.enabled() else "")
 
     # Generation jobs rehydrate with the same startup pass — anything that was
     # mid-flight when the process died is marked failed, honestly.

@@ -1,8 +1,15 @@
 # Supabase migration — plan and state
 
-Target: data in Supabase Postgres, images in Supabase Storage, Microsoft SSO
-via Supabase Auth, n8n + Monday automations on top. Phased so nothing breaks
-mid-flight; each phase is dormant until its secrets exist.
+**Scope decision (2026-07-22): the builder KEEPS its architecture as-is** —
+FastAPI backend, same generation pipelines, same login. Supabase's job is
+**Storage and Database only**. A full CreativeOPS-parity rewrite (Edge
+Functions, static-only frontend, Azure pipeline) was considered and reverted:
+it could not guarantee identical generation behaviour (PIL banner engine,
+background jobs). SSO remains a possible later phase, not in scope now.
+
+Target: data in Supabase Postgres, images in Supabase Storage, n8n + Monday
+automations on top. Phased so nothing breaks mid-flight; each phase is
+dormant until its secrets exist.
 
 ## Ground rule: the builder is STANDALONE
 
@@ -48,7 +55,7 @@ never git.
 Frontend key for Phase 2 (safe to ship in the browser):
 `sb_publishable_esM5Vcf8uAYkGa2U6SsiuA_0l-jApIk`
 
-## Phase 2 — Microsoft SSO
+## Phase 2 — Microsoft SSO  (parked — out of scope per the 2026-07-22 decision)
 
 Our own SAML registration against the same Entra tenant — CreativeOPS proved
 the path and left playbooks: `catalog/docs/sso-azure-setup.md` (Supabase
@@ -66,21 +73,30 @@ side) and `catalog/docs/for-it-entra-sso.md` (the IT ticket). Steps:
    `handle_new_user` trigger: role `viewer`, `access_status='pending'`) —
    role truth lives in the table, never the JWT claim.
 
-## Phase 3 — data → Postgres (our own project, plain `public` schema)
+## Phase 3 — data → Postgres  ✅ SHIPPED (2026-07-22)
 
-**Schema is applied** (migration `builder_core_schema`, 2026-07-21): `users`
-(+ `handle_new_user` trigger priming Phase 2, `auth_role()`/`is_admin()`
-helpers), `brands`, `email_campaigns`, `email_blocks`, `lp_projects`,
-`lp_sections`, `languages`, `feedback`, `audit_log` — RLS enabled on all
-nine with read-for-signed-in / write-per-role policies. Payload-first jsonb;
-indexed columns only where queries and webhooks need them (brand_id,
-parent_id, monday_id via payload later if needed).
+**Schema applied** (migration `builder_core_schema`, 2026-07-21): `users`,
+`brands`, `email_campaigns`, `email_blocks`, `lp_projects`, `lp_sections`,
+`languages`, `feedback`, `audit_log` — RLS on all nine. Payload-first jsonb
+with typed columns where queries/webhooks need them.
 
-Remaining: swap the persistence layer only (`_flush_json` → upsert, `rehydrate` →
-select); in-memory dicts, locks and every router stay. One-time import of
-the `.runs` JSON. Tables: `brands`, `email_campaigns`, `email_blocks`,
-`lp_projects`, `lp_sections`, `languages`, `feedback` — jsonb-heavy on
-purpose; normalise later if queries demand it.
+**Persistence mirror live** (`app/pgdb.py`): in-memory dicts and JSON disk
+writes stay EXACTLY as before; every persist is also upserted to Postgres on
+a single background writer thread (ordered per record, fire-and-forget — a
+database hop can never slow or fail a save). Deletes mirror the same way.
+On startup each store merges Postgres with disk, newest `updated_at` wins
+per record, missing rows are pushed up (the one-time `.runs` import happens
+automatically and idempotently), and records restored FROM the database are
+written back to disk. Without the keys: yesterday's code path, unchanged.
+
+Verified 2026-07-22: auto-import matched disk counts exactly (7 brands,
+6 campaigns, 1 LP project, 2 sections, 15 languages); create → row in
+seconds; local JSON deleted + restart → record restored from Postgres and
+served by the API; API delete → row gone. `/api/health` now reports
+`supabase_db`.
+
+Both local dev and the deployed server share the one project database —
+per-record last-write-wins, the same trade Storage makes for images.
 
 House style to copy from CreativeOPS: idempotent standalone SQL applied via
 MCP, RLS on every table with `is_admin()` write policies and a

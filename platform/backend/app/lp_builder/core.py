@@ -143,14 +143,20 @@ def _flush_json(path: Path, data) -> None:
 
 def persist_section(s: dict) -> None:
     _flush_json(SECTIONS_DIR / f"{s['key']}.json", s)
+    from .. import pgdb
+    pgdb.mirror_upsert("lp_sections", "key", pgdb.lp_section_row(s))
 
 
 def persist_project(p: dict) -> None:
     _flush_json(PROJECTS_DIR / f"{p['id']}.json", p)
+    from .. import pgdb
+    pgdb.mirror_upsert("lp_projects", "id", pgdb.lp_project_row(p))
 
 
 def persist_langs() -> None:
     _flush_json(LANGS_PATH, _LANGS)
+    from .. import pgdb
+    pgdb.mirror_languages(_LANGS)
 
 
 def delete_section_file(key: str) -> None:
@@ -158,6 +164,8 @@ def delete_section_file(key: str) -> None:
         (SECTIONS_DIR / f"{key}.json").unlink(missing_ok=True)
     except Exception:  # noqa: BLE001
         pass
+    from .. import pgdb
+    pgdb.mirror_delete("lp_sections", "key", key)
 
 
 def delete_project_files(pid: str) -> None:
@@ -165,6 +173,8 @@ def delete_project_files(pid: str) -> None:
         (PROJECTS_DIR / f"{pid}.json").unlink(missing_ok=True)
     except Exception:  # noqa: BLE001
         pass
+    from .. import pgdb
+    pgdb.mirror_delete("lp_projects", "id", pid)
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +209,7 @@ def new_asset_id() -> str:
 # ---------------------------------------------------------------------------
 def rehydrate() -> None:
     from . import builtin_sections, braintrade_sections
+    from .. import pgdb
     with _LOCK:
         for s in (builtin_sections.BUILTIN_SECTIONS
                   + braintrade_sections.BRAINTRADE_SECTIONS):
@@ -206,28 +217,44 @@ def rehydrate() -> None:
             s["built_in"] = True
             s.setdefault("enabled", True)
             _SECTIONS[s["key"]] = s
-        n_sec = n_proj = 0
+
+        # Disk first, then merged with Postgres — newest per record wins and
+        # anything the database is missing is pushed up (the automatic,
+        # idempotent import). A fresh disk repopulates from the database.
+        disk_secs: Dict[str, dict] = {}
         if SECTIONS_DIR.is_dir():
             for f in SECTIONS_DIR.glob("*.json"):
                 try:
                     s = json.loads(f.read_text(encoding="utf-8"))
                     if s.get("key"):
-                        base = _SECTIONS.get(s["key"])
-                        if base is not None and base.get("built_in"):
-                            s["built_in"] = True  # disk override of a built-in
-                        _SECTIONS[s["key"]] = s
-                        n_sec += 1
+                        disk_secs[s["key"]] = s
                 except Exception:  # noqa: BLE001
                     log.warning("lp-builder: skipped unreadable section %s", f.name)
+        merged_secs = pgdb.merge_records("lp_sections", "key", disk_secs,
+                                         pgdb.lp_section_row)
+        for key, s in merged_secs.items():
+            base = _SECTIONS.get(key)
+            if base is not None and base.get("built_in"):
+                s["built_in"] = True  # stored override of a built-in
+            _SECTIONS[key] = s
+            if s is not disk_secs.get(key):
+                _flush_json(SECTIONS_DIR / f"{key}.json", s)
+
+        disk_projs: Dict[str, dict] = {}
         if PROJECTS_DIR.is_dir():
             for f in PROJECTS_DIR.glob("*.json"):
                 try:
                     p = json.loads(f.read_text(encoding="utf-8"))
                     if p.get("id"):
-                        _PROJECTS[p["id"]] = p
-                        n_proj += 1
+                        disk_projs[p["id"]] = p
                 except Exception:  # noqa: BLE001
                     log.warning("lp-builder: skipped unreadable project %s", f.name)
+        _PROJECTS.update(pgdb.merge_records("lp_projects", "id", disk_projs,
+                                            pgdb.lp_project_row))
+        for pid, p in _PROJECTS.items():
+            if p is not disk_projs.get(pid):
+                _flush_json(PROJECTS_DIR / f"{pid}.json", p)
+
         global _LANGS
         try:
             _LANGS = json.loads(LANGS_PATH.read_text(encoding="utf-8"))
@@ -238,5 +265,23 @@ def rehydrate() -> None:
             _LANGS.extend(dict(x) for x in DEFAULT_LANGS if x["code"] not in have)
         except Exception:  # noqa: BLE001
             _LANGS = [dict(x) for x in DEFAULT_LANGS]
+        # The languages table mirrors the resolved list; db-only codes (edited
+        # from another install) join it.
+        if pgdb.enabled():
+            try:
+                db_langs = pgdb.select_all("languages")
+                db_langs.sort(key=lambda r: r.get("sort_order") or 0)
+                have = {l.get("code") for l in _LANGS}
+                extra = [{"code": r["code"], "label": r.get("label") or r["code"]}
+                         for r in db_langs if r.get("code") and r["code"] not in have]
+                if extra:
+                    _LANGS.extend(extra)
+                    _flush_json(LANGS_PATH, _LANGS)
+                pgdb.mirror_languages(_LANGS)
+            except Exception:  # noqa: BLE001
+                log.exception("lp-builder: language table sync failed — using local list")
+
+    n_sec, n_proj = len(merged_secs), len(_PROJECTS)
     if n_sec or n_proj:
-        log.info("lp-builder: rehydrated %d section override(s), %d project(s)", n_sec, n_proj)
+        log.info("lp-builder: rehydrated %d section override(s), %d project(s)%s",
+                 n_sec, n_proj, " (merged with Supabase)" if pgdb.enabled() else "")

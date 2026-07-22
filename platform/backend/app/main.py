@@ -178,6 +178,10 @@ def create_app() -> FastAPI:
         # Same reasoning for the email block library.
         from .email_builder import core as _email_core
         _email_core.rehydrate()
+        # Brands: sync the disk file with the Supabase brands table (no-op
+        # without keys) so every install sees the same brand list.
+        from . import brands as _brands
+        _brands.rehydrate()
     except Exception:  # noqa: BLE001
         pass
 
@@ -200,6 +204,8 @@ def create_app() -> FastAPI:
         from .email_builder import storage as _supa_storage
         from . import events as _events
         checks["supabase_storage"] = _supa_storage.enabled()
+        from . import pgdb as _pgdb
+        checks["supabase_db"] = _pgdb.enabled()
         checks["n8n_events"] = _events.configured()
         checks["tinify"] = bool(get_secret("TINIFY_API_KEY"))
         from . import monday as _monday

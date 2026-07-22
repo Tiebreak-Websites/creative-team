@@ -32,10 +32,12 @@ def enabled() -> bool:
     return _config() is not None
 
 
-def rest(method: str, path: str, payload: Any = None) -> Any:
+def rest(method: str, path: str, payload: Any = None,
+         prefer: str = "return=representation") -> Any:
     """One PostgREST call. `path` includes the table and any query string,
     e.g. "users?select=*&order=created_at.desc". Raises LookupError when
-    unconfigured, RuntimeError on HTTP failure."""
+    unconfigured, RuntimeError on HTTP failure. `prefer` lets callers switch
+    to upsert semantics ("resolution=merge-duplicates")."""
     cfg = _config()
     if not cfg:
         raise LookupError("SUPABASE_URL/SUPABASE_SERVICE_KEY")
@@ -49,8 +51,7 @@ def rest(method: str, path: str, payload: Any = None) -> Any:
             "apikey": key,
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
-            # representation back, so PATCH/POST return the row they touched
-            "Prefer": "return=representation",
+            "Prefer": prefer,
         })
     try:
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:

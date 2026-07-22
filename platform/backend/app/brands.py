@@ -30,10 +30,13 @@ Routes (mounted under /api/tools/banner-builder by runs_router.build_router):
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from pathlib import Path
 from typing import Any, List, Optional
+
+log = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import Response
@@ -468,6 +471,42 @@ def _save(brands: List[dict]) -> None:
     BRANDS_PATH.write_text(
         json.dumps(brands, indent=2, ensure_ascii=False), encoding="utf-8"
     )
+    from . import pgdb
+    pgdb.mirror_brands(brands)
+
+
+def rehydrate() -> None:
+    """Startup sync with the brands table (no-op without Supabase keys).
+
+    Brands are read from disk per request (fast, small file); the table is the
+    durable copy. On boot: database wins per id, ids only on disk are pushed
+    up, and the merged list is written back to disk — so a fresh disk on a new
+    host starts with every brand, and the first boot with keys imports the
+    existing file automatically.
+    """
+    from . import pgdb
+    if not pgdb.enabled():
+        return
+    try:
+        db_rows = pgdb.select_all("brands")
+    except Exception:
+        log.exception("brands: could not read the brands table — using disk alone")
+        return
+    stored = _load()
+    by_id = {b["id"]: b for b in stored if b.get("id")}
+    merged: List[dict] = []
+    seen = set()
+    for r in db_rows:
+        rec = r.get("payload")
+        if isinstance(rec, dict) and rec.get("id"):
+            merged.append(rec)
+            seen.add(rec["id"])
+    only_disk = [b for i, b in by_id.items() if i not in seen]
+    merged.extend(only_disk)
+    if only_disk or len(merged) != len(stored) or merged != stored:
+        _save(merged)  # re-mirrors too — idempotent
+        log.info("brands: synced %d record(s) with Supabase (%d pushed up)",
+                 len(merged), len(only_disk))
 
 
 def list_brands() -> List[dict]:
