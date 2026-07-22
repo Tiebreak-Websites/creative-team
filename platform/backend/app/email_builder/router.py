@@ -159,7 +159,8 @@ _MONDAY_KEEP = ("id", "name", "url", "board", "group", "status", "priority",
                 "type", "asset_type", "brand", "label", "white_label",
                 "language", "languages", "layout_label", "market", "deadline",
                 "start_date", "brief", "topic", "figma_url", "requestor",
-                "owner")
+                "owner", "segment", "segment_note", "creative_types",
+                "final_content")
 _MONDAY_SUB_KEEP = ("id", "name", "status", "language", "brand", "asset_type",
                     "topic")
 
@@ -196,11 +197,14 @@ def _monday_match(item: dict) -> dict:
     flow itself always starts campaigns in English — the language list is for
     the variant fan-out that follows."""
     langs = lp_core.languages() or lp_core.DEFAULT_LANGS
+    # The Marketing calendar has ONE "Language" column that may hold several
+    # codes ("EN, AR") — treat whichever field arrived as the list source.
+    lang_text = item.get("languages") or item.get("language") or ""
     return {
         "brand_id": monday.match_brand(item.get("brand") or "",
                                        brands_mod.list_brands()),
         "language": monday.match_language(item.get("language") or "", langs),
-        "languages": monday.match_languages(item.get("languages") or "", langs),
+        "languages": monday.match_languages(lang_text, langs),
         "layout": _match_layout(item.get("layout_label") or ""),
     }
 
@@ -453,7 +457,8 @@ def build_email_builder_router() -> APIRouter:
             items = monday.ready_for_design()
         except RuntimeError as e:
             raise HTTPException(502, str(e))
-        return {"tasks": [{"item": i, "match": _monday_match(i)} for i in items]}
+        return {"tasks": [{"item": i, "match": _monday_match(i)} for i in items],
+                "status": monday.ready_status()}
 
     @router.get("/monday/search")
     def monday_search(q: str = "", _user: dict = Depends(require_user)):

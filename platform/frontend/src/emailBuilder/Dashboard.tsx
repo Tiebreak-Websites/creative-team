@@ -64,6 +64,7 @@ export function Dashboard({
   brands,
   languages,
   ready,
+  queueLabel,
   onStartTask,
   onOpen,
   onCreate,
@@ -73,8 +74,10 @@ export function Dashboard({
   campaigns: CampaignSummary[] | null
   brands: Brand[]
   languages: Language[]
-  /** Monday's "Ready for design" queue, matched to builder vocabulary. */
+  /** Monday's work queue, matched to builder vocabulary. */
   ready: MondayPull[]
+  /** The Status label the queue is filtered by — names the strips. */
+  queueLabel: string
   onStartTask: (t: MondayPull) => Promise<unknown>
   onOpen: (id: string) => void
   onCreate: (brandId: string) => void
@@ -253,13 +256,13 @@ export function Dashboard({
           </Button>
         </div>
 
-        {/* Monday's work queue for this brand: a task at "Ready for design"
+        {/* Monday's work queue for this brand: a task at the queue status
             lands here, and one click turns it into the campaign — name,
             layout and the task snapshot carried over, English source first. */}
         {queue.some((t) => t.match.brand_id === folder) && (
           <section className="mb-5 rounded-2xl border border-primary/30 bg-primary/[0.04] p-4 animate-fade-up">
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <h2 className="font-display text-sm font-bold">Ready for design</h2>
+              <h2 className="font-display text-sm font-bold">{queueLabel}</h2>
               <span className="text-[11px] text-muted-foreground">
                 From Monday — starting a task creates the campaign with its details; the
                 source email is always English.
@@ -355,12 +358,12 @@ export function Dashboard({
         <Stat value={new Set(campaigns.map((c) => c.language)).size} label="Languages in use" />
       </div>
 
-      {/* Monday's "Ready for design" queue, before any folder is opened —
+      {/* Monday's work queue, before any folder is opened —
           each pill jumps into the task's brand folder where Start lives. */}
       {queue.length > 0 && (
         <section className="mb-5 rounded-2xl border border-primary/30 bg-primary/[0.04] px-4 py-3 animate-fade-up">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-display text-xs font-bold">Ready for design</span>
+            <span className="font-display text-xs font-bold">{queueLabel}</span>
             <span className="mr-1 text-[11px] tabular-nums text-muted-foreground">
               {queue.length} on Monday
             </span>

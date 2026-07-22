@@ -88,6 +88,11 @@ export interface MondayItem {
   figma_url?: string
   requestor?: string
   owner?: string
+  /** Marketing-calendar context: audience segment, creative types, content. */
+  segment?: string
+  segment_note?: string
+  creative_types?: string
+  final_content?: string
   subitems?: MondaySubitem[]
 }
 
@@ -216,11 +221,13 @@ export async function mondayItem(id: string): Promise<MondayPull> {
   return r.json()
 }
 
-/** The work queue: CRM tasks with Status "Ready for design". */
-export async function mondayReady(): Promise<MondayPull[]> {
+/** The work queue: Monday items at the configured start status (the label
+ *  comes back too, so the UI can name the strip after it). */
+export async function mondayReady(): Promise<{ tasks: MondayPull[]; status: string }> {
   const r = await fetch(`${EB}/monday/ready`, { credentials: 'include' })
   if (!r.ok) return fail(r, 'Could not load the Monday queue')
-  return (await r.json()).tasks ?? []
+  const d = await r.json()
+  return { tasks: d.tasks ?? [], status: d.status ?? 'Ready for design' }
 }
 
 export async function mondaySearch(q: string): Promise<MondayItem[]> {

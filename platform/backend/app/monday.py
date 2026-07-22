@@ -54,9 +54,16 @@ _TITLE_MAP = {
     "brand": "brand",
     "target brand": "brand",
     "label": "label",
+    "labels": "label",                  # Marketing calendar pluralizes it
     "white label": "white_label",
     "language": "language",
     "languages": "languages",           # multi-select; text is comma-joined
+    "base segment": "segment",
+    "segment description": "segment_note",
+    "creative types": "creative_types",
+    "final content": "final_content",
+    "additional comments materials": "brief",
+    "figma links": "figma_url",
     "layout": "layout_label",           # "Layout #" squashes to "layout"
     "target market": "market",
     "deadline": "deadline",
@@ -88,6 +95,8 @@ _LANG_ALIASES = {
 # Monday brand labels → builder brand names, squashed-alphanumeric form.
 _BRAND_ALIASES = {
     "wbs": "warrenbowieandsmith",
+    "financero": "finansero",          # Marketing calendar spells it with a c
+    "digitalspearhead": "dgsh",
 }
 
 
@@ -206,25 +215,34 @@ def search(term: str, limit: int = 8) -> List[dict]:
     return [_norm_item(i, with_subitems=False) for i in items]
 
 
+def ready_status() -> str:
+    """The Status label that means "start building this in the builder" —
+    board-specific, so it is configuration, not code. The Marketing calendar
+    uses lifecycle statuses; Planned is where upcoming campaigns wait for
+    their creatives."""
+    return (get_secret("MONDAY_READY_STATUS") or "Planned").strip()
+
+
 def ready_for_design(limit: int = 50) -> List[dict]:
-    """Every CRM task whose Status is "Ready for design" — the work queue the
-    builder surfaces. Matched by label TEXT (contains_text is the operator
-    Monday's API actually honours for status text), so the filter survives
-    label-id reshuffles on the board."""
+    """Every item at the configured queue status — the work list the builder
+    surfaces. Matched by label TEXT (contains_text is the operator Monday's
+    API actually honours for status text), so the filter survives label-id
+    reshuffles on the board."""
     board = crm_board_id()
     if not board:
         return []
-    q = f"""query ($board: [ID!], $limit: Int!) {{
+    q = f"""query ($board: [ID!], $limit: Int!, $status: CompareValue!) {{
       boards (ids: $board) {{
         items_page (limit: $limit, query_params: {{
-          rules: [{{column_id: "status", compare_value: "Ready for design",
+          rules: [{{column_id: "status", compare_value: $status,
                     operator: contains_text}}]
         }}) {{
           items {{ id name url group {{ title }} {_COLS} }}
         }}
       }}
     }}"""
-    boards = _gql(q, {"board": [board], "limit": limit}).get("boards") or []
+    boards = _gql(q, {"board": [board], "limit": limit,
+                      "status": ready_status()}).get("boards") or []
     items = ((boards[0].get("items_page") or {}).get("items") or []) if boards else []
     return [_norm_item(i, with_subitems=False) for i in items]
 

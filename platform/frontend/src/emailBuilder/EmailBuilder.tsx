@@ -33,9 +33,10 @@ export function EmailBuilder() {
   // null = closed; otherwise the brand id the folder was opened from, so a
   // campaign created inside a folder lands in that folder.
   const [creating, setCreating] = useState<string | null>(null)
-  // The Monday work queue — CRM tasks at "Ready for design". Loaded best-
-  // effort: with no token configured the strip simply doesn't exist.
+  // The Monday work queue — items at the configured start status. Loaded
+  // best-effort: with no token configured the strip simply doesn't exist.
   const [ready, setReady] = useState<MondayPull[]>([])
+  const [queueLabel, setQueueLabel] = useState('Ready for design')
 
   const refresh = () => listCampaigns().then(setCampaigns).catch((e) => setError(e.message))
 
@@ -46,7 +47,9 @@ export function EmailBuilder() {
       .catch((e) => setError(e.message))
     listBrands().then(setBrands).catch(() => { /* the picker just stays empty */ })
     listSections().then((d) => setLanguages(d.languages)).catch(() => { /* ditto */ })
-    mondayReady().then(setReady).catch(() => { /* dormant or down — no strip */ })
+    mondayReady()
+      .then((d) => { setReady(d.tasks); setQueueLabel(d.status) })
+      .catch(() => { /* dormant or down — no strip */ })
   }, [])
 
   const open = (id: string) =>
@@ -95,6 +98,7 @@ export function EmailBuilder() {
         brands={brands}
         languages={languages}
         ready={ready}
+        queueLabel={queueLabel}
         onStartTask={startFromTask}
         onOpen={open}
         onCreate={(brandId) => setCreating(brandId)}
@@ -173,7 +177,7 @@ function CreateModal({
   // Layout first, details second: the shape decides what you are writing, so
   // it is the first question — the same order every ESP asks in.
   const [layout, setLayout] = useState<string | null>(null)
-  // ---- Monday pull: link the campaign to its Creative Board task and let
+  // ---- Monday pull: link the campaign to its Monday task and let
   // the task fill the form (name, brand, language) instead of re-typing it.
   const [monday, setMonday] = useState<MondayItem | null>(null)
   const [mQuery, setMQuery] = useState('')
@@ -206,7 +210,7 @@ function CreateModal({
       ? mondayItem(q).then(applyPull)
       : mondaySearch(q).then((items) => {
           setMResults(items)
-          if (!items.length) setMNote('Nothing on the Creative Board matches that.')
+          if (!items.length) setMNote('Nothing on the Monday board matches that.')
         })
     )
       .catch((e) => setMNote(e.message))
@@ -291,7 +295,7 @@ function CreateModal({
           </button>
         </p>
         <div className="mt-4 space-y-3">
-          {/* Monday pull — link the Creative Board task and it fills the form. */}
+          {/* Monday pull — link the Monday task and it fills the form. */}
           <div className="rounded-xl border border-border bg-secondary/40 p-2.5">
             <Label htmlFor="nc-monday" className="text-xs">Monday task (optional)</Label>
             {monday ? (
@@ -334,7 +338,7 @@ function CreateModal({
                     id="nc-monday" value={mQuery}
                     onChange={(e) => setMQuery(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); pull() } }}
-                    className="h-9" placeholder="Paste a Monday ID or search the Creative Board"
+                    className="h-9" placeholder="Paste a Monday ID or search the board"
                   />
                   <Button
                     variant="outline" className="h-9 shrink-0"
