@@ -46,6 +46,11 @@ class RunRequest(BaseModel):
     # raster logo + logo_corner are set) composites the logo onto each finished PNG.
     brand_id: Optional[str] = None
     logo_corner: Optional[str] = None    # 'tl' | 'tr' | 'bl' | 'br'
+    # Creative link — the Monday item (Creative Board) this run fulfils. When a
+    # run is started from the Ready-for-Design queue these arrive filled, so the
+    # run lands in the Library filed under that creative from birth.
+    monday_id: Optional[str] = None
+    creative_name: Optional[str] = None
     # The user's Art-Director selections as short tags (display-only — shown in the
     # banner detail view so anyone can see what was chosen).
     art_tags: List[ArtTag] = Field(default_factory=list)

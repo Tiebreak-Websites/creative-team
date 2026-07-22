@@ -30,6 +30,64 @@ export interface CampaignRunRequest {
   brand_id?: string // selected brand (folds colors into art direction)
   logo_corner?: string // 'tl' | 'tr' | 'bl' | 'br' — overlay the brand logo
   art_tags?: { label: string; value: string }[] // Art-Director selections (display-only)
+  monday_id?: string // Creative Board item this run fulfils (files it in the Library)
+  creative_name?: string
+}
+
+/** One Ready-for-Design task from the Creative Board, matched to builder terms. */
+export interface QueueTask {
+  item: {
+    id: string
+    name: string
+    url: string
+    asset_type?: string
+    brand?: string
+    language?: string
+    market?: string
+    brief?: string
+    figma_url?: string
+    deadline?: string
+    owner?: string // Monday Owner name(s), for display in the "All" view
+    priority?: string // Monday Priority label, e.g. "🔴 P1 - Urgent"
+    priority_color?: string // its hex, e.g. "#df2f4a" — tints the queue chip
+  }
+  match: {
+    brand_id: string
+    language: string
+    sizes: string[]
+    asset_type: string
+  }
+}
+
+/** The banner/LP work queue plus scope metadata (see bannerQueue). */
+export interface QueueResult {
+  tasks: QueueTask[]
+  status: string
+  scope: 'mine' | 'all' // which scope the server actually returned
+  linked: boolean // whether the current user has a linked Monday person
+  mineCount: number
+  allCount: number
+}
+
+/**
+ * The banner/LP work queue: Creative Board items at "Ready for Design".
+ * scope="mine" (default) returns only the tasks the signed-in user owns on
+ * Monday; "all" returns everyone's. An unlinked user always gets "all" back
+ * (linked=false) — there's no Monday id to filter on.
+ */
+export async function bannerQueue(scope: 'mine' | 'all' = 'mine'): Promise<QueueResult> {
+  const empty: QueueResult = { tasks: [], status: 'Ready for Design', scope: 'all', linked: false, mineCount: 0, allCount: 0 }
+  const r = await fetch(`${BASE}/tools/banner-builder/queue?scope=${scope}`, { credentials: 'include' })
+  if (!r.ok) return empty
+  const d = await r.json()
+  return {
+    tasks: d.tasks ?? [],
+    status: d.status ?? 'Ready for Design',
+    scope: d.scope === 'mine' ? 'mine' : 'all',
+    linked: !!d.linked,
+    mineCount: d.mine_count ?? 0,
+    allCount: d.all_count ?? 0,
+  }
 }
 
 /**

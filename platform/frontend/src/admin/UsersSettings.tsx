@@ -7,7 +7,7 @@
 // table; everything in this panel edits that table and nothing else.
 
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Loader2, ShieldAlert, UserRound } from 'lucide-react'
+import { Check, Link2, Loader2, ShieldAlert, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Toggle } from '@/components/Toggle'
@@ -21,7 +21,15 @@ interface Row {
   access_status: 'pending' | 'active'
   active: boolean
   sections: string[] | null
+  monday_user_id: string | null
+  monday_user_name: string | null
   created_at: string
+}
+
+interface MondayUser {
+  id: string
+  name: string
+  email: string
 }
 
 const SECTION_LABEL: Record<string, string> = {
@@ -38,6 +46,9 @@ export function UsersSettings() {
   const [dormant, setDormant] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  // Monday people for the owner-link picker (best-effort; empty when Monday
+  // isn't connected — the picker just doesn't render then).
+  const [mondayUsers, setMondayUsers] = useState<MondayUser[]>([])
 
   const load = () =>
     fetch(`${API_BASE}/admin/users`, { credentials: 'include' })
@@ -56,6 +67,15 @@ export function UsersSettings() {
       .catch((e) => setError(e.message))
 
   useEffect(() => { load() }, [])
+
+  // The Monday people list for the owner-link picker — best-effort, cached
+  // once. A 424 (Monday not configured) just leaves the list empty.
+  useEffect(() => {
+    fetch(`${API_BASE}/admin/monday-users`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : { users: [] }))
+      .then((d) => setMondayUsers(d.users ?? []))
+      .catch(() => {})
+  }, [])
 
   const patch = (id: string, body: Record<string, unknown>) => {
     setBusy(id)
@@ -180,6 +200,39 @@ export function UsersSettings() {
                     </span>
                     {busy === u.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                   </div>
+
+                  {mondayUsers.length > 0 && (
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                        <Link2 className="h-3 w-3" /> Monday owner
+                      </span>
+                      <select
+                        value={u.monday_user_id ?? ''}
+                        disabled={busy === u.id}
+                        onChange={(e) => {
+                          const id = e.target.value
+                          if (!id) { patch(u.id, { clear_monday: true }); return }
+                          const m = mondayUsers.find((x) => x.id === id)
+                          patch(u.id, { monday_user_id: id, monday_user_name: m?.name ?? '' })
+                        }}
+                        className="h-8 max-w-[260px] rounded-lg border border-border bg-card px-2 text-xs"
+                        aria-label={`Monday person for ${u.email}`}
+                      >
+                        <option value="">— Not linked —</option>
+                        {u.monday_user_id && !mondayUsers.some((m) => m.id === u.monday_user_id) && (
+                          <option value={u.monday_user_id}>{u.monday_user_name || u.monday_user_id} (unavailable)</option>
+                        )}
+                        {mondayUsers.map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}{m.email ? ` · ${m.email}` : ''}</option>
+                        ))}
+                      </select>
+                      <span className="text-[10px] italic text-muted-foreground">
+                        {u.monday_user_id
+                          ? 'sees only their own Ready-for-Design tasks'
+                          : 'link to filter this person’s queue to their own tasks'}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">

@@ -35,6 +35,11 @@ class UserPatch(BaseModel):
     # CreativeOPS semantics, kept identical on purpose.
     sections: Optional[List[str]] = None
     clear_sections: bool = False
+    # Link this account to the Monday person who owns its Creative-Board tasks
+    # (id is authoritative; name is stored for display). clear_monday unlinks.
+    monday_user_id: Optional[str] = None
+    monday_user_name: Optional[str] = None
+    clear_monday: bool = False
 
 
 def _missing() -> HTTPException:
@@ -51,7 +56,8 @@ def build_admin_users_router() -> APIRouter:
         try:
             rows = supa.rest(
                 "GET",
-                "users?select=id,email,name,role,access_status,active,sections,created_at"
+                "users?select=id,email,name,role,access_status,active,sections,"
+                "monday_user_id,monday_user_name,created_at"
                 "&order=created_at.desc")
         except LookupError:
             raise _missing()
@@ -82,6 +88,12 @@ def build_admin_users_router() -> APIRouter:
             if bad:
                 raise HTTPException(422, f"Unknown section(s): {', '.join(bad)}")
             fields["sections"] = payload.sections
+        if payload.clear_monday:
+            fields["monday_user_id"] = None
+            fields["monday_user_name"] = None
+        elif payload.monday_user_id is not None:
+            fields["monday_user_id"] = payload.monday_user_id.strip() or None
+            fields["monday_user_name"] = (payload.monday_user_name or "").strip() or None
         if not fields:
             raise HTTPException(422, "Nothing to change.")
         try:
@@ -97,5 +109,20 @@ def build_admin_users_router() -> APIRouter:
         from . import sso
         sso.invalidate(uid)
         return rows[0]
+
+    @router.get("/monday-users")
+    def monday_users():
+        """Active Monday people for the owner-link picker. 424 (dormant) until
+        MONDAY_API_TOKEN is configured, mirroring the platform's other Monday
+        surfaces."""
+        from . import monday
+        try:
+            return {"users": monday.users()}
+        except LookupError:
+            raise HTTPException(424, detail={
+                "missing_secrets": ["MONDAY_API_TOKEN"],
+                "error": "Connect Monday (MONDAY_API_TOKEN) to link users to owners."})
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
 
     return router

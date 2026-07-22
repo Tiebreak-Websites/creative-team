@@ -217,6 +217,24 @@ un-approve → fan-out flow.
 After Phase 3 (data in Postgres), these same events can move to Supabase
 database webhooks without the n8n side changing shape.
 
+### Owner-scoped Ready-for-Design queue (2026-07-22)
+
+The banner/LP queue can show a person only the Creative-Board tasks **they own
+on Monday**. Each builder account is linked to a Monday person in Admin › Users
+(a picker fed by `GET /api/admin/monday-users` → `monday.users()`).
+
+**Schema applied** (migration `users_monday_link`): two nullable columns on
+`public.users` — `monday_user_id` (the Monday person id the filter keys on) and
+`monday_user_name` (display). Additive; the previously-deployed backend keeps
+working since its `select=` never named them.
+
+`GET /api/tools/banner-builder/queue?scope=mine|all` resolves the signed-in
+user's `monday_user_id` and keeps tasks whose Owner column contains it
+(`monday.py` now reads the people column's `persons_and_teams` ids). `scope`
+defaults to `mine`; an unlinked user (e.g. a break-glass password admin, who
+isn't in `public.users`) always gets `all` back with `linked:false`, and the
+strip nudges them to set the link.
+
 ## Patterns adopted from CreativeOPS (reference only)
 
 - SAML SSO by email domain; MFA entirely in Entra Conditional Access.

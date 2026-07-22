@@ -185,5 +185,9 @@ def session_user(row: dict) -> Dict[str, Any]:
         "role": row.get("role") or "viewer",
         "name": row.get("name") or "",
         "sections": row.get("sections"),
+        # The linked Monday person (set in Admin › Users) — lets the banner/LP
+        # queue show a user only the tasks they own on the Creative Board.
+        "monday_user_id": row.get("monday_user_id") or "",
+        "monday_user_name": row.get("monday_user_name") or "",
         "sso": True,
     }

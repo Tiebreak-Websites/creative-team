@@ -75,6 +75,13 @@ _TITLE_MAP = {
     "title": "topic",
     "figma url": "figma_url",
     "landing page url": "lp_url",
+    # The banner-size request column (title-mapped so it works the moment it is
+    # added to the Creative Board, whatever its column id turns out to be).
+    "banner sizes": "sizes",
+    "banner size": "sizes",
+    "sizes": "sizes",
+    "ad sizes": "sizes",
+    "priority": "priority",
     "requestor": "requestor",
     "owner": "owner",
     "campaign owner": "owner",
@@ -156,6 +163,8 @@ _COLS = """
       text type
       column { title }
       ... on BoardRelationValue { display_value }
+      ... on PeopleValue { persons_and_teams { id kind } }
+      ... on StatusValue { label_style { color } }
     }"""
 
 
@@ -174,6 +183,36 @@ def _norm_cols(item: dict) -> Dict[str, str]:
     return out
 
 
+def _people_ids(item: dict, field: str = "owner") -> List[str]:
+    """The Monday person ids assigned in the people column that maps to `field`
+    (e.g. "Owner" → owner). Used to match a task's owner to the signed-in
+    user's linked Monday id — names are ambiguous, ids are not."""
+    ids: List[str] = []
+    for cv in item.get("column_values") or []:
+        title = re.sub(r"\s+", " ", _squash((cv.get("column") or {}).get("title") or ""))
+        if _TITLE_MAP.get(title) != field:
+            continue
+        for p in cv.get("persons_and_teams") or []:
+            pid = str(p.get("id") or "")
+            if pid and pid not in ids:
+                ids.append(pid)
+    return ids
+
+
+def _status_color(item: dict, field: str) -> str:
+    """The hex colour of the status/priority label on the column that maps to
+    `field` (e.g. "Priority" → priority). Lets the UI tint a task by its Monday
+    priority without re-deriving the label→colour map."""
+    for cv in item.get("column_values") or []:
+        title = re.sub(r"\s+", " ", _squash((cv.get("column") or {}).get("title") or ""))
+        if _TITLE_MAP.get(title) != field:
+            continue
+        color = ((cv.get("label_style") or {}).get("color") or "").strip()
+        if color:
+            return color
+    return ""
+
+
 def _norm_item(item: dict, *, with_subitems: bool = True) -> dict:
     out = {"id": str(item.get("id") or ""),
            "name": item.get("name") or "",
@@ -181,6 +220,12 @@ def _norm_item(item: dict, *, with_subitems: bool = True) -> dict:
            "board": ((item.get("board") or {}).get("name") or ""),
            "group": ((item.get("group") or {}).get("title") or "")}
     out.update(_norm_cols(item))
+    oids = _people_ids(item, "owner")
+    if oids:
+        out["owner_ids"] = oids
+    pcolor = _status_color(item, "priority")
+    if pcolor:
+        out["priority_color"] = pcolor
     if with_subitems:
         subs = []
         for s in item.get("subitems") or []:
@@ -236,6 +281,12 @@ def ready_status() -> str:
     return (get_secret("MONDAY_READY_STATUS") or "Planned").strip()
 
 
+def creative_ready_status() -> str:
+    """The Creative Board status that means "start designing" — the trigger
+    for the banner / LP work queue."""
+    return (get_secret("MONDAY_CREATIVE_READY_STATUS") or "Ready for Design").strip()
+
+
 _STATUS_COL_CACHE: dict = {}
 
 
@@ -289,6 +340,23 @@ def ready_for_design(limit: int = 50) -> List[dict]:
     """The email builder's work list: items at the configured queue status on
     the CRM board."""
     return items_at_status(ready_status(), limit=limit)
+
+
+def users() -> List[Dict[str, str]]:
+    """Active Monday people — {id, name, email} — for the admin's owner-link
+    picker (mapping a builder account to the Monday person who owns its tasks).
+    Non-guests only, sorted by name. Dormant (LookupError) until the token."""
+    data = _gql("query { users (kind: non_guests, limit: 500) "
+                "{ id name email enabled } }")
+    out: List[Dict[str, str]] = []
+    for u in data.get("users") or []:
+        if u.get("enabled") is False:
+            continue
+        out.append({"id": str(u.get("id") or ""),
+                    "name": u.get("name") or "",
+                    "email": u.get("email") or ""})
+    out.sort(key=lambda x: x["name"].lower())
+    return out
 
 
 # ---- matching Monday labels to builder vocabulary ---------------------------

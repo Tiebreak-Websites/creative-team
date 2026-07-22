@@ -5,6 +5,7 @@ import {
   Download,
   ImagePlus,
   Layers,
+  Link2,
   Loader2,
   Paintbrush,
   Plus,
@@ -19,8 +20,8 @@ import {
 import type { Meta, RunData } from '../types'
 import { TERMINAL_STATUSES } from '../types'
 import { addSizes, ApiError, approveConcepts, cancelRun, deleteBanner as deleteBannerApi, getRun, regenerateBanner, rejectConcepts, selectionZipUrl, uploadReferences, type DetectedConcept } from '../api'
-import { createRun, listRuns } from './campaignApi'
-import type { CampaignRunRequest } from './campaignApi'
+import { bannerQueue, createRun, listRuns } from './campaignApi'
+import type { CampaignRunRequest, QueueTask } from './campaignApi'
 import { OutputPane } from './Results'
 import { BannerGallery } from './Gallery'
 import { CopyDetectModal } from './CopyDetectModal'
@@ -389,6 +390,15 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
   // Brands (palette + optional corner logo). Loaded from the brands API.
   const [brands, setBrands] = useState<Brand[]>([])
   const [brandId, setBrandId] = useState<string>('')
+  // Monday "Ready for Design" queue, and the creative a run is being built for
+  // (set when you start from a task → the run files itself in the Library).
+  const [queue, setQueue] = useState<QueueTask[]>([])
+  // 'mine' (default) shows only tasks the signed-in user owns on Monday; 'all'
+  // shows everyone's. queueMeta.linked says whether "mine" is even possible.
+  const [queueScope, setQueueScope] = useState<'mine' | 'all'>('mine')
+  const [queueMeta, setQueueMeta] = useState<{ linked: boolean; mineCount: number; allCount: number }>(
+    { linked: false, mineCount: 0, allCount: 0 })
+  const [pendingCreative, setPendingCreative] = useState<{ id: string; name: string } | null>(null)
   // null = let the AI Builder decide placement automatically.
   const [logoCorner, setLogoCorner] = useState<'tl' | 'tr' | 'bl' | 'br' | null>(null)
 
@@ -616,6 +626,42 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
       .then((all) => setBrands(brandOptions(all)))
       .catch(() => {})
   }, [])
+
+  // The Monday "Ready for Design" queue — best-effort; no strip without a token.
+  // Re-fetches when the Mine/All scope changes. The server downgrades a "mine"
+  // request to "all" for an unlinked user, so mirror whatever scope it returns.
+  useEffect(() => {
+    bannerQueue(queueScope)
+      .then((d) => {
+        setQueue(d.tasks)
+        setQueueMeta({ linked: d.linked, mineCount: d.mineCount, allCount: d.allCount })
+        if (d.scope !== queueScope) setQueueScope(d.scope)
+      })
+      .catch(() => { /* dormant */ })
+  }, [queueScope])
+
+  // Start building from a queued task: select its brand, sizes and language,
+  // seed the first concept from its name, and remember the creative so the run
+  // files itself in the Library. Sizes not in the standard groups are added as
+  // custom on the fly (the requested set is authoritative).
+  async function startFromTask(t: QueueTask) {
+    setMode('build')
+    setPendingCreative({ id: t.item.id, name: t.item.name })
+    if (t.match.brand_id) setBrandId(t.match.brand_id)
+    // The task's language is authoritative — pin it so the concept-text
+    // auto-detect effect can't overwrite it when we seed the first card below.
+    if (t.match.language) { setLocale(t.match.language); setLocaleAuto(false) }
+    setCards((prev) => prev.map((c, i) =>
+      i === 0 && !c.title.trim() ? { ...c, title: t.item.name } : c))
+    const want = t.match.sizes
+    if (want.length) {
+      const known = want.filter((s) => allSizes.includes(s))
+      setSizes(new Set(known))
+      for (const s of want.filter((s) => !allSizes.includes(s))) {
+        await addCustomSize(s, true)
+      }
+    }
+  }
 
   // LIVE: keep the shared gallery fresh so every user sees others' new and
   // in-progress runs without refreshing the page. Polls the server list on an
@@ -900,6 +946,8 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
       brand_id: brandId || undefined,
       logo_corner: brandId && selectedBrand?.logo_svg && logoCorner ? logoCorner : undefined,
       art_tags: artDirectionTags(art),
+      monday_id: pendingCreative?.id || undefined,
+      creative_name: pendingCreative?.name || undefined,
     }
     try {
       const initial = await createRun(payload)
@@ -944,6 +992,86 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
           ))}
         </span>
       </div>
+
+      {/* Monday "Ready for Design" queue — click a task to open it pre-filled. */}
+      {mode === 'build' && (queueMeta.allCount > 0 || pendingCreative) && (
+        <div className="shrink-0 border-b border-border bg-primary/[0.03] px-4 py-2">
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+              Ready for design
+            </span>
+            {/* Mine / All scope — a toggle only when this account is linked to a
+                Monday person; otherwise a nudge to set the link in Admin. */}
+            {queueMeta.linked ? (
+              <div className="flex shrink-0 overflow-hidden rounded-lg border border-border text-[11px]">
+                {(['mine', 'all'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setQueueScope(s)}
+                    className={cn('px-2 py-0.5 transition-colors',
+                      queueScope === s ? 'bg-primary text-primary-foreground'
+                                       : 'text-muted-foreground hover:bg-secondary')}
+                  >
+                    {s === 'mine' ? `Mine (${queueMeta.mineCount})` : `All (${queueMeta.allCount})`}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="shrink-0 text-[10px] italic text-muted-foreground">
+                everyone’s — link your Monday user in Admin to filter
+              </span>
+            )}
+            {pendingCreative && (
+              <span className="flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] text-foreground">
+                <Link2 className="h-3 w-3 text-primary" />
+                Building for {pendingCreative.name}
+                <button type="button" onClick={() => setPendingCreative(null)}
+                        aria-label="Clear creative" className="ml-0.5 hover:text-destructive">
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+            <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+              {queue.length === 0 ? (
+                <span className="shrink-0 self-center text-[11px] text-muted-foreground">
+                  None assigned to you —{' '}
+                  <button type="button" onClick={() => setQueueScope('all')}
+                          className="underline underline-offset-2 hover:text-foreground">see all {queueMeta.allCount}</button>.
+                </span>
+              ) : queue.map((t) => {
+                // Tint the chip by the task's Monday Priority colour (dot +
+                // matching border, with a faint fill); plain border when unset.
+                const pc = t.item.priority_color
+                return (
+                <button
+                  key={t.item.id}
+                  type="button"
+                  onClick={() => void startFromTask(t)}
+                  title={`${t.item.name} — open pre-filled${t.item.priority ? ` · ${t.item.priority}` : ''}${t.item.owner ? ` · ${t.item.owner}` : ''}`}
+                  style={pc ? { borderColor: pc, backgroundColor: `${pc}1f` } : undefined}
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-left transition-opacity hover:opacity-80"
+                >
+                  {pc && <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: pc }} title={t.item.priority} />}
+                  <span className="flex min-w-0 flex-col">
+                    <span className="max-w-[180px] truncate text-xs font-medium">{t.item.name}</span>
+                    {queueScope === 'all' && t.item.owner && (
+                      <span className="max-w-[180px] truncate text-[9px] text-muted-foreground">{t.item.owner}</span>
+                    )}
+                  </span>
+                  <span className="shrink-0 rounded-full border border-border bg-secondary px-1.5 py-px text-[9px] uppercase text-muted-foreground">
+                    {t.match.asset_type}
+                  </span>
+                  {t.match.sizes.length > 0 && (
+                    <span className="shrink-0 text-[10px] text-muted-foreground">{t.match.sizes.length} sizes</span>
+                  )}
+                </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {mode === 'library' ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
