@@ -54,13 +54,20 @@ def _inline_script_hashes() -> list:
 def _build_csp() -> str:
     hashes = _inline_script_hashes()
     script_src = ("'self' " + " ".join(hashes)) if hashes else "'self' 'unsafe-inline'"
+    # The SPA talks to exactly one cross-origin API: the Supabase project
+    # (Microsoft SSO handshake via supabase-js). Allow precisely that origin,
+    # derived from configuration — with no SUPABASE_URL the policy stays
+    # same-origin-only, as before.
+    from .secrets import get_secret
+    supa_origin = (get_secret("SUPABASE_URL") or "").strip().rstrip("/")
+    connect_src = f"'self' {supa_origin}" if supa_origin else "'self'"
     return (
         "default-src 'self'; "
         "img-src 'self' data: blob: https:; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com data:; "
         f"script-src {script_src}; "
-        "connect-src 'self'; "
+        f"connect-src {connect_src}; "
         "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
     )
 
