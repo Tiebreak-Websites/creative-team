@@ -39,7 +39,7 @@ import { VersionBadge } from './components/VersionBadge'
 import { BrandsSettings } from './admin/BrandsSettings'
 import { UsersSettings } from './admin/UsersSettings'
 import { SizesSettings } from './admin/SizesSettings'
-import { LanguagesEditor } from './admin/LanguagesEditor'
+import { LanguagesSettings } from './admin/LanguagesSettings'
 import { MarketsSettings } from './admin/MarketsSettings'
 import { DomainsSettings } from './admin/DomainsSettings'
 import { DiskManager } from './admin/DiskManager'
@@ -157,19 +157,6 @@ function StorageBadge({ onOpen, active }: { onOpen?: () => void; active?: boolea
   return (
     <div className={cn(base, 'border-border bg-secondary/50')} title={`Banner storage — ${usage}`}>
       {inner}
-    </div>
-  )
-}
-
-/** Admin › Languages — the global language registry, standalone. */
-function AdminLanguages() {
-  const [error, setError] = useState<string | null>(null)
-  return (
-    <div className="space-y-3">
-      {error && (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
-      )}
-      <LanguagesEditor onError={setError} />
     </div>
   )
 }
@@ -549,7 +536,7 @@ function Workspace() {
               <main className="min-w-0 flex-1 pb-8">
                 {settingsTab === 'brands' ? <BrandsSettings />
                   : settingsTab === 'users' ? <UsersSettings />
-                  : settingsTab === 'languages' ? <AdminLanguages />
+                  : settingsTab === 'languages' ? <LanguagesSettings />
                   : settingsTab === 'markets' ? <MarketsSettings />
                   : settingsTab === 'domains' ? <DomainsSettings />
                   : <SizesSettings />}

@@ -4,8 +4,10 @@ The Admin panel's small vocabularies, one screen each — the same shape the
 language registry has had all along: a short ordered list, edited whole,
 consumed by pickers elsewhere. Kept deliberately tiny:
 
-  markets  [{code, label}]   e.g. {"code": "br", "label": "Brazil"}
-  domains  [{domain, note}]  e.g. {"domain": "braintrade.com", "note": "main"}
+  markets  [{code, label, region}]  e.g. {"code": "br", "label": "Brazil",
+                                          "region": "LATAM"}
+  domains  [{domain, note}]         e.g. {"domain": "braintrade.com",
+                                          "note": "main"}
 
 Persistence follows the platform pattern exactly: in-memory list is
 authoritative, JSON on the artifact disk (.runs/config/), mirrored to the
@@ -36,6 +38,8 @@ _MARKETS: List[dict] = []
 _DOMAINS: List[dict] = []
 
 _CODE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,23}$")
+# The region vocabulary the admin panel groups and badges by ('' = ungrouped).
+REGIONS = ("LATAM", "GCC", "NA", "APAC", "EU")
 # Pragmatic hostname check: labels of letters/digits/hyphens, at least one dot.
 _DOMAIN_RE = re.compile(
     r"^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}$")
@@ -63,7 +67,8 @@ def _flush(path, data) -> None:
 
 
 def _market_rows(items: List[dict]) -> List[dict]:
-    return [{"code": m["code"], "label": m.get("label") or "", "sort_order": i}
+    return [{"code": m["code"], "label": m.get("label") or "",
+             "region": m.get("region") or "", "sort_order": i}
             for i, m in enumerate(items)]
 
 
@@ -114,7 +119,8 @@ def rehydrate() -> None:
         return
     with _LOCK:
         have = {m["code"] for m in db_m if m.get("code")}
-        merged_m = ([{"code": r["code"], "label": r.get("label") or ""}
+        merged_m = ([{"code": r["code"], "label": r.get("label") or "",
+                      "region": r.get("region") or ""}
                      for r in db_m if r.get("code")]
                     + [m for m in _MARKETS if m["code"] not in have])
         _MARKETS[:] = merged_m
@@ -143,14 +149,18 @@ def _clean_markets(payload: dict) -> List[dict]:
     for m in items[:_MAX_ITEMS]:
         code = str((m or {}).get("code") or "").strip().lower()
         label = str((m or {}).get("label") or "").strip()[:60]
+        region = str((m or {}).get("region") or "").strip().upper()
         if not _CODE_RE.fullmatch(code):
             raise HTTPException(422, f"'{code or '?'}' is not a valid market code "
                                      "(lowercase letters/digits/hyphens).")
         if not label:
             raise HTTPException(422, f"Market '{code}' needs a label.")
+        if region and region not in REGIONS:
+            raise HTTPException(422, f"Unknown region '{region}' — one of "
+                                     f"{', '.join(REGIONS)} or empty.")
         if code not in seen:
             seen.add(code)
-            out.append({"code": code, "label": label})
+            out.append({"code": code, "label": label, "region": region})
     return out
 
 

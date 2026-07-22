@@ -6,7 +6,11 @@ import { API_BASE, asJson } from '../http'
 export interface Market {
   code: string
   label: string
+  /** LATAM | GCC | NA | APAC | EU | '' (ungrouped) */
+  region: string
 }
+
+export const REGIONS = ['LATAM', 'GCC', 'NA', 'APAC', 'EU'] as const
 
 export interface Domain {
   domain: string
