@@ -364,7 +364,7 @@ export function BrandsSettings() {
                   None yet.
                 </p>
               ) : (
-                <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(230px,1fr))]">
                   {items.map((brand) => (
                     <BrandCard
                       key={brand.id}
@@ -387,7 +387,7 @@ export function BrandsSettings() {
                   Hidden from every picker; kept so historical records still render.
                 </span>
               </div>
-              <div className="grid gap-3 opacity-60 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              <div className="grid gap-3 opacity-60 grid-cols-[repeat(auto-fill,minmax(230px,1fr))]">
                 {retired.map((brand) => (
                   <BrandCard
                     key={brand.id}
