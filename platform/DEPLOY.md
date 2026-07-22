@@ -6,7 +6,7 @@ automatically on every push to the `prod` branch**. No machine of yours is invol
 nothing to install locally, and the app's own email/password login is the security.
 
 ```
-git push → prod ──► Render builds the Dockerfile ──► live at https://<name>.onrender.com
+git push → prod ──► Render builds the Dockerfile ──► live at https://builder.internovus.com
                                                       backend serves /api/* + the SPA
                                                       app login gates everything (HTTPS, Secure cookie)
 ```
@@ -63,7 +63,8 @@ declared them but left them blank):
 ### 4. Deploy + log in
 
 Render builds and deploys. When it's live, open
-`https://creative-team.onrender.com` → the app's **login** page → sign in with
+`https://builder.internovus.com` (custom domain; the old creative-team.onrender.com
+alias is detached) → the app's **login** page → sign in with
 `ADMIN_EMAIL` + your password.
 
 > Standard plan note: the service is **always-on** — it doesn't spin down on idle, so
