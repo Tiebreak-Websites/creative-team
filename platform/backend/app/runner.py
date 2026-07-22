@@ -676,6 +676,48 @@ def _qa_check(png_bytes: bytes, width: int, height: int,
         return None
 
 
+# One TEXT-FREE plate per (run, concept): derived lazily at the FIRST recompose
+# (i.e. right after approval), then shared by every size — so the erase job that
+# produced ghost text is removed from recomposition instead of being caught and
+# re-rolled after the fact. One edits call per approved version, amortized.
+_PLATE_LOCKS: Dict[tuple, threading.Lock] = {}
+_PLATE_LOCKS_GUARD = threading.Lock()
+
+
+def _ensure_plate(run: Run, concept: str) -> Optional[str]:
+    """Return the path of the concept's text-free scene plate, deriving it once
+    from the approved master. Returns None when it cannot be derived — the
+    caller then recomposes from the typeset master exactly as before."""
+    try:
+        path = _frame_png_path(run.dir, concept, "plate")
+        master = _frame_png_path(run.dir, concept, engine.MASTER_SIZE)
+    except ValueError:
+        return None
+    with _PLATE_LOCKS_GUARD:
+        lock = _PLATE_LOCKS.setdefault((run.id, concept), threading.Lock())
+    with lock:
+        if path.is_file():
+            return str(path)
+        if not master.is_file() or not run.api_key:
+            return None
+        try:
+            with _OPENAI_SEM:
+                png = engine.generate_png(
+                    api_key=run.api_key, prompt=bprompts.PLATE_PROMPT, mode="edit",
+                    openai_size=engine.OPENAI_SIZE_MAP[engine.MASTER_SIZE],
+                    model=run.model, quality=run.quality,
+                    master_png_path=str(master),
+                    timeout=settings.OPENAI_IMAGE_TIMEOUT,
+                    max_retries=settings.OPENAI_IMAGE_MAX_RETRIES)
+            path.write_bytes(png)
+            log.info("derived text-free plate for %s/%s", run.id, concept)
+            return str(path)
+        except Exception as e:  # noqa: BLE001 — the plate is an upgrade, never a blocker
+            log.warning("plate derivation failed for %s/%s: %s — recomposing from "
+                        "the typeset master", run.id, concept, e)
+            return None
+
+
 def _vision_qa_frame(run: Run, frame: dict, png: bytes) -> Optional[str]:
     """GPT-5.5 vision proof-read of a recomposed frame against the APPROVED
     master: every copy string the prompt demanded verbatim (title, subtitle,
@@ -746,6 +788,25 @@ def _gen_one_frame(run: Run, frame: dict, shared: Optional[dict] = None,
     if mode == "edit" and frame["size"] == engine.MASTER_SIZE:
         mode = "gen"
 
+    # Recomposes work from the concept's TEXT-FREE plate whenever it can be
+    # derived (nothing to ghost); the typeset master rides along as the
+    # type-style reference. Fallback: the typeset master alone, as before.
+    # Resolved before the prompt build because the prompt differs per source.
+    master_png = None
+    style_ref = None
+    if mode == "edit":
+        try:
+            master_path = str(_frame_png_path(run.dir, frame["concept"], engine.MASTER_SIZE))
+        except ValueError as e:
+            fr.status, fr.error = "gen_failed", f"{type(e).__name__}: {e}"
+            run.touch()
+            return
+        plate = _ensure_plate(run, frame["concept"])
+        if plate:
+            master_png, style_ref = plate, master_path
+        else:
+            master_png = master_path
+
     # A user-edited prompt (from "Save & Regenerate") is used VERBATIM — it fully
     # replaces the composed prompt, so the editor has complete control (and can
     # always fall back via the frontend's "Reset to generated"). When absent we
@@ -758,7 +819,7 @@ def _gen_one_frame(run: Run, frame: dict, shared: Optional[dict] = None,
             if mode == "edit":
                 prompt = engine.build_recomp_prompt(
                     concept, engine.MASTER_SIZE, frame["size"], art_direction=brief,
-                    intent=run.intent)
+                    intent=run.intent, from_plate=bool(style_ref))
             else:
                 prompt = engine.build_prompt(concept, frame["size"], intent=run.intent)
         except Exception as e:  # noqa: BLE001
@@ -782,15 +843,6 @@ def _gen_one_frame(run: Run, frame: dict, shared: Optional[dict] = None,
         run.touch()
         return
 
-    master_png = None
-    if mode == "edit":
-        try:
-            master_png = str(_frame_png_path(run.dir, frame["concept"], engine.MASTER_SIZE))
-        except ValueError as e:
-            fr.status, fr.error = "gen_failed", f"{type(e).__name__}: {e}"
-            run.touch()
-            return
-
     def _on_attempt(attempt):
         fr.attempts = attempt
         run.touch()
@@ -802,6 +854,7 @@ def _gen_one_frame(run: Run, frame: dict, shared: Optional[dict] = None,
                 api_key=run.api_key, prompt=prompt, mode=mode,
                 openai_size=frame["openai_size"], model=run.model, quality=run.quality,
                 master_png_path=master_png, on_attempt=_on_attempt,
+                extra_image_paths=[style_ref] if style_ref else None,
                 timeout=settings.OPENAI_IMAGE_TIMEOUT,
                 max_retries=settings.OPENAI_IMAGE_MAX_RETRIES,
             )

@@ -44,6 +44,66 @@ def test_recomp_prompt_carries_clean_repaint_rule():
     assert "REFERENCE ONLY" in bprompts.CLEAN_REPAINT_RULE
 
 
+def test_plate_prompt_and_plate_mode_recomp():
+    # The plate derivation prompt: strip ALL typography, change nothing else.
+    assert "Remove ALL text" in bprompts.PLATE_PROMPT
+    assert "ZERO typography" in bprompts.PLATE_PROMPT
+    assert "same person/subject" in bprompts.PLATE_PROMPT
+    # Plate-mode recompose: typeset onto the text-free scene, style from image 2.
+    p = bprompts.build_recomp_prompt(_concept(), master_size="1200x1200",
+                                     target_size="1200x628", from_plate=True)
+    assert "TEXT-FREE" in p and "TYPESET" in p
+    assert "SECOND attached image" in p and "style reference" in p
+    assert "CLEAN REPAINT" in p          # the once-only contract still rides along
+    # Legacy (no plate) wording is unchanged.
+    p2 = bprompts.build_recomp_prompt(_concept(), master_size="1200x1200",
+                                      target_size="1200x628")
+    assert "RECOMPOSE the attached master" in p2 and "TEXT-FREE" not in p2
+
+
+def test_ensure_plate_derives_once_and_falls_back():
+    from app import runner
+
+    class _StubRun:
+        def __init__(self, d):
+            self.dir = d
+            self.id = "r_platetest"
+            self.api_key = "sk-test"
+            self.model = "gpt-image-2"
+            self.quality = "medium"
+
+    run_dir = Path(tempfile.mkdtemp(prefix="plate-run-"))
+    run = _StubRun(run_dir)
+    # no master on disk yet -> no plate, no API call
+    calls = {"n": 0}
+    orig = runner.engine.generate_png
+
+    def fake_generate(**kw):
+        calls["n"] += 1
+        assert kw["prompt"] == bprompts.PLATE_PROMPT
+        assert kw["mode"] == "edit"
+        return b"plate-png-bytes"
+
+    runner.engine.generate_png = fake_generate
+    try:
+        assert runner._ensure_plate(run, "c1") is None and calls["n"] == 0
+        # master exists -> derived exactly once, cached for every later size
+        (run_dir / "c1__1200x1200.png").write_bytes(b"master-bytes")
+        p1 = runner._ensure_plate(run, "c1")
+        p2 = runner._ensure_plate(run, "c1")
+        assert p1 and p1 == p2 and p1.endswith("c1__plate.png")
+        assert Path(p1).read_bytes() == b"plate-png-bytes"
+        assert calls["n"] == 1                     # amortized: ONE call, all sizes
+        # derivation failure -> graceful None (recompose falls back to master)
+        def boom(**kw):
+            raise RuntimeError("edits down")
+        runner.engine.generate_png = boom
+        (run_dir / "c2__1200x1200.png").write_bytes(b"master-bytes")
+        assert runner._ensure_plate(run, "c2") is None
+    finally:
+        runner.engine.generate_png = orig
+
+
 def test_qa_artifact_sweep_flags_ghosts():
     calls = {}
 
@@ -149,6 +209,8 @@ def test_qa_clean_pass_edit_path_unchanged_and_never_raise():
 
 if __name__ == "__main__":
     test_recomp_prompt_carries_clean_repaint_rule()
+    test_plate_prompt_and_plate_mode_recomp()
+    test_ensure_plate_derives_once_and_falls_back()
     test_qa_artifact_sweep_flags_ghosts()
     test_qa_master_reference_compare()
     test_qa_clean_pass_edit_path_unchanged_and_never_raise()

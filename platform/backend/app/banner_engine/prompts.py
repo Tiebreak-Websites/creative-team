@@ -548,6 +548,21 @@ CLEAN_REPAINT_RULE = (
 )
 
 
+# Derives the reusable TEXT-FREE scene plate from an approved master. Every
+# recompose then typesets onto a canvas with nothing to ghost — the erase job
+# (the recompose stage's most failure-prone subtask) is removed from the
+# pipeline entirely instead of being caught and re-rolled after the fact.
+PLATE_PROMPT = (
+    "Remove ALL text from this image: every headline, subheadline, word, "
+    "letter, number, and the CTA button (its entire pill/rectangle shape "
+    "included). Keep EVERYTHING else exactly as it is — same scene, same "
+    "person/subject at the same size and position, same colors, same lighting, "
+    "same composition. Where text or the button sat, the background simply "
+    "continues naturally, as if they never existed. The result must contain "
+    "ZERO typography of any kind."
+)
+
+
 def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
     """Compose the OpenAI generation prompt for one (concept, size).
 
@@ -635,7 +650,8 @@ def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
 
 def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
                         art_direction: Optional[str] = None,
-                        intent: str = "general_ad") -> str:
+                        intent: str = "general_ad",
+                        from_plate: bool = False) -> str:
     """Compose a recomposition prompt for /v1/images/edits.
 
     Sent with the MVP master image attached. Preserves the title, hook, button,
@@ -700,12 +716,32 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
     preserve.append("- Background and supporting visual elements from the master, repositioned for the new aspect")
     preserve.append("- Palette from the master (no new colors introduced)")
 
+    if from_plate:
+        # Plate mode: image 1 is the TEXT-FREE scene, image 2 the typeset master
+        # (style reference only). The erase job is gone — the model only stages
+        # the scene for the new aspect and typesets fresh copy.
+        opening = (
+            f"RECOMPOSE: the FIRST attached image is the approved master's TEXT-FREE "
+            f"scene plate ({master_size}). Re-stage that scene as a {target_size} "
+            "layout and TYPESET the campaign copy specified below onto it, fresh. "
+            "The SECOND attached image is the approved master WITH its typography — "
+            "use it ONLY as the style reference for the type and button treatment "
+            "(font feel, weights, colors, button shape); every scene pixel comes "
+            "from the FIRST image, and NOTHING is copied from the second image's "
+            "positions. Same campaign, same colors, same visual direction. "
+            "NOT a stretch, NOT a crop, NOT a collage or double exposure. "
+            "Layout is REDESIGNED for this aspect — never split-panel."
+        )
+    else:
+        opening = (
+            f"RECOMPOSE the attached master ({master_size}) into {target_size}. "
+            "Same campaign, same text, same hook, same colors, same visual direction. "
+            "NOT a stretch, NOT a crop, NOT a fresh generation, NOT a collage or "
+            "double exposure with the source image. "
+            "Layout is REDESIGNED for this aspect — never split-panel."
+        )
     sections = [
-        f"RECOMPOSE the attached master ({master_size}) into {target_size}. "
-        "Same campaign, same text, same hook, same colors, same visual direction. "
-        "NOT a stretch, NOT a crop, NOT a fresh generation, NOT a collage or "
-        "double exposure with the source image. "
-        "Layout is REDESIGNED for this aspect — never split-panel.",
+        opening,
 
         f"NEW LAYOUT ({family}): {layout_lock(target_size, has_cta=has_cta)}",
 
