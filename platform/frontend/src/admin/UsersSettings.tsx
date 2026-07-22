@@ -17,7 +17,7 @@ interface Row {
   id: string
   email: string | null
   name: string | null
-  role: 'viewer' | 'user' | 'admin'
+  role: 'viewer' | 'user' | 'copywriter' | 'admin'
   access_status: 'pending' | 'active'
   active: boolean
   sections: string[] | null

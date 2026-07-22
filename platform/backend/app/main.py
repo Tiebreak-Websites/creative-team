@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .auth import build_auth_router, require_user
+from .auth import build_auth_router, forbid_copywriter, require_user
 from .lp_materials import build_lp_materials_router
 from .registry import ToolRegistry, mount_tool_routers
 from .routers import meta_router, tools_router
@@ -131,15 +131,19 @@ def create_app() -> FastAPI:
     app.include_router(build_config_router())
     # Everything else requires a valid session cookie.
     protected = [Depends(require_user)]
+    # Copywriters live in the LP Builder only — every other tool 403s for them
+    # (server-side truth; the frontend also hides the tabs).
+    non_writer = [Depends(forbid_copywriter)]
     app.include_router(meta_router.router, dependencies=protected)
     app.include_router(tools_router.router, dependencies=protected)
-    mount_tool_routers(app, dependencies=protected)
+    mount_tool_routers(app, dependencies=non_writer)
     # LP Materials (avatars / section cards / advertorial images) — its own
     # workspace + store, same session gate as everything else.
     app.include_router(build_lp_materials_router(),
-                       prefix="/api/tools/lp-materials", dependencies=protected)
+                       prefix="/api/tools/lp-materials", dependencies=non_writer)
     # LP Builder — section-based landing-page builder (templates, projects,
-    # composition + ZIP export). Same session gate.
+    # composition + ZIP export). Same session gate; copywriter scoping is
+    # enforced inside the router (assigned pages, text-only writes).
     from .lp_builder import build_lp_builder_router
     app.include_router(build_lp_builder_router(),
                        prefix="/api/tools/lp-builder", dependencies=protected)
@@ -147,7 +151,7 @@ def create_app() -> FastAPI:
     # session-gated like everything else...
     from .email_builder import build_email_builder_router, build_public_email_router
     app.include_router(build_email_builder_router(),
-                       prefix="/api/tools/email-builder", dependencies=protected)
+                       prefix="/api/tools/email-builder", dependencies=non_writer)
     # ...but images are served WITHOUT auth, because the person opening the
     # email is a recipient in Gmail with no session here. Read-only, confined
     # to the email asset directory, and the 32-hex filename is the capability.

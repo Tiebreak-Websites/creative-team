@@ -140,7 +140,7 @@ def _parse_users_env() -> dict[str, dict]:
         if not email or not _clean(credential):
             log.warning("auth: skipping malformed PLATFORM_USERS entry for %r", email or "?")
             continue
-        if role not in ("admin", "user"):
+        if role not in ("admin", "user", "copywriter"):
             role = "user"
         out[email] = {"email": email, "role": role, "password_hash": _resolve_hash(credential)}
     return out
@@ -195,6 +195,13 @@ _USERS: dict[str, dict] = _seed_users()
 
 def get_user(email: str) -> dict | None:
     return _USERS.get((email or "").strip().lower())
+
+
+def list_role_users(role: str) -> list[dict]:
+    """Env-store accounts with the given role — email + a display name.
+    (SSO accounts live in the Supabase users table, queried separately.)"""
+    return [{"email": u["email"], "name": u["email"].split("@")[0]}
+            for u in _USERS.values() if u.get("role") == role]
 
 
 def verify_password(plaintext: str, password_hash: str) -> bool:
@@ -312,6 +319,18 @@ def require_user(session: str | None = Cookie(default=None)) -> dict:
 def require_admin(user: dict = Depends(require_user)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+def is_copywriter(user: dict) -> bool:
+    """The text-only role: LP Builder on assigned pages, nothing else."""
+    return (user or {}).get("role") == "copywriter"
+
+
+def forbid_copywriter(user: dict = Depends(require_user)) -> dict:
+    """Router gate for the tools outside the copywriter's scope."""
+    if is_copywriter(user):
+        raise HTTPException(status_code=403, detail="Not available for the copywriter role.")
     return user
 
 

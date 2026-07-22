@@ -19,6 +19,7 @@ import {
   Loader2,
   Minus,
   Monitor,
+  PenLine,
   Plus,
   Pencil,
   Redo2,
@@ -49,9 +50,12 @@ import {
   DEVICE_BUCKET,
   DEVICE_WIDTH,
   downloadExportZip,
+  generateLpCopy,
+  getLpCopyJob,
   getProject,
   importLpAsset,
   listLpIcons,
+  restoreLpCopySection,
   saveProject,
   uploadLpAsset,
   type Breakpoint,
@@ -136,6 +140,7 @@ export function Builder({
   sections,
   languages,
   isAdmin,
+  writerMode,
   onManageBlocks,
   onBack,
   onError,
@@ -145,6 +150,9 @@ export function Builder({
   languages: Language[]
   /** Managing the block library is admin-only. */
   isAdmin?: boolean
+  /** Text-only writer mode is FORCED on (copywriters). When false, the top bar
+   * offers a voluntary "Writer mode" toggle instead. */
+  writerMode?: boolean
   onManageBlocks?: (blockKey?: string) => void
   onBack: () => void
   onError: (m: string) => void
@@ -169,6 +177,16 @@ export function Builder({
   const [exporting, setExporting] = useState(false)
   const [brandOpen, setBrandOpen] = useState(false)
   const [langOpen, setLangOpen] = useState(false)
+  // Writer mode: forced for copywriters (writerMode prop), voluntary otherwise.
+  const [writerOpt, setWriterOpt] = useState(false)
+  const writer = !!writerMode || writerOpt
+  // AI copy job — panel visibility, the running job, and the per-section
+  // "Restore previous text" list the last finished job left behind.
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiJobId, setAiJobId] = useState<string | null>(null)
+  const [aiCount, setAiCount] = useState(0)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [restore, setRestore] = useState<{ jobId: string; iids: string[] } | null>(null)
   const dark = useIsDark()
   const [srcdoc, setSrcdoc] = useState('')
   const [canUndo, setCanUndo] = useState(false)
@@ -196,7 +214,8 @@ export function Builder({
   const history = useRef<{ stack: string[]; idx: number; lastPush: number }>({ stack: [], idx: -1, lastPush: 0 })
   const skipSaveRef = useRef(true)
 
-  const bucket: Breakpoint = DEVICE_BUCKET[device]
+  // Writer mode always edits the base (desktop) breakpoint — the switch is hidden.
+  const bucket: Breakpoint = writer ? 'base' : DEVICE_BUCKET[device]
   const lib = useMemo(() => {
     const m = new Map<string, SectionDef>()
     sections.forEach((s) => m.set(s.key, s))
@@ -311,6 +330,24 @@ export function Builder({
     [pushHistory],
   )
 
+  /** Adopt the server's version of the project (AI write / restore applied
+   * there) — history gets the state so Ctrl+Z still works, but no re-save fires. */
+  const adoptServer = useCallback(
+    (p: Project) => {
+      skipSaveRef.current = true
+      setProject(p)
+      pushHistory(p)
+      setStructural((v) => v + 1)
+    },
+    [pushHistory],
+  )
+
+  // Writer mode is text-only AND desktop-only — the device switch is hidden, so
+  // pin the bucket to the base breakpoint while it's on.
+  useEffect(() => {
+    if (writer) setDevice('desktop')
+  }, [writer])
+
   // ---- compose the canvas ----------------------------------------------------
   // First load (and every editor<->preview switch) sets srcdoc — a full
   // document load. Every edit AFTER that is applied IN PLACE via the runtime's
@@ -321,7 +358,7 @@ export function Builder({
     let alive = true
     const t = window.setTimeout(() => {
       const mode = preview ? 'preview' : 'editor'
-      composePage(project, mode)
+      composePage(project, mode, undefined, writer && mode === 'editor' ? { text_only: true } : undefined)
         .then((html) => {
           if (!alive) return
           const canMorph =
@@ -342,7 +379,7 @@ export function Builder({
       window.clearTimeout(t)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [structural, preview])
+  }, [structural, preview, writer])
 
   // ---- autosave ---------------------------------------------------------------
   useEffect(() => {
@@ -389,13 +426,16 @@ export function Builder({
         // Clicking a card's padding selects the whole repeat item; mirror that
         // in the Layers tree so the ITEM row highlights.
         setActiveItem(m.iid && m.item ? `${m.iid}:${m.item}` : null)
-        if (m.iid && m.item) setLeftTab('layers')
-        // Clicking an IMAGE brings its assets into view; clicking TEXT/a link
-        // opens the Layers tree (which reveals + highlights that element).
-        if (m.iid && fields.some((f) => f.kind === 'img')) {
-          setLeftTab('assets')
-        } else if (m.iid && fields.some((f) => f.kind === 'text' || f.kind === 'rich' || f.kind === 'link')) {
-          setLeftTab('layers')
+        // Writer mode has no tabs — the Content tree is always showing.
+        if (!writer) {
+          if (m.iid && m.item) setLeftTab('layers')
+          // Clicking an IMAGE brings its assets into view; clicking TEXT/a link
+          // opens the Layers tree (which reveals + highlights that element).
+          if (m.iid && fields.some((f) => f.kind === 'img')) {
+            setLeftTab('assets')
+          } else if (m.iid && fields.some((f) => f.kind === 'text' || f.kind === 'rich' || f.kind === 'link')) {
+            setLeftTab('layers')
+          }
         }
       } else if (m.type === 'text') {
         mutate((p) => {
@@ -410,6 +450,7 @@ export function Builder({
       } else if (m.type === 'dropImage') {
         if (m.iid && m.key && m.url) void assignImageTo(m.iid, m.key, m.url)
       } else if (m.type === 'sectionAction') {
+        if (writer) return // structural ops don't exist in writer mode
         const iid = String(m.iid || '')
         if (!iid) return
         if (m.action === 'delete') {
@@ -434,7 +475,7 @@ export function Builder({
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection, mutate])
+  }, [selection, mutate, writer])
 
   // ---- canvas zoom ----------------------------------------------------------------
   // Default is Fit: auto-scale to the pane, re-measured on pane resize and
@@ -610,6 +651,7 @@ export function Builder({
   // field or editing text on the canvas). Bulk delete of shift-selected rows.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (writer) return // no structural deletes in writer mode
       if (e.key !== 'Delete' && e.key !== 'Backspace') return
       const t = e.target as HTMLElement | null
       const tag = t?.tagName
@@ -629,7 +671,64 @@ export function Builder({
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [selectedIids, mutate])
+  }, [selectedIids, mutate, writer])
+
+  // ---- AI copy job ----------------------------------------------------------
+  // Mirrors the CRM CopyGenerator: start → poll every 2s → apply once. 'done'
+  // means the server already applied the copy, so re-fetch the project (the
+  // canvas recomposes) and surface per-section "Restore previous text".
+  useEffect(() => {
+    if (!aiJobId) return
+    let gone = false
+    const tick = () =>
+      getLpCopyJob(aiJobId)
+        .then((job) => {
+          if (gone || job.status === 'queued' || job.status === 'running') return
+          setAiJobId(null)
+          if (job.status === 'error') {
+            setAiError(job.error || 'Copy generation failed.')
+            return
+          }
+          getProject(projectId)
+            .then((p) => {
+              if (gone) return
+              adoptServer(p)
+              setAiOpen(false)
+              setRestore({ jobId: aiJobId, iids: job.rewrote_iids })
+            })
+            .catch((e) => onError(e.message))
+        })
+        .catch(() => { /* transient poll miss — next tick retries */ })
+    tick()
+    const t = window.setInterval(tick, 2000)
+    return () => {
+      gone = true
+      window.clearInterval(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiJobId])
+
+  function startAiWrite(brief: string, modes: { iid: string; mode: 'rewrite' | 'keep' }[]) {
+    // The brief is part of the page — persist it along with the generate.
+    mutate((p) => ({ ...p, brief }), { structural: false })
+    setAiError(null)
+    setAiCount(modes.filter((m) => m.mode === 'rewrite').length)
+    generateLpCopy({ project_id: projectId, brief, sections: modes, include_meta: true })
+      .then(({ job_id }) => setAiJobId(job_id)) // a 409 resolves to the RUNNING job's id
+      .catch((e) => setAiError(e instanceof Error ? e.message : String(e)))
+  }
+
+  function restoreOne(iid: string) {
+    const jobId = restore?.jobId
+    if (!jobId) return
+    restoreLpCopySection(jobId, iid)
+      .then(() => getProject(projectId))
+      .then((p) => {
+        adoptServer(p)
+        setRestore((r) => (r && r.jobId === jobId ? { ...r, iids: r.iids.filter((x) => x !== iid) } : r))
+      })
+      .catch((e) => onError(e.message))
+  }
 
   // Close the zoom menu on outside click / Escape.
   useEffect(() => {
@@ -790,6 +889,60 @@ export function Builder({
 
   const selInst = selection ? project.sections.find((s) => s.iid === selection.iid) ?? null : null
   const selDef = selInst ? lib.get(selInst.template_key) ?? null : null
+  // In writer mode the panel's only text/rich selection — img/link never reach it.
+  const writerField = selection?.fields.find((f) => f.kind === 'text' || f.kind === 'rich') as
+    | SectionField
+    | undefined
+
+  // One tree, two homes: the Layers tab, and writer mode's Content panel
+  // (where it filters itself down to sections + text fields).
+  const layersTree = (
+    <LayersTab
+      writer={writer}
+      project={project}
+      lib={lib}
+      selection={selection}
+      selectedIids={selectedIids}
+      activeItem={activeItem}
+      onRename={(iid, key, name) =>
+        mutate((p) => ({
+          ...p,
+          sections: p.sections.map((s) => {
+            if (s.iid !== iid) return s
+            const names = { ...(s.names ?? {}) }
+            // An empty name clears the override rather than storing ''.
+            if (name) names[key] = name
+            else delete names[key]
+            return { ...s, names }
+          }),
+        }), { structural: false })
+      }
+      onSelectItem={(iid, itemKey) => {
+        setActiveItem(`${iid}:${itemKey}`)
+        iframeRef.current?.contentWindow?.postMessage(
+          { lp: 1, type: 'selectItem', iid, item: itemKey }, '*')
+      }}
+      onSelect={(iid, field, shift) => {
+        if (!field && shift) {
+          // shift-click a section row → toggle it in the multi-selection
+          setSelectedIids((prev) =>
+            prev.includes(iid) ? prev.filter((x) => x !== iid) : [...prev, iid],
+          )
+          setSelection({ iid, fields: [], tag: 'section' })
+        } else {
+          setSelectedIids(field ? [] : [iid])
+          setSelection({ iid, fields: field ? [field] : [], tag: field ? field.kind : 'section' })
+        }
+        iframeRef.current?.contentWindow?.postMessage(
+          { type: 'highlight', iid, key: field?.key ?? null },
+          '*',
+        )
+      }}
+      onMove={moveSection}
+      onDuplicate={duplicateSection}
+      onRemove={removeSection}
+    />
+  )
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -801,6 +954,28 @@ export function Builder({
         <Button variant="ghost" size="icon" onClick={onBack} title="Back to landing pages" aria-label="Back">
           <ArrowLeft className="h-4 w-4" />
         </Button>
+        {writer ? (
+          <>
+            {/* Writer mode: page identity is read-only — name as plain text,
+                language as a static chip. */}
+            <span
+              className="min-w-0 max-w-md flex-1 truncate px-1 font-display text-sm font-semibold"
+              title={project.name}
+            >
+              {project.name}
+            </span>
+            <span
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-secondary px-2"
+              title={`Language: ${languages.find((l) => l.code === project.language)?.label ?? project.language}`}
+            >
+              {flagUrl(project.language) && (
+                <img src={flagUrl(project.language)} alt="" className="h-3.5 w-5 rounded-[2px] object-cover ring-1 ring-inset ring-black/10" />
+              )}
+              <span className="text-xs font-bold uppercase">{project.language}</span>
+            </span>
+          </>
+        ) : (
+          <>
         <Input
           value={project.name}
           onChange={(e) => mutate((p) => ({ ...p, name: e.target.value }), { structural: false })}
@@ -896,7 +1071,45 @@ export function Builder({
             className="w-28 bg-transparent text-xs tabular-nums outline-none placeholder:text-muted-foreground"
           />
         </label>
+          </>
+        )}
 
+        {writer ? (
+          <>
+            {/* Writer tools — the one-shot AI writer and the hand-back flag. */}
+            <Button
+              size="sm"
+              variant={aiOpen ? 'secondary' : 'default'}
+              className="ml-auto"
+              onClick={() => setAiOpen((v) => !v)}
+              title="Write all the page copy in one shot"
+            >
+              {aiJobId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              Write with AI
+            </Button>
+            <button
+              type="button"
+              onClick={() =>
+                mutate((p) => ({ ...p, status: p.status === 'copy_ready' ? 'draft' : 'copy_ready' }), { structural: false })
+              }
+              aria-pressed={project.status === 'copy_ready'}
+              title={
+                project.status === 'copy_ready'
+                  ? 'Copy is marked ready — click to set back to draft'
+                  : 'Mark the copy ready for design'
+              }
+              className={cn(
+                'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors',
+                project.status === 'copy_ready'
+                  ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                  : 'border-border bg-secondary text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Check className="h-3.5 w-3.5" /> Copy ready
+            </button>
+          </>
+        ) : (
+          <>
         {/* Right cluster — device sizes + undo/redo stay pinned to the far right. */}
         <span className="ml-auto inline-flex items-center rounded-lg border border-border bg-secondary p-0.5">
           {(['desktop', 'tablet', 'mobile'] as Device[]).map((d) => {
@@ -936,6 +1149,23 @@ export function Builder({
             <Settings2 className="h-4 w-4" />
           </Button>
         )}
+          </>
+        )}
+
+        {/* Voluntary writer mode for designers/admins; copywriters have it
+            forced on (writerMode prop) and never see the toggle. */}
+        {!writerMode && (
+          <Button
+            variant={writer ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setWriterOpt((v) => !v)}
+            aria-pressed={writer}
+            title={writer ? 'Exit writer mode' : 'Writer mode — text-only editing'}
+          >
+            <PenLine className="h-4 w-4" />
+            <span className="hidden lg:inline">Writer mode</span>
+          </Button>
+        )}
 
         <Button variant="ghost" size="icon" disabled={!canUndo} onClick={() => timeTravel(-1)} title="Undo (Ctrl+Z)" aria-label="Undo">
           <Undo2 className="h-4 w-4" />
@@ -962,6 +1192,8 @@ export function Builder({
         >
           <Eye className="h-4 w-4" /> Preview
         </Button>
+        {!writer && (
+          <>
         <Button
           variant="outline"
           size="sm"
@@ -990,12 +1222,36 @@ export function Builder({
           {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           Export
         </Button>
+          </>
+        )}
       </div>
 
       {/* ------------------------------- body ------------------------------- */}
       <div className="flex min-h-0 flex-1">
         {/* left panel — widens while Add is active so 2-per-row thumbnails read well */}
-        {!preview && (
+        {!preview && writer && (
+          /* Writer mode: one Content tab — the tree filtered to text. No Add,
+             no Assets. */
+          <div className="flex w-64 shrink-0 flex-col border-r border-border bg-card/60">
+            <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-3 py-2">
+              <Type className="h-3.5 w-3.5 text-primary" />
+              <span className="text-xs font-semibold">Content</span>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {restore && restore.iids.length > 0 && (
+                <RestoreList
+                  project={project}
+                  lib={lib}
+                  iids={restore.iids}
+                  onRestore={restoreOne}
+                  onDismiss={() => setRestore(null)}
+                />
+              )}
+              {layersTree}
+            </div>
+          </div>
+        )}
+        {!preview && !writer && (
           <div
             className={cn(
               'flex shrink-0 flex-col border-r border-border bg-card/60 transition-[width] duration-200',
@@ -1031,52 +1287,7 @@ export function Builder({
                   onEditBlock={isAdmin && onManageBlocks ? (k) => onManageBlocks(k) : undefined}
                 />
               )}
-              {leftTab === 'layers' && (
-                <LayersTab
-                  project={project}
-                  lib={lib}
-                  selection={selection}
-                  selectedIids={selectedIids}
-                  activeItem={activeItem}
-                  onRename={(iid, key, name) =>
-                    mutate((p) => ({
-                      ...p,
-                      sections: p.sections.map((s) => {
-                        if (s.iid !== iid) return s
-                        const names = { ...(s.names ?? {}) }
-                        // An empty name clears the override rather than storing ''.
-                        if (name) names[key] = name
-                        else delete names[key]
-                        return { ...s, names }
-                      }),
-                    }), { structural: false })
-                  }
-                  onSelectItem={(iid, itemKey) => {
-                    setActiveItem(`${iid}:${itemKey}`)
-                    iframeRef.current?.contentWindow?.postMessage(
-                      { lp: 1, type: 'selectItem', iid, item: itemKey }, '*')
-                  }}
-                  onSelect={(iid, field, shift) => {
-                    if (!field && shift) {
-                      // shift-click a section row → toggle it in the multi-selection
-                      setSelectedIids((prev) =>
-                        prev.includes(iid) ? prev.filter((x) => x !== iid) : [...prev, iid],
-                      )
-                      setSelection({ iid, fields: [], tag: 'section' })
-                    } else {
-                      setSelectedIids(field ? [] : [iid])
-                      setSelection({ iid, fields: field ? [field] : [], tag: field ? field.kind : 'section' })
-                    }
-                    iframeRef.current?.contentWindow?.postMessage(
-                      { type: 'highlight', iid, key: field?.key ?? null },
-                      '*',
-                    )
-                  }}
-                  onMove={moveSection}
-                  onDuplicate={duplicateSection}
-                  onRemove={removeSection}
-                />
-              )}
+              {leftTab === 'layers' && layersTree}
               {leftTab === 'assets' && (
                 <AssetsTab assets={assets} brandLogos={brandLogos} selection={selection} onAssign={(u) => void assignImage(u)} onUpload={(f) => void uploadAndAssign(f)} />
               )}
@@ -1204,7 +1415,32 @@ export function Builder({
         {!preview && (
           <div className="flex w-72 shrink-0 flex-col border-l border-border bg-card/60">
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
-              {selInst && selDef ? (
+              {writer ? (
+                aiOpen ? (
+                  <AiWritePanel
+                    project={project}
+                    lib={lib}
+                    busy={aiJobId !== null}
+                    count={aiCount}
+                    error={aiError}
+                    onGenerate={startAiWrite}
+                    onClose={() => {
+                      setAiOpen(false)
+                      setAiError(null)
+                    }}
+                  />
+                ) : selInst && selDef && writerField ? (
+                  <WriterFieldPanel
+                    inst={selInst}
+                    def={selDef}
+                    field={writerField}
+                    project={project}
+                    onText={(key, v) => setPanelText(selInst.iid, key, v)}
+                  />
+                ) : (
+                  <WriterPagePanel project={project} mutate={mutate} />
+                )
+              ) : selInst && selDef ? (
                 <>
                 <PropertiesPanel
                   inst={selInst}
@@ -1584,12 +1820,16 @@ function LayersTab({
   onRename,
   onSelectItem,
   activeItem,
+  writer,
 }: {
   project: Project
   lib: Map<string, SectionDef>
   selection: Selection | null
   /** Section iids in the shift-click multi-selection (for bulk delete). */
   selectedIids: string[]
+  /** Writer mode: only sections + their text/rich fields, read-only structure
+   * (no drag, duplicate, remove or rename). */
+  writer?: boolean
   onSelect: (iid: string, field?: SectionField, shift?: boolean) => void
   onMove: (from: number, to: number) => void
   onDuplicate: (iid: string) => void
@@ -1619,7 +1859,11 @@ function LayersTab({
   }, [selection?.iid])
 
   if (project.sections.length === 0) {
-    return <p className="p-3 text-center text-xs text-muted-foreground">No sections yet — drag one in from the Add tab.</p>
+    return (
+      <p className="p-3 text-center text-xs text-muted-foreground">
+        {writer ? 'No sections on this page yet.' : 'No sections yet — drag one in from the Add tab.'}
+      </p>
+    )
   }
 
   const flip = (set: Set<string>, id: string) => {
@@ -1675,10 +1919,11 @@ function LayersTab({
         type="button"
         onClick={() => onSelect(iid, field)}
         onDoubleClick={(e) => {
+          if (writer) return
           e.stopPropagation()
           setRenaming(rid)
         }}
-        title={`${custom || label || fallback} — double-click to rename`}
+        title={writer ? custom || label || fallback : `${custom || label || fallback} — double-click to rename`}
         className={cn(
           'flex w-full items-center gap-1.5 rounded-lg py-1 pr-2 text-left transition-colors',
           indent,
@@ -1699,7 +1944,12 @@ function LayersTab({
     <div className="space-y-1">
       {project.sections.map((inst, i) => {
         const def = lib.get(inst.template_key)
-        const kids = (def?.fields.length ?? 0) + (def?.repeats.length ?? 0)
+        // Writer mode narrows the tree to text: text/rich fields, and only the
+        // repeat groups that hold at least one.
+        const isText = (f: SectionField) => f.kind === 'text' || f.kind === 'rich'
+        const flds = def ? (writer ? def.fields.filter(isText) : def.fields) : []
+        const reps = def ? (writer ? def.repeats.filter((r) => r.fields.some(isText)) : def.repeats) : []
+        const kids = flds.length + reps.length
         const expanded = open.has(inst.iid) && kids > 0
         const multi = selectedIids.includes(inst.iid)
         const singleActive = selection?.iid === inst.iid && selection.fields.length === 0
@@ -1710,15 +1960,15 @@ function LayersTab({
                 if (el) rowRefs.current.set(inst.iid, el)
                 else rowRefs.current.delete(inst.iid)
               }}
-              draggable
-              onDragStart={() => setDrag(i)}
+              draggable={!writer}
+              onDragStart={() => !writer && setDrag(i)}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => {
                 if (drag !== null && drag !== i) onMove(drag, i)
                 setDrag(null)
               }}
-              onClick={(e) => onSelect(inst.iid, undefined, e.shiftKey)}
-              title="Click to select · Shift-click to multi-select, then Delete"
+              onClick={(e) => onSelect(inst.iid, undefined, writer ? false : e.shiftKey)}
+              title={writer ? 'Click to select' : 'Click to select · Shift-click to multi-select, then Delete'}
               className={cn(
                 'group flex cursor-pointer items-center gap-1 rounded-xl border px-1.5 py-1.5 transition-colors',
                 multi
@@ -1745,13 +1995,15 @@ function LayersTab({
               >
                 <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-90')} />
               </button>
-              <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/60" />
+              {!writer && <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/60" />}
               <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-secondary font-display text-[9px] font-bold">
                 {i + 1}
               </span>
               <span className="min-w-0 flex-1 truncate text-sm">
                 {def?.name ?? inst.template_key}
               </span>
+              {!writer && (
+                <>
               <button
                 type="button"
                 onClick={(e) => {
@@ -1776,12 +2028,14 @@ function LayersTab({
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
+                </>
+              )}
             </div>
 
             {expanded && def && (
               <div className="mb-1 mt-0.5 space-y-px">
-                {def.fields.map((f) => layerRow(inst.iid, f, labelFor(inst, def, f.key), 1))}
-                {def.repeats.map((r) => {
+                {flds.map((f) => layerRow(inst.iid, f, labelFor(inst, def, f.key), 1))}
+                {reps.map((r) => {
                   const gid = `${inst.iid}:${r.key}`
                   const gOpen = openGroups.has(gid)
                   const count = inst.repeats[r.key] ?? Math.max(1, countDefaults(def, project.language, r.key))
@@ -1820,10 +2074,15 @@ function LayersTab({
                                 type="button"
                                 onClick={() => onSelectItem?.(inst.iid, `${r.key}.${idx}`)}
                                 onDoubleClick={(e) => {
+                                  if (writer) return
                                   e.stopPropagation()
                                   setRenaming(`${inst.iid}:${r.key}.${idx}`)
                                 }}
-                                title={`${resolveLayerName(inst.names?.[`${r.key}.${idx}`], def.names, `${r.key}.${idx}`)} — double-click to rename`}
+                                title={
+                                  writer
+                                    ? resolveLayerName(inst.names?.[`${r.key}.${idx}`], def.names, `${r.key}.${idx}`)
+                                    : `${resolveLayerName(inst.names?.[`${r.key}.${idx}`], def.names, `${r.key}.${idx}`)} — double-click to rename`
+                                }
                                 className={cn(
                                   'flex w-full items-center gap-1.5 rounded-lg py-1 pl-10 pr-2 text-left text-[10px] font-semibold uppercase tracking-wide transition-colors hover:bg-accent',
                                   activeItem === `${inst.iid}:${r.key}.${idx}`
@@ -1836,7 +2095,7 @@ function LayersTab({
                                 </span>
                               </button>
                             )}
-                            {r.fields.map((f) => {
+                            {(writer ? r.fields.filter(isText) : r.fields).map((f) => {
                               const full = { ...f, key: `${r.key}.${idx}.${f.key}` }
                               const preview = labelFor(inst, def, full.key)
                               return layerRow(inst.iid, full, preview, 3)
@@ -2282,6 +2541,303 @@ function defaultText(def: SectionDef, lang: string, key: string): string {
   const m = /^([A-Za-z0-9_-]+)\.\d+\.(.+)$/.exec(key)
   if (m) return t[`${m[1]}.0.${m[2]}`] ?? ''
   return ''
+}
+
+// ---------------------------------------------------------------------------
+// Writer mode panels — text only, nothing else.
+// ---------------------------------------------------------------------------
+const stripTags = (s: string) => String(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+
+/** The selected text field, alone: label, textarea (same setPanelText path)
+ * and a live char count against the template default's length. */
+function WriterFieldPanel({
+  inst,
+  def,
+  field,
+  project,
+  onText,
+}: {
+  inst: Instance
+  def: SectionDef
+  field: SectionField
+  project: Project
+  onText: (key: string, v: string) => void
+}) {
+  const value = inst.texts[field.key] ?? defaultText(def, project.language, field.key)
+  const target = defaultText(def, project.language, field.key).length
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        <span className="truncate font-medium text-foreground">{def.name}</span>
+        <span>/</span>
+        <span className="truncate">{resolveLayerName(inst.names?.[field.key], def.names, field.key)}</span>
+      </div>
+      <label className="block">
+        <span className="mb-0.5 flex items-center justify-between text-[10px] font-medium text-muted-foreground">
+          Text
+          <span className="tabular-nums">
+            {value.length} chars{target > 0 ? ` · target ~${target}` : ''}
+          </span>
+        </span>
+        <textarea
+          value={value}
+          onChange={(e) => onText(field.key, e.target.value)}
+          rows={field.kind === 'rich' ? 6 : 3}
+          spellCheck
+          className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs focus-visible:border-primary focus-visible:outline-none"
+          aria-label="Element text"
+        />
+      </label>
+      <p className="text-[10px] leading-snug text-muted-foreground">
+        The target matches the template's original length, so the layout keeps its shape.
+      </p>
+    </div>
+  )
+}
+
+/** Nothing selected in writer mode → the page's brief + search meta. */
+function WriterPagePanel({
+  project,
+  mutate,
+}: {
+  project: Project
+  mutate: (fn: (p: Project) => Project, opts?: { structural?: boolean }) => void
+}) {
+  const set = (patch: Partial<Project>) => mutate((p) => ({ ...p, ...patch }), { structural: false })
+  return (
+    <div className="space-y-3">
+      <p className="font-display text-sm font-semibold">Page brief &amp; meta</p>
+      <label className="block">
+        <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">Brief — context for the copy</span>
+        <textarea
+          value={project.brief ?? ''}
+          onChange={(e) => set({ brief: e.target.value })}
+          rows={5}
+          placeholder="What is this page selling, to whom, in what tone?"
+          className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs focus-visible:border-primary focus-visible:outline-none"
+          aria-label="Page brief"
+        />
+      </label>
+      <label className="block">
+        <span className="mb-0.5 flex items-center justify-between text-[10px] font-medium text-muted-foreground">
+          Meta title
+          <span className={cn('tabular-nums', (project.meta_title || '').length > 60 && 'font-semibold text-destructive')}>
+            {(project.meta_title || '').length}/60
+          </span>
+        </span>
+        <input
+          value={project.meta_title}
+          onChange={(e) => set({ meta_title: e.target.value })}
+          placeholder={project.name}
+          className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs focus-visible:border-primary focus-visible:outline-none"
+          aria-label="Meta title"
+        />
+      </label>
+      <label className="block">
+        <span className="mb-0.5 flex items-center justify-between text-[10px] font-medium text-muted-foreground">
+          Meta description
+          <span className={cn('tabular-nums', project.meta_description.length > 160 && 'font-semibold text-destructive')}>
+            {project.meta_description.length}/160
+          </span>
+        </span>
+        <textarea
+          value={project.meta_description}
+          onChange={(e) => set({ meta_description: e.target.value })}
+          rows={3}
+          placeholder="One or two sentences shown under the title in Google."
+          className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs focus-visible:border-primary focus-visible:outline-none"
+          aria-label="Meta description"
+        />
+      </label>
+      <p className="rounded-lg border border-dashed border-border bg-secondary/40 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
+        Click any text on the page (or in the Content tree) to edit it — double-click types
+        directly on the canvas.
+      </p>
+    </div>
+  )
+}
+
+/** The one-shot AI writer: the brief + a Rewrite/Keep checklist, nothing else.
+ * Job start/polling lives in the Builder so a running job survives the panel. */
+function AiWritePanel({
+  project,
+  lib,
+  busy,
+  count,
+  error,
+  onGenerate,
+  onClose,
+}: {
+  project: Project
+  lib: Map<string, SectionDef>
+  busy: boolean
+  /** Sections being rewritten — the status line while the job runs. */
+  count: number
+  error: string | null
+  onGenerate: (brief: string, sections: { iid: string; mode: 'rewrite' | 'keep' }[]) => void
+  onClose: () => void
+}) {
+  const [brief, setBrief] = useState(project.brief ?? '')
+  // Rewrite by default only where nothing was hand-written yet.
+  const [modes, setModes] = useState<Record<string, 'rewrite' | 'keep'>>(() => {
+    const m: Record<string, 'rewrite' | 'keep'> = {}
+    for (const s of project.sections) m[s.iid] = Object.keys(s.texts).length === 0 ? 'rewrite' : 'keep'
+    return m
+  })
+  /** ~60 chars of the section's first non-empty text — enough to recognise it. */
+  const firstText = (inst: Instance): string => {
+    const def = lib.get(inst.template_key)
+    if (!def) return ''
+    const keys = [
+      ...def.fields.filter((f) => f.kind === 'text' || f.kind === 'rich').map((f) => f.key),
+      ...def.repeats.flatMap((r) =>
+        r.fields.filter((f) => f.kind === 'text' || f.kind === 'rich').map((f) => `${r.key}.0.${f.key}`)),
+    ]
+    for (const k of keys) {
+      const s = stripTags(inst.texts[k] ?? defaultText(def, project.language, k))
+      if (s) return s.slice(0, 60)
+    }
+    return ''
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-1.5">
+        <Sparkles className="h-4 w-4 shrink-0 text-primary" />
+        <span className="min-w-0 flex-1 truncate font-display text-sm font-semibold">Write with AI</span>
+        <button
+          type="button"
+          onClick={onClose}
+          title="Close"
+          aria-label="Close AI writer"
+          className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <label className="block">
+        <span className="mb-0.5 block text-[10px] font-medium text-muted-foreground">
+          Brief — what is this page selling, to whom?
+        </span>
+        <textarea
+          value={brief}
+          onChange={(e) => setBrief(e.target.value)}
+          rows={4}
+          placeholder="e.g. BrainTrade Malaysia — retail traders new to CFDs; push the free demo account, reassure on regulation."
+          className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs focus-visible:border-primary focus-visible:outline-none"
+          aria-label="Copy brief"
+        />
+      </label>
+      <div className="space-y-1">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Sections</p>
+        {project.sections.map((inst) => {
+          const mode = modes[inst.iid] ?? 'keep'
+          const preview = firstText(inst)
+          return (
+            <div key={inst.iid} className="rounded-lg border border-border bg-card px-2 py-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                  {lib.get(inst.template_key)?.name ?? inst.template_key}
+                </span>
+                <div className="flex shrink-0 items-center rounded-md border border-border bg-secondary/40 p-0.5">
+                  {(['rewrite', 'keep'] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setModes((prev) => ({ ...prev, [inst.iid]: m }))}
+                      aria-pressed={mode === m}
+                      className={cn(
+                        'rounded px-1.5 py-0.5 text-[10px] font-medium capitalize transition-colors',
+                        mode === m
+                          ? 'bg-card text-foreground shadow-sm ring-1 ring-border'
+                          : 'text-muted-foreground hover:text-foreground',
+                      )}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {preview && <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{preview}</p>}
+            </div>
+          )
+        })}
+      </div>
+      {error && (
+        <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">
+          {error}
+        </p>
+      )}
+      <Button
+        size="sm"
+        className="w-full"
+        disabled={busy || !brief.trim()}
+        onClick={() =>
+          onGenerate(brief.trim(), project.sections.map((s) => ({ iid: s.iid, mode: modes[s.iid] ?? 'keep' })))
+        }
+      >
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+        {busy ? `Writing ${count} section${count === 1 ? '' : 's'}…` : 'Write the page'}
+      </Button>
+      {busy && (
+        <p className="text-[10px] leading-snug text-muted-foreground">
+          Writing on the server — the copy lands in the page when it's ready.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** What the last AI run rewrote, each with a one-click way back. Dismissible. */
+function RestoreList({
+  project,
+  lib,
+  iids,
+  onRestore,
+  onDismiss,
+}: {
+  project: Project
+  lib: Map<string, SectionDef>
+  iids: string[]
+  onRestore: (iid: string) => void
+  onDismiss: () => void
+}) {
+  const rows = iids
+    .map((iid) => project.sections.find((s) => s.iid === iid))
+    .filter((s): s is Instance => !!s)
+  if (rows.length === 0) return null
+  return (
+    <div className="mb-2 space-y-1 rounded-xl border border-primary/30 bg-primary/[0.04] p-2">
+      <div className="flex items-center gap-1.5">
+        <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
+        <span className="min-w-0 flex-1 truncate text-[11px] font-semibold">
+          AI rewrote {rows.length} section{rows.length === 1 ? '' : 's'}
+        </span>
+        <button
+          type="button"
+          onClick={onDismiss}
+          title="Dismiss"
+          aria-label="Dismiss restore list"
+          className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {rows.map((inst) => (
+        <div key={inst.iid} className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2 py-1">
+          <span className="min-w-0 flex-1 truncate text-[11px]">
+            {lib.get(inst.template_key)?.name ?? inst.template_key}
+          </span>
+          <button
+            type="button"
+            onClick={() => onRestore(inst.iid)}
+            className="shrink-0 text-[10px] font-semibold text-primary hover:underline"
+          >
+            Restore previous text
+          </button>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function PropertiesPanel({

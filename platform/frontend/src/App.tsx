@@ -251,6 +251,12 @@ const PRODUCTS: {
   },
 ]
 
+// Copywriters get a single-product workspace: the LP Builder, builder tool only.
+const LP_ONLY = PRODUCTS.filter((p) => p.id === 'lp').map((p) => ({
+  ...p,
+  tools: p.tools.filter((t) => t.id === 'builder'),
+}))
+
 function readWorkspaceFromUrl(): { app: ProductId; tool: string } | null {
   try {
     const p = new URLSearchParams(window.location.search)
@@ -299,9 +305,14 @@ function initialWorkspace(): { app: ProductId; tool: string } {
 // the Settings surface (brands + sizes) — those stay global.
 function Workspace() {
   const { user } = useAuth()
-  const [ws, setWs] = useState(initialWorkspace)
+  // Copywriters see ONLY the LP Builder and always start inside it.
+  const isCopywriter = user?.role === 'copywriter'
+  const products = isCopywriter ? LP_ONLY : PRODUCTS
+  const [ws, setWs] = useState<{ app: ProductId; tool: string }>(() =>
+    isCopywriter ? { app: 'lp', tool: 'builder' } : initialWorkspace())
   const [disk, setDisk] = useState(false)
-  const [view, setView] = useState<'home' | 'tool' | 'settings'>(initialView)
+  const [view, setView] = useState<'home' | 'tool' | 'settings'>(() =>
+    isCopywriter ? 'tool' : initialView())
   const [settingsTab, setSettingsTab] =
     useState<'brands' | 'users' | 'languages' | 'markets' | 'domains' | 'sizes'>('brands')
   const [tool, setTool] = useState<Tool | null>(null)
@@ -345,7 +356,7 @@ function Workspace() {
   }, [ws, view])
 
   const isAdmin = user?.role === 'admin'
-  const product = PRODUCTS.find((p) => p.id === ws.app) ?? PRODUCTS[0]
+  const product = products.find((p) => p.id === ws.app) ?? products[0]
   const inTool = view === 'tool' && !disk
   function goTool(app: ProductId, toolId: string) {
     setWs({ app, tool: toolId })
@@ -426,7 +437,7 @@ function Workspace() {
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
           aria-label="Categories"
         >
-          {PRODUCTS.map((p) => {
+          {products.map((p) => {
             // Nothing is "current" on the home screen — the picker is.
             const active = view !== 'home' && p.id === product.id
             return (
@@ -483,7 +494,7 @@ function Workspace() {
       <main className="min-h-0 flex-1 overflow-hidden">
         {view === 'home' ? (
           <Home
-            options={PRODUCTS.map((p) => ({
+            options={products.map((p) => ({
               id: p.id,
               label: p.label,
               blurb: p.blurb,
@@ -492,7 +503,7 @@ function Workspace() {
               soon: p.soon,
             }))}
             onPick={(id) => {
-              const p = PRODUCTS.find((x) => x.id === id)
+              const p = products.find((x) => x.id === id)
               if (p) goProduct(p)
             }}
           />

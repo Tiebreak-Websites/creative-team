@@ -14,6 +14,7 @@ import {
   Loader2,
   Search,
   Trash2,
+  UserPlus,
   X,
 } from 'lucide-react'
 import { brandLogoSrc, brandLogoUri, useIsDark } from '@/lib/brandLogo'
@@ -43,11 +44,14 @@ import {
   downloadExportZip,
   duplicateProject,
   getProject,
+  getWriters,
   listProjects,
   listSections,
+  saveProject,
   type Language,
   type ProjectSummary,
   type SectionDef,
+  type Writer,
 } from './api'
 
 type View =
@@ -60,6 +64,9 @@ type View =
 export function LPBuilder() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  // Copywriters: text-only writer mode is forced and the home view is their
+  // assigned-pages list (the server already filters /projects for them).
+  const isCopywriter = user?.role === 'copywriter'
   const [view, setView] = useState<View>({ kind: 'home' })
   const [sections, setSections] = useState<SectionDef[]>([])
   const [languages, setLanguages] = useState<Language[]>([])
@@ -106,6 +113,7 @@ export function LPBuilder() {
           sections={sections.filter((s) => s.enabled)}
           languages={languages}
           isAdmin={isAdmin}
+          writerMode={isCopywriter}
           onManageBlocks={(blockKey) => setView({ kind: 'admin', editKey: blockKey })}
           onBack={() => setView({ kind: 'home' })}
           onError={setError}
@@ -118,6 +126,12 @@ export function LPBuilder() {
           onBack={() => setView({ kind: 'home' })}
           onChanged={() => setLibVersion((v) => v + 1)}
           onError={setError}
+        />
+      ) : isCopywriter ? (
+        <CopywriterHome
+          projects={projects}
+          languages={languages}
+          onOpen={(id) => setView({ kind: 'builder', id })}
         />
       ) : (
         <Dashboard
@@ -183,6 +197,99 @@ function LangChip({ code, languages }: { code: string; languages: Language[] }) 
   )
 }
 
+/** Copy status as a chip — 'Copy ready' stands out, 'Draft' stays quiet. */
+function StatusChip({ status }: { status?: 'draft' | 'copy_ready' }) {
+  const ready = status === 'copy_ready'
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+        ready
+          ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+          : 'border-border bg-secondary text-muted-foreground',
+      )}
+    >
+      {ready && <Check className="h-3 w-3" />}
+      {ready ? 'Copy ready' : 'Draft'}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Copywriter home — the pages assigned to you, nothing else. The server
+// already filters /projects to assignments; no create/duplicate/delete/export.
+// ---------------------------------------------------------------------------
+function CopywriterHome({
+  projects,
+  languages,
+  onOpen,
+}: {
+  projects: ProjectSummary[] | null
+  languages: Language[]
+  onOpen: (id: string) => void
+}) {
+  const [brands, setBrands] = useState<Brand[]>([])
+  useEffect(() => {
+    listBrands().then(setBrands).catch(() => {})
+  }, [])
+  const list = useMemo(
+    () => [...(projects ?? [])].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
+    [projects],
+  )
+  return (
+    <div className="mx-auto h-full max-w-5xl overflow-y-auto px-6 py-8">
+      <div className="mb-6 animate-fade-up">
+        <h1 className="font-display text-2xl font-bold tracking-tight">Your pages</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Landing pages assigned to you — open one to write its copy.
+        </p>
+      </div>
+      {projects === null ? (
+        <div className="flex items-center gap-2 p-8 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+        </div>
+      ) : list.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border p-12 text-center">
+          <Layout className="mx-auto h-7 w-7 text-muted-foreground" />
+          <p className="mt-3 text-sm text-muted-foreground">Nothing assigned to you yet.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {list.map((p, i) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onOpen(p.id)}
+              title="Open in the writer"
+              className="group animate-fade-up rounded-2xl border border-border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-1 hover:border-primary/40 hover:shadow-md"
+              style={{ animationDelay: `${Math.min(i * 45, 450)}ms` }}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 flex-1 truncate font-display text-sm font-semibold" title={p.name}>
+                  {p.name}
+                </p>
+                <StatusChip status={p.status} />
+              </div>
+              <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                {p.brand_id && (
+                  <span className="truncate font-medium">
+                    {brands.find((b) => b.id === p.brand_id)?.name ?? p.brand_id}
+                  </span>
+                )}
+                <LangChip code={p.language} languages={languages} />
+              </p>
+              <p className="mt-2 text-[11px] text-muted-foreground/80">
+                Updated{' '}
+                {new Date(p.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              </p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------------------
@@ -208,6 +315,7 @@ function Dashboard({
   const [creating, setCreating] = useState(false)
   const [query, setQuery] = useState('')
   const [langPickFor, setLangPickFor] = useState<ProjectSummary | null>(null)
+  const [assignFor, setAssignFor] = useState<ProjectSummary | null>(null)
   const [brands, setBrands] = useState<Brand[]>([])
   /** null = folders home; brand id = inside that brand's folder; '' = "Other". */
   const [folder, setFolder] = useState<string | null>(null)
@@ -426,6 +534,11 @@ function Dashboard({
                     <p className="truncate font-display text-sm font-semibold" title={p.name}>
                       {p.name}
                     </p>
+                    {p.status === 'copy_ready' && (
+                      <p>
+                        <StatusChip status={p.status} />
+                      </p>
+                    )}
                     <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                       <LangChip code={p.language} languages={languages} />
                       <span className="truncate">
@@ -455,6 +568,9 @@ function Dashboard({
                     onClick={() => getProject(p.id).then(downloadExportZip).catch((e) => onError(e.message))}
                   >
                     <Download className="h-3.5 w-3.5" />
+                  </CardAction>
+                  <CardAction title="Assign to a copywriter" onClick={() => setAssignFor(p)}>
+                    <UserPlus className="h-3.5 w-3.5" />
                   </CardAction>
                   {canManage && (
                     <CardAction
@@ -497,6 +613,17 @@ function Dashboard({
           onClose={() => setLangPickFor(null)}
           onDone={() => {
             setLangPickFor(null)
+            onRefresh()
+          }}
+          onError={onError}
+        />
+      )}
+      {assignFor && (
+        <AssignModal
+          project={assignFor}
+          onClose={() => setAssignFor(null)}
+          onDone={() => {
+            setAssignFor(null)
             onRefresh()
           }}
           onError={onError}
@@ -589,6 +716,8 @@ function NewLpModal({
   const [brandId, setBrandId] = useState(presetBrandId ?? '')
   const [language, setLanguage] = useState('en')
   const [brands, setBrands] = useState<Brand[]>([])
+  const [writers, setWriters] = useState<Writer[]>([])
+  const [assignTo, setAssignTo] = useState('')
   const [saving, setSaving] = useState(false)
   const dark = useIsDark()
 
@@ -596,6 +725,7 @@ function NewLpModal({
     // Only active entities are offered — retired ones stay on old pages but
     // can't back a new one.
     listBrands().then((all) => setBrands(all.filter((b) => b.active !== false))).catch(() => {})
+    getWriters().then(setWriters).catch(() => {})
   }, [])
 
   // Monday ID must be EXACTLY the placeholder's length — not fewer, not more.
@@ -617,6 +747,7 @@ function NewLpModal({
         language,
         monday_id: mondayId.trim() || undefined,
         tokens: brand ? brandTokens(brand) : undefined,
+        assigned_to: assignTo || undefined,
       })
       onCreated(p.id)
     } catch (e) {
@@ -734,6 +865,28 @@ function NewLpModal({
           </div>
         </div>
 
+        {/* Optional hand-off: the page lands in that copywriter's writer view. */}
+        {writers.length > 0 && (
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">
+              Assign to copywriter <span className="text-muted-foreground/60">(optional)</span>
+            </span>
+            <select
+              value={assignTo}
+              onChange={(e) => setAssignTo(e.target.value)}
+              className="h-10 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+              aria-label="Assign to copywriter"
+            >
+              <option value="">No copywriter</option>
+              {writers.map((w) => (
+                <option key={w.email} value={w.email}>
+                  {w.name ? `${w.name} — ${w.email}` : w.email}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <Button size="lg" className="w-full" disabled={!canCreate} onClick={() => void create()}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FilePlus2 className="h-4 w-4" />}
           Create &amp; open the builder
@@ -825,6 +978,81 @@ function LangDuplicateModal({
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
           Duplicate
+        </Button>
+      </div>
+    </ModalShell>
+  )
+}
+
+/** Hand a page to a copywriter — pick from the writers list, or type any email
+ * (the fallback for someone whose role isn't set yet). Saves via the normal
+ * project save path. */
+function AssignModal({
+  project,
+  onClose,
+  onDone,
+  onError,
+}: {
+  project: ProjectSummary
+  onClose: () => void
+  onDone: () => void
+  onError: (m: string) => void
+}) {
+  const [writers, setWriters] = useState<Writer[]>([])
+  const [pick, setPick] = useState(project.assigned_to ?? '')
+  const [custom, setCustom] = useState('')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    getWriters().then(setWriters).catch(() => {})
+  }, [])
+  const value = custom.trim() || pick
+  return (
+    <ModalShell label="Assign to a copywriter" onClose={onClose}>
+      <h3 className="font-display text-lg font-bold tracking-tight">Assign “{project.name}”</h3>
+      <p className="mb-4 mt-0.5 text-sm text-muted-foreground">
+        The copywriter sees this page in their writer view and fills in the copy.
+      </p>
+      <div className="space-y-2">
+        <select
+          value={pick}
+          onChange={(e) => {
+            setPick(e.target.value)
+            setCustom('')
+          }}
+          className="h-10 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+          aria-label="Copywriter"
+        >
+          <option value="">Unassigned</option>
+          {/* The current assignee stays visible even if their role changed. */}
+          {project.assigned_to && !writers.some((w) => w.email === project.assigned_to) && (
+            <option value={project.assigned_to}>{project.assigned_to}</option>
+          )}
+          {writers.map((w) => (
+            <option key={w.email} value={w.email}>
+              {w.name ? `${w.name} — ${w.email}` : w.email}
+            </option>
+          ))}
+        </select>
+        <Input
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          placeholder="…or type an email"
+          aria-label="Copywriter email"
+        />
+        <Button
+          className="w-full"
+          disabled={saving}
+          onClick={() => {
+            setSaving(true)
+            getProject(project.id)
+              .then((p) => saveProject({ ...p, assigned_to: value || null }))
+              .then(onDone)
+              .catch((e) => onError(e.message))
+              .finally(() => setSaving(false))
+          }}
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+          {value ? 'Assign' : 'Clear assignment'}
         </Button>
       </div>
     </ModalShell>

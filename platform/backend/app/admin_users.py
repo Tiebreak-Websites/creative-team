@@ -21,7 +21,7 @@ from . import supa
 
 log = logging.getLogger(__name__)
 
-ROLES = ("viewer", "user", "admin")
+ROLES = ("viewer", "user", "admin", "copywriter")
 ACCESS = ("pending", "active")
 # The builder's app surfaces — the vocabulary `users.sections` grants against.
 SECTIONS = ("banners", "lps", "emails", "settings")

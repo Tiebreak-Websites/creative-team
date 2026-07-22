@@ -91,6 +91,11 @@ export interface Project {
   meta_description: string
   /** Optional on projects created before the SEO tab existed. */
   seo?: Partial<SeoSettings>
+  /** Copywriter workflow: assignee email, copy status and the writing brief.
+   *  Optional on projects saved before copywriter mode existed. */
+  assigned_to?: string | null
+  status?: 'draft' | 'copy_ready'
+  brief?: string
   created_by: string
   created_at: string
   updated_at: string
@@ -109,6 +114,8 @@ export interface ProjectSummary {
   sections: number
   /** The page's own hero-ish image (first placed image) — the card cover. */
   cover_url?: string | null
+  assigned_to?: string | null
+  status?: 'draft' | 'copy_ready'
 }
 
 async function fail(r: Response, fallback: string): Promise<never> {
@@ -187,6 +194,7 @@ export async function createProject(payload: {
   language: string
   monday_id?: string
   tokens?: Record<string, string>
+  assigned_to?: string
 }): Promise<Project> {
   const r = await fetch(`${LPB}/projects`, { method: 'POST', headers: j, credentials: 'include', body: JSON.stringify(payload) })
   if (!r.ok) return fail(r, 'Could not create the landing page')
@@ -220,10 +228,15 @@ export async function composePage(
   project: Project,
   mode: 'editor' | 'preview',
   draftSection?: Partial<SectionDef> & { key: string },
+  /** text_only: writer-mode editor — drag/section toolbars suppressed, text editing kept. */
+  opts?: { text_only?: boolean },
 ): Promise<string> {
   const r = await fetch(`${LPB}/compose`, {
     method: 'POST', headers: j, credentials: 'include',
-    body: JSON.stringify({ project, mode, draft_section: draftSection }),
+    body: JSON.stringify({
+      project, mode, draft_section: draftSection,
+      ...(opts?.text_only ? { text_only: true } : {}),
+    }),
   })
   if (!r.ok) return fail(r, 'Could not render the page')
   return (await r.json()).html
@@ -243,6 +256,65 @@ export async function importLpAsset(url: string): Promise<{ id: string; url: str
   const r = await fetch(`${LPB}/assets/import`, { method: 'POST', headers: j, credentials: 'include', body: JSON.stringify({ url }) })
   if (!r.ok) return fail(r, 'Could not import that image')
   return r.json()
+}
+
+// ---------------------------------------------------------------------------
+// Copywriter mode — assignment + one-shot AI copy jobs.
+// ---------------------------------------------------------------------------
+export interface Writer {
+  email: string
+  name: string
+}
+
+/** Users with the copywriter role — the "Assign to…" sources. */
+export async function getWriters(): Promise<Writer[]> {
+  const r = await fetch(`${LPB}/writers`, { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Failed to load copywriters')
+  return (await r.json()).writers ?? []
+}
+
+export interface LpCopyJob {
+  id: string
+  project_id: string
+  status: 'queued' | 'running' | 'done' | 'error'
+  error: string | null
+  rewrote_iids: string[]
+  meta_written: boolean
+}
+
+/** Start the one-shot page-copy job. A 409 means one is ALREADY running for
+ * this project — its id comes back so the caller simply resumes polling it. */
+export async function generateLpCopy(payload: {
+  project_id: string
+  brief: string
+  sections: { iid: string; mode: 'rewrite' | 'keep' }[]
+  include_meta?: boolean
+}): Promise<{ job_id: string }> {
+  const r = await fetch(`${LPB}/copy/generate`, {
+    method: 'POST', headers: j, credentials: 'include', body: JSON.stringify(payload),
+  })
+  if (r.status === 409) {
+    const body = await asJson(r)
+    const id = body?.detail?.job_id
+    if (id) return { job_id: id }
+  }
+  if (r.status === 424) throw new Error("AI writing isn't configured on this server yet.")
+  if (!r.ok) return fail(r, 'Could not start the AI writer')
+  return r.json()
+}
+
+export async function getLpCopyJob(id: string): Promise<LpCopyJob> {
+  const r = await fetch(`${LPB}/copy/jobs/${id}`, { credentials: 'include' })
+  if (!r.ok) return fail(r, 'Could not check the writing job')
+  return (await r.json()).job
+}
+
+/** Put one section's pre-AI text back (then re-fetch the project + recompose). */
+export async function restoreLpCopySection(jobId: string, iid: string): Promise<void> {
+  const r = await fetch(`${LPB}/copy/jobs/${jobId}/restore`, {
+    method: 'POST', headers: j, credentials: 'include', body: JSON.stringify({ iid }),
+  })
+  if (!r.ok) return fail(r, 'Could not restore the previous text')
 }
 
 export async function downloadExportZip(p: Project): Promise<void> {

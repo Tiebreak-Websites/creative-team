@@ -10,8 +10,9 @@ from typing import List
 from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 
-from ..auth import require_admin, require_user
-from . import core, export
+from ..auth import is_copywriter, require_admin, require_user
+from ..secrets import get_secret
+from . import copy_ai, core, export
 
 log = logging.getLogger("lp_builder")
 
@@ -50,6 +51,32 @@ def _enforce_owner(p: dict, user: dict) -> None:
     raise HTTPException(status_code=403, detail="Only the person who created this landing page can do that.")
 
 
+def _forbid_writer(user: dict) -> None:
+    if is_copywriter(user):
+        raise HTTPException(status_code=403, detail="Not available for the copywriter role.")
+
+
+def _assigned_to_me(p: dict, user: dict) -> bool:
+    return bool((p.get("assigned_to") or "").lower()
+                and (p.get("assigned_to") or "").lower() == ((user or {}).get("email") or "").lower())
+
+
+def _enforce_assigned(p: dict, user: dict) -> None:
+    if not _assigned_to_me(p, user):
+        raise HTTPException(status_code=403, detail="This landing page is not assigned to you.")
+
+
+_WRITER_STATUSES = ("draft", "copy_ready")
+
+
+def _ensure_writer_fields(p: dict) -> dict:
+    """Defaults for pages saved before assignment/status/brief existed."""
+    p.setdefault("assigned_to", None)
+    p.setdefault("status", "draft")
+    p.setdefault("brief", "")
+    return p
+
+
 def _clean_str(v, cap: int) -> str:
     return str(v or "").strip()[:cap]
 
@@ -63,6 +90,12 @@ def _clean_project_patch(payload: dict, p: dict) -> None:
             p[k] = _clean_str(payload.get(k), 400) or ("" if k != "fonts" else "system")
     if "monday_id" in payload:  # Monday.com item id — digits only
         p["monday_id"] = re.sub(r"\D", "", str(payload.get("monday_id") or ""))[:20]
+    if "assigned_to" in payload:  # copywriter assignment (email or null)
+        p["assigned_to"] = _clean_str(payload.get("assigned_to"), 200).lower() or None
+    if payload.get("status") in _WRITER_STATUSES:
+        p["status"] = payload["status"]
+    if "brief" in payload:  # what this page is about — feeds the AI copywriter
+        p["brief"] = _clean_str(payload.get("brief"), copy_ai.MAX_BRIEF)
     if p.get("fonts") not in ("system", "google"):
         p["fonts"] = "system"
     if isinstance(payload.get("tokens"), dict):
@@ -104,6 +137,30 @@ def _clean_project_patch(payload: dict, p: dict) -> None:
                           if str(v).strip()},
             })
         p["sections"] = secs
+
+
+def _clean_writer_patch(payload: dict, p: dict) -> None:
+    """The copywriter autosave: text only. Per-instance text overrides on the
+    sections ALREADY on the page (no adds, removals or reorders), the brief,
+    the two meta fields and the draft/copy_ready status. Everything else in
+    the payload is dropped — server-side truth, not UI decoration."""
+    dropped = sorted(k for k in payload
+                     if k not in ("sections", "brief", "meta_title", "meta_description", "status"))
+    if dropped:
+        log.warning("lp-builder: writer patch dropped key(s): %s", ", ".join(dropped))
+    for k in ("meta_title", "meta_description"):
+        if k in payload:
+            p[k] = _clean_str(payload.get(k), 400)
+    if "brief" in payload:
+        p["brief"] = _clean_str(payload.get("brief"), copy_ai.MAX_BRIEF)
+    if payload.get("status") in _WRITER_STATUSES:
+        p["status"] = payload["status"]
+    if isinstance(payload.get("sections"), list):
+        by_iid = {str(s.get("iid") or ""): s for s in payload["sections"] if isinstance(s, dict)}
+        for inst in p.get("sections") or []:
+            src = by_iid.get(str(inst.get("iid") or ""))
+            if src is not None and isinstance(src.get("texts"), dict):
+                inst["texts"] = {str(k)[:80]: str(v)[:2000] for k, v in src["texts"].items()}
 
 
 def _public_section(s: dict, with_body: bool = False) -> dict:
@@ -289,12 +346,15 @@ def build_lp_builder_router() -> APIRouter:
         return export.serve_url_for(str(v)) if v else None
 
     @router.get("/projects")
-    def list_projects(_user: dict = Depends(require_user)):
+    def list_projects(user: dict = Depends(require_user)):
         with core.lock():
-            ps = sorted(core.projects().values(), key=lambda p: p.get("updated_at", ""), reverse=True)
+            ps = sorted((_ensure_writer_fields(p) for p in core.projects().values()),
+                        key=lambda p: p.get("updated_at", ""), reverse=True)
+        if is_copywriter(user):  # copywriters see exactly their assigned pages
+            ps = [p for p in ps if _assigned_to_me(p, user)]
         return {"projects": [{k: p.get(k) for k in
                               ("id", "name", "brand_id", "language", "monday_id", "campaign_id",
-                               "created_by", "created_at", "updated_at")}
+                               "assigned_to", "status", "created_by", "created_at", "updated_at")}
                              | {"sections": len(p.get("sections") or []),
                                 "cover_url": _cover_url(p)} for p in ps]}
 
@@ -317,6 +377,7 @@ def build_lp_builder_router() -> APIRouter:
 
     @router.post("/projects", status_code=201)
     def create_project(payload: dict = Body(default={}), user: dict = Depends(require_user)):
+        _forbid_writer(user)
         name = _clean_str(payload.get("name"), 120)
         if not name:
             raise HTTPException(status_code=422, detail="give the landing page a name")
@@ -336,6 +397,12 @@ def build_lp_builder_router() -> APIRouter:
             "meta_title": "", "meta_description": "",
             "seo": {"og_title": "", "og_description": "", "og_image": "",
                     "favicon": "", "canonical": "", "robots_index": True},
+            # Copywriter workflow: hand the page to a writer at creation (or
+            # later via "Assign to…"); Monday.com automation will fill these
+            # same fields when that phase lands.
+            "assigned_to": _clean_str(payload.get("assigned_to"), 200).lower() or None,
+            "status": "draft",
+            "brief": _clean_str(payload.get("brief"), copy_ai.MAX_BRIEF),
             "created_by": (user or {}).get("email") or "",
             "created_at": core._now(), "updated_at": core._now(),
         }
@@ -345,10 +412,14 @@ def build_lp_builder_router() -> APIRouter:
         return p
 
     @router.get("/projects/{pid}")
-    def get_project(pid: str, _user: dict = Depends(require_user)):
-        p = core.projects().get(pid)
-        if p is None:
-            raise HTTPException(status_code=404, detail="landing page not found")
+    def get_project(pid: str, user: dict = Depends(require_user)):
+        with core.lock():
+            p = core.projects().get(pid)
+            if p is None:
+                raise HTTPException(status_code=404, detail="landing page not found")
+            _ensure_writer_fields(p)
+        if is_copywriter(user):
+            _enforce_assigned(p, user)
         return p
 
     @router.put("/projects/{pid}")
@@ -357,14 +428,20 @@ def build_lp_builder_router() -> APIRouter:
             p = core.projects().get(pid)
             if p is None:
                 raise HTTPException(status_code=404, detail="landing page not found")
-            _enforce_owner(p, user)
-            _clean_project_patch(payload, p)
+            _ensure_writer_fields(p)
+            if is_copywriter(user):
+                _enforce_assigned(p, user)
+                _clean_writer_patch(payload, p)
+            else:
+                _enforce_owner(p, user)
+                _clean_project_patch(payload, p)
             p["updated_at"] = core._now()
         core.persist_project(p)
         return p
 
     @router.post("/projects/{pid}/duplicate", status_code=201)
     def duplicate_project(pid: str, payload: dict = Body(default={}), user: dict = Depends(require_user)):
+        _forbid_writer(user)
         src = core.projects().get(pid)
         if src is None:
             raise HTTPException(status_code=404, detail="landing page not found")
@@ -383,6 +460,10 @@ def build_lp_builder_router() -> APIRouter:
             for inst in p.get("sections") or []:
                 inst["texts"] = {}
         p["created_by"] = (user or {}).get("email") or ""
+        # A duplicate is a fresh piece of work: keep the assignment + brief,
+        # but its copy hasn't been written/approved yet.
+        _ensure_writer_fields(p)
+        p["status"] = "draft"
         p["created_at"] = p["updated_at"] = core._now()
         with core.lock():
             core.projects()[p["id"]] = p
@@ -391,6 +472,7 @@ def build_lp_builder_router() -> APIRouter:
 
     @router.delete("/projects/{pid}", status_code=204)
     def delete_project(pid: str, user: dict = Depends(require_user)):
+        _forbid_writer(user)
         with core.lock():
             p = core.projects().get(pid)
             if p is None:
@@ -449,11 +531,14 @@ def build_lp_builder_router() -> APIRouter:
         return {"fonts": [{"family": f, "category": c} for f, c in _FALLBACK_FONTS]}
 
     @router.post("/compose")
-    def compose(payload: dict = Body(default={}), _user: dict = Depends(require_user)):
+    def compose(payload: dict = Body(default={}), user: dict = Depends(require_user)):
         project = payload.get("project")
         if not isinstance(project, dict):
             raise HTTPException(status_code=422, detail="'project' is required")
         mode = "editor" if payload.get("mode") == "editor" else "preview"
+        # Writer mode asks for a text-only canvas runtime; copywriters get it
+        # regardless of what the client sent.
+        text_only = bool(payload.get("text_only")) or is_copywriter(user)
         with core.lock():
             smap = dict(core.sections())
         # The admin section editor previews its UNSAVED draft through the same
@@ -467,7 +552,7 @@ def build_lp_builder_router() -> APIRouter:
         # hide_scrollbars: the in-app canvas is a Figma-style surface (pan +
         # zoom, no scrollbars); real exports keep native scrolling.
         out = export.compose_page(project, smap, mode=mode, resolve_img=export.serve_url_for,
-                                  hide_scrollbars=True)
+                                  hide_scrollbars=True, text_only=text_only)
         return {"html": out["html"]}
 
     # ---- runtime scripts -------------------------------------------------------
@@ -486,7 +571,8 @@ def build_lp_builder_router() -> APIRouter:
 
     # ---- assets ---------------------------------------------------------------
     @router.post("/assets")
-    async def upload_asset(file: UploadFile = File(...), _user: dict = Depends(require_user)):
+    async def upload_asset(file: UploadFile = File(...), user: dict = Depends(require_user)):
+        _forbid_writer(user)
         if (file.content_type or "") not in _UPLOAD_MIME:
             raise HTTPException(status_code=422, detail="use a PNG, JPG or WebP image")
         data = await file.read()
@@ -516,9 +602,10 @@ def build_lp_builder_router() -> APIRouter:
         return {"id": aid, "url": f"/api/tools/lp-builder/assets/{aid}.png", "width": w, "height": h}
 
     @router.post("/assets/import")
-    def import_asset(payload: dict = Body(default={}), _user: dict = Depends(require_user)):
+    def import_asset(payload: dict = Body(default={}), user: dict = Depends(require_user)):
         """Copy an image from a sibling tool (LP Materials / banner gallery) into
         the LP Builder asset store so exports can bundle it."""
+        _forbid_writer(user)
         url = _clean_str(payload.get("url"), 500)
         path = _sibling_asset_path(url)
         if path is None:
@@ -552,7 +639,8 @@ def build_lp_builder_router() -> APIRouter:
 
     # ---- browser preview --------------------------------------------------------
     @router.get("/projects/{pid}/preview.html")
-    def preview_html(pid: str, _user: dict = Depends(require_user)):
+    def preview_html(pid: str, user: dict = Depends(require_user)):
+        _forbid_writer(user)
         """The WORKING website in a real browser tab — same compositor as the
         canvas/export, served as a normal navigable page. Carries its own CSP:
         scripts stay same-origin, but the signup form may POST / fetch to the
@@ -573,7 +661,8 @@ def build_lp_builder_router() -> APIRouter:
 
     # ---- export ----------------------------------------------------------------
     @router.get("/projects/{pid}/export.zip")
-    def export_zip(pid: str, _user: dict = Depends(require_user)):
+    def export_zip(pid: str, user: dict = Depends(require_user)):
+        _forbid_writer(user)
         p = core.projects().get(pid)
         if p is None:
             raise HTTPException(status_code=404, detail="landing page not found")
@@ -583,5 +672,86 @@ def build_lp_builder_router() -> APIRouter:
         slug = re.sub(r"[^A-Za-z0-9]+", "-", p.get("name") or "landing-page").strip("-").lower() or "landing-page"
         return Response(content=data, media_type="application/zip",
                         headers={"Content-Disposition": f'attachment; filename="{slug}.zip"'})
+
+    # ---- copywriter workflow + AI copywriter ---------------------------------
+    @router.get("/writers")
+    def list_writers(_user: dict = Depends(require_user)):
+        """Copywriter accounts assignable to a page — SSO store + env users."""
+        out: dict[str, dict] = {}
+        try:
+            from .. import supa
+            rows = supa.rest("GET", "users?select=email,name,role,active"
+                                    "&role=eq.copywriter&active=is.true&order=name.asc")
+            for r in rows or []:
+                em = (r.get("email") or "").strip().lower()
+                if em:
+                    out[em] = {"email": em, "name": r.get("name") or em}
+        except (LookupError, RuntimeError):
+            pass  # Supabase not configured / unreachable — env users still listed
+        from ..auth import list_role_users
+        for u in list_role_users("copywriter"):
+            out.setdefault(u["email"], u)
+        return {"writers": sorted(out.values(), key=lambda w: str(w["name"]).lower())}
+
+    @router.post("/copy/generate")
+    def copy_generate(payload: dict = Body(default={}), user: dict = Depends(require_user)):
+        api_key = get_secret("OPENAI_API_KEY")
+        if not api_key:
+            raise HTTPException(424, detail={
+                "missing_secrets": ["OPENAI_API_KEY"],
+                "error": "AI copywriting activates once the OpenAI key is configured."})
+        pid = _clean_str(payload.get("project_id"), 64)
+        with core.lock():
+            p = core.projects().get(pid)
+            if p is None:
+                raise HTTPException(status_code=404, detail="landing page not found")
+            _ensure_writer_fields(p)
+        if is_copywriter(user):
+            _enforce_assigned(p, user)
+        brief = _clean_str(payload.get("brief"), copy_ai.MAX_BRIEF)
+        if not brief:
+            raise HTTPException(status_code=422, detail="describe what this landing page is about first")
+        modes: dict = {}
+        for s in payload.get("sections") or []:
+            if isinstance(s, dict) and s.get("iid"):
+                modes[str(s["iid"])[:24]] = "rewrite" if s.get("mode") == "rewrite" else "keep"
+        if "rewrite" not in modes.values():
+            raise HTTPException(status_code=422, detail="switch at least one section to Rewrite")
+        running = copy_ai.active_job_for(pid)
+        if running:  # one generation at a time per page — resume polling it
+            raise HTTPException(status_code=409, detail={"job_id": running["id"]})
+        include_meta = payload.get("include_meta")
+        if include_meta is None:  # default: write meta while it's still empty
+            include_meta = not (p.get("meta_title") or p.get("meta_description"))
+        job = copy_ai.start_job(api_key=api_key, project_id=pid, brief=brief, modes=modes,
+                                include_meta=bool(include_meta),
+                                user_email=(user or {}).get("email") or "")
+        return {"job_id": job["id"]}
+
+    @router.get("/copy/jobs/{job_id}")
+    def copy_job(job_id: str, _user: dict = Depends(require_user)):
+        job = copy_ai.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="no such generation")
+        return {"job": copy_ai.public_job(job)}
+
+    @router.post("/copy/jobs/{job_id}/restore")
+    def copy_restore(job_id: str, payload: dict = Body(default={}), user: dict = Depends(require_user)):
+        job = copy_ai.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="no such generation")
+        with core.lock():
+            p = core.projects().get(job.get("project_id") or "")
+        if p is None:
+            raise HTTPException(status_code=404, detail="landing page not found")
+        if is_copywriter(user):
+            _enforce_assigned(p, user)
+        else:
+            _enforce_owner(p, user)
+        try:
+            copy_ai.restore_section(job, _clean_str(payload.get("iid"), 24))
+        except KeyError as e:
+            raise HTTPException(status_code=404, detail=str(e.args[0] if e.args else e))
+        return {"ok": True}
 
     return router

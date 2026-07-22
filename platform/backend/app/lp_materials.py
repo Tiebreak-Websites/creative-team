@@ -107,7 +107,8 @@ _OPENAI_SECRET = {"env": "OPENAI_API_KEY", "label": "OpenAI API key",
 # ---------------------------------------------------------------------------
 def _llm_json(api_key: str, *, system: str, user_text: str, schema_name: str,
               schema: dict, effort: str = "medium", timeout: int = 150,
-              image_bytes: Optional[bytes] = None) -> dict:
+              image_bytes: Optional[bytes] = None,
+              max_output_tokens: int = 8000) -> dict:
     if image_bytes is not None:
         b64 = base64.b64encode(image_bytes).decode("ascii")
         user_content = [
@@ -125,7 +126,7 @@ def _llm_json(api_key: str, *, system: str, user_text: str, schema_name: str,
         ],
         "text": {"format": {"type": "json_schema", "name": schema_name,
                             "strict": True, "schema": schema}},
-        "max_output_tokens": 8000,
+        "max_output_tokens": max_output_tokens,
     }).encode("utf-8")
     req = urllib.request.Request(
         OPENAI_RESPONSES_URL, data=payload, method="POST",

@@ -7,11 +7,16 @@ Run:  .venv/Scripts/python.exe test_smoke.py   (or python -m pytest test_smoke.p
 """
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 os.environ.setdefault("OPENAI_API_KEY", "sk-dummy-for-tests")  # reach validation; never spent
 os.environ["ADMIN_EMAIL"] = "admin@test.local"                 # deterministic test admin
 os.environ["ADMIN_PASSWORD"] = "smoke-test-pass"
+# A copywriter account for the writer-scoping tests, and a throwaway artifact
+# dir so test-created projects never rehydrate into a real workspace.
+os.environ["PLATFORM_USERS"] = "writer@test.local|writer-pass|copywriter"
+os.environ.setdefault("PLATFORM_ARTIFACT_DIR", tempfile.mkdtemp(prefix="creative-smoke-"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))       # so `import app` resolves
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -146,6 +151,96 @@ def test_director_validation_and_fallback():
     assert bad["sizes_directed"] == 0
 
 
+writer = TestClient(app)   # the copywriter role, seeded via PLATFORM_USERS
+
+
+def _login_writer():
+    r = writer.post("/api/auth/login",
+                    json={"email": "writer@test.local", "password": "writer-pass"})
+    assert r.status_code == 200, r.text
+    assert r.json()["user"]["role"] == "copywriter"
+
+
+_login_writer()
+
+
+def test_copywriter_sees_only_assigned_pages():
+    a = client.post("/api/tools/lp-builder/projects", json={"name": "unassigned page"})
+    assert a.status_code == 201, a.text
+    b = client.post("/api/tools/lp-builder/projects",
+                    json={"name": "assigned page", "assigned_to": "writer@test.local"})
+    assert b.status_code == 201, b.text
+    assert b.json()["status"] == "draft" and b.json()["assigned_to"] == "writer@test.local"
+    mine = writer.get("/api/tools/lp-builder/projects").json()["projects"]
+    assert {p["id"] for p in mine} == {b.json()["id"]}, mine
+    everyone = client.get("/api/tools/lp-builder/projects").json()["projects"]
+    assert {a.json()["id"], b.json()["id"]} <= {p["id"] for p in everyone}
+    assert writer.get(f"/api/tools/lp-builder/projects/{a.json()['id']}").status_code == 403
+    assert writer.get(f"/api/tools/lp-builder/projects/{b.json()['id']}").status_code == 200
+    globals()["_PID_A"], globals()["_PID_B"] = a.json()["id"], b.json()["id"]
+
+
+def test_copywriter_put_is_text_only():
+    pid = _PID_B
+    # admin lays out one section instance the writer will fill
+    r = client.put(f"/api/tools/lp-builder/projects/{pid}",
+                   json={"sections": [{"iid": "aaaa1111", "template_key": "el-title",
+                                       "texts": {}, "props": {"title": {"base": {"color": "#111111"}}}}]})
+    assert r.status_code == 200, r.text
+    # writer sends a full hostile doc: only texts / brief / meta / status apply
+    r = writer.put(f"/api/tools/lp-builder/projects/{pid}", json={
+        "name": "HACKED", "brand_id": "evil", "tokens": {"primary": "#000000"},
+        "brief": "A launch page for the new savings account",
+        "meta_title": "Writer meta title", "status": "copy_ready",
+        "sections": [
+            {"iid": "aaaa1111", "template_key": "el-title", "texts": {"title": "Written by AI-era human"},
+             "props": {"title": {"base": {"color": "#FF0000"}}}},
+            {"iid": "bbbb2222", "template_key": "el-text", "texts": {"body": "injected section"}},
+        ]})
+    assert r.status_code == 200, r.text
+    p = r.json()
+    assert p["name"] == "assigned page"            # name change dropped
+    assert p["brand_id"] != "evil"                 # brand change dropped
+    assert p["brief"].startswith("A launch page")  # brief applied
+    assert p["meta_title"] == "Writer meta title"  # meta applied
+    assert p["status"] == "copy_ready"             # status transition applied
+    assert len(p["sections"]) == 1                 # no injected sections
+    inst = p["sections"][0]
+    assert inst["texts"] == {"title": "Written by AI-era human"}   # texts applied
+    assert inst["props"] == {"title": {"base": {"color": "#111111"}}}  # props untouched
+    # writer cannot touch a page not assigned to them
+    assert writer.put(f"/api/tools/lp-builder/projects/{_PID_A}",
+                      json={"brief": "nope"}).status_code == 403
+
+
+def test_copywriter_forbidden_surfaces():
+    assert writer.post("/api/tools/lp-builder/projects", json={"name": "x"}).status_code == 403
+    assert writer.post(f"/api/tools/lp-builder/projects/{_PID_B}/duplicate", json={}).status_code == 403
+    assert writer.delete(f"/api/tools/lp-builder/projects/{_PID_B}").status_code == 403
+    assert writer.get(f"/api/tools/lp-builder/projects/{_PID_B}/export.zip").status_code == 403
+    assert writer.get(f"/api/tools/lp-builder/projects/{_PID_B}/preview.html").status_code == 403
+    assert writer.post("/api/tools/lp-builder/assets/import", json={"url": "x"}).status_code == 403
+    # other tools 403 at the router mount, before any handler logic
+    assert writer.get("/api/tools/banner-builder/runs/none").status_code == 403
+    assert writer.get("/api/tools/email-builder/copy/jobs").status_code == 403
+    # ...while the admin still reaches them (404 = past the gate, into the handler)
+    assert client.get("/api/tools/banner-builder/runs/none").status_code == 404
+
+
+def test_writers_listing_and_copy_validation():
+    ws = client.get("/api/tools/lp-builder/writers")
+    assert ws.status_code == 200
+    assert any(w["email"] == "writer@test.local" for w in ws.json()["writers"])
+    # generation refuses to start without a brief / without a rewrite section
+    r = writer.post("/api/tools/lp-builder/copy/generate",
+                    json={"project_id": _PID_B, "brief": "", "sections": []})
+    assert r.status_code == 422
+    r = writer.post("/api/tools/lp-builder/copy/generate",
+                    json={"project_id": _PID_B, "brief": "About the page",
+                          "sections": [{"iid": "aaaa1111", "mode": "keep"}]})
+    assert r.status_code == 422
+
+
 if __name__ == "__main__":
     test_health()
     test_auth_required_without_session()
@@ -155,4 +250,8 @@ if __name__ == "__main__":
     test_tool_config_gates()
     test_run_rejects_bad_size_with_422()
     test_director_validation_and_fallback()
+    test_copywriter_sees_only_assigned_pages()
+    test_copywriter_put_is_text_only()
+    test_copywriter_forbidden_surfaces()
+    test_writers_listing_and_copy_validation()
     print("ALL BACKEND SMOKE TESTS PASSED")
