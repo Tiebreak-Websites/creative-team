@@ -677,13 +677,16 @@ def _qa_check(png_bytes: bytes, width: int, height: int,
 
 
 def _vision_qa_frame(run: Run, frame: dict, png: bytes) -> Optional[str]:
-    """GPT-5.5 vision proof-read of a recomposed frame: every copy string the
-    prompt demanded verbatim (title, subtitle, CTA) must read EXACTLY on the
-    banner, and the layout-artifact sweep must come back clean (no ghost/
-    duplicated text or second button left over from the master — the recompose
-    stage's double-exposure defect). Returns a short failure description, or
-    None when it passes / is unavailable. Reuses banner_edit's proofreader;
-    never raises."""
+    """GPT-5.5 vision proof-read of a recomposed frame against the APPROVED
+    master: every copy string the prompt demanded verbatim (title, subtitle,
+    CTA) must read EXACTLY on the banner; the layout-artifact sweep must come
+    back clean (no ghost/duplicated text or second button — the recompose
+    stage's double-exposure defect); and with the master attached as the
+    reference image, the candidate must hold master fidelity (same hero at
+    similar prominence, background lines re-emerging behind the subject at the
+    same height, palette held). Returns a short failure description, or None
+    when it passes / is unavailable. Reuses banner_edit's proofreader; never
+    raises."""
     try:
         from .banner_edit import _qa_candidate  # lazy — banner_edit imports runner
         base = run.concepts.get(frame["concept"], {})
@@ -696,7 +699,15 @@ def _vision_qa_frame(run: Run, frame: dict, png: bytes) -> Optional[str]:
             present.append(bprompts.normalize_cta(cta))
         if not run.api_key:
             return None
-        verdict = _qa_candidate(run.api_key, png, present, [], artifacts=True)
+        master_png = None
+        try:  # the approved master rides along as the compare reference
+            mp = _frame_png_path(run.dir, frame["concept"], engine.MASTER_SIZE)
+            if mp.is_file():
+                master_png = mp.read_bytes()
+        except Exception:  # noqa: BLE001 — reference is a bonus, never a blocker
+            master_png = None
+        verdict = _qa_candidate(run.api_key, png, present, [], artifacts=True,
+                                reference_png=master_png)
         if verdict.get("qa_ok") is False:
             read = (verdict.get("qa_read") or "").strip()
             return (f"copy/layout QA failed — image reads: {read[:200]}" if read

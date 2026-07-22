@@ -72,6 +72,50 @@ def test_qa_artifact_sweep_flags_ghosts():
     assert "layout-artifact sweep" in calls["system"]   # ...and defined for the model
 
 
+def test_qa_master_reference_compare():
+    calls = {}
+
+    def fake_vision(api_key, **kw):
+        calls["user"] = kw.get("user_text") or ""
+        calls["reference"] = kw.get("reference_bytes")
+        return {"results": [
+            {"expected": "Title", "read": "Title", "matches": True},
+            {"expected": "layout-artifact sweep", "read": "clean", "matches": True},
+            {"expected": "master fidelity",
+             "read": "the green baseline meets the subject at different heights "
+                     "left vs right; hero noticeably smaller than the master",
+             "matches": False},
+        ]}
+
+    orig = banner_edit._vision_json
+    banner_edit._vision_json = fake_vision
+    try:
+        v = banner_edit._qa_candidate("sk-test", b"candidate-png", ["Title"], [],
+                                      artifacts=True, reference_png=b"master-png")
+    finally:
+        banner_edit._vision_json = orig
+    assert v["qa_ok"] is False                          # fidelity break fails the frame
+    assert "different heights" in v["qa_read"]          # the reason reaches the re-roll
+    assert calls["reference"] == b"master-png"          # master actually attached
+    assert "IMAGE 1 is the APPROVED MASTER" in calls["user"]
+    assert "Master-fidelity check" in calls["user"]
+    # without a reference, the fidelity entry is never asked
+    calls2 = {}
+
+    def fake_vision2(api_key, **kw):
+        calls2["user"] = kw.get("user_text") or ""
+        calls2["reference"] = kw.get("reference_bytes", "missing")
+        return {"results": [{"expected": "T", "read": "T", "matches": True}]}
+
+    banner_edit._vision_json = fake_vision2
+    try:
+        banner_edit._qa_candidate("sk-test", b"png", ["T"], [])
+    finally:
+        banner_edit._vision_json = orig
+    assert "Master-fidelity" not in calls2["user"]
+    assert calls2["reference"] is None
+
+
 def test_qa_clean_pass_edit_path_unchanged_and_never_raise():
     orig = banner_edit._vision_json
     # all-clean -> pass
@@ -106,5 +150,6 @@ def test_qa_clean_pass_edit_path_unchanged_and_never_raise():
 if __name__ == "__main__":
     test_recomp_prompt_carries_clean_repaint_rule()
     test_qa_artifact_sweep_flags_ghosts()
+    test_qa_master_reference_compare()
     test_qa_clean_pass_edit_path_unchanged_and_never_raise()
     print("ALL RECOMPOSE-QA TESTS PASSED")

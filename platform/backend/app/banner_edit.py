@@ -80,20 +80,28 @@ _OPENAI_SECRET = {"env": "OPENAI_API_KEY", "label": "OpenAI API key",
 # ---------------------------------------------------------------------------
 def _vision_json(api_key: str, *, system: str, user_text: str, image_bytes: bytes,
                  schema_name: str, schema: dict, effort: str = "low",
-                 timeout: int = 120) -> dict:
+                 timeout: int = 120, reference_bytes: Optional[bytes] = None) -> dict:
     """POST /v1/responses with an input image + strict JSON schema; return the
-    parsed dict. Raises RuntimeError on any failure (callers decide fallback)."""
+    parsed dict. `reference_bytes` (optional) attaches a second image BEFORE
+    the candidate — image 1 = reference, image 2 = candidate — so checklist
+    prompts can compare against an approved design. Raises RuntimeError on any
+    failure (callers decide fallback)."""
     import base64
-    b64 = base64.b64encode(image_bytes).decode("ascii")
+
+    def _img(data: bytes) -> dict:
+        return {"type": "input_image",
+                "image_url": "data:image/png;base64," + base64.b64encode(data).decode("ascii")}
+
+    content = [{"type": "input_text", "text": user_text}]
+    if reference_bytes is not None:
+        content.append(_img(reference_bytes))
+    content.append(_img(image_bytes))
     payload = json.dumps({
         "model": _VISION_MODEL,
         "reasoning": {"effort": effort},
         "input": [
             {"role": "system", "content": system},
-            {"role": "user", "content": [
-                {"type": "input_text", "text": user_text},
-                {"type": "input_image", "image_url": f"data:image/png;base64,{b64}"},
-            ]},
+            {"role": "user", "content": content},
         ],
         "text": {"format": {"type": "json_schema", "name": schema_name,
                             "strict": True, "schema": schema}},
@@ -317,13 +325,22 @@ def _edit_instruction(regions: List[dict], typography: str,
 
 
 def _qa_candidate(api_key: str, png_bytes: bytes, present: List[str],
-                  absent: List[str], artifacts: bool = False) -> dict:
+                  absent: List[str], artifacts: bool = False,
+                  reference_png: Optional[bytes] = None) -> dict:
     """Vision read-back: replacements rendered exactly AND erased text is gone.
     `artifacts=True` (the recompose QA) adds a layout-artifact sweep — ghost/
-    duplicated text or a second CTA button fails the check. Never raises."""
+    duplicated text or a second CTA button fails the check. `reference_png`
+    (the approved master) additionally judges the candidate AGAINST it: same
+    hero at similar prominence, background continuity behind the subject,
+    palette held. Never raises."""
     if not present and not absent and not artifacts:
         return {"qa_ok": None, "qa_read": ""}
     parts = []
+    if reference_png is not None:
+        parts.append(
+            "Two images are attached. IMAGE 1 is the APPROVED MASTER (the "
+            "reference design). IMAGE 2 is the CANDIDATE being checked. Every "
+            "checklist entry below is judged on IMAGE 2; the master is context.")
     if present:
         parts.append("Text(s) that MUST appear in the image exactly:\n"
                      + "\n".join(f"- “{t}”" for t in present))
@@ -339,6 +356,16 @@ def _qa_candidate(api_key: str, png_bytes: bytes, present: List[str],
             "letters near any edge; leftover fragments of a different layout behind "
             "the design; more than one call-to-action button (including a partial "
             "button stub). In `read`, name any artifact found and where it sits.")
+    if reference_png is not None:
+        parts.append(
+            "Master-fidelity check (ONE checklist entry; matches=true ONLY if ALL "
+            "hold on the candidate): the SAME hero person/product as the master, "
+            "at similar visual prominence — not shrunken into a small badge or "
+            "corner sticker; every background line/structure that passes behind "
+            "the subject re-emerges on the other side at the SAME height, angle "
+            "and thickness (no offset jump where it meets the silhouette); the "
+            "palette matches the master with no new dominant color. In `read`, "
+            "name what diverged and where.")
     try:
         data = _vision_json(
             api_key,
@@ -348,10 +375,13 @@ def _qa_candidate(api_key: str, png_bytes: bytes, present: List[str],
                     "differences and purely stylistic all-caps). For erased texts, "
                     "matches=true means NO trace of that text remains. For a "
                     "layout-artifact sweep, matches=true means the image is completely "
-                    "clean of every listed artifact."),
+                    "clean of every listed artifact. For a master-fidelity check, "
+                    "matches=true means the candidate holds every listed property "
+                    "relative to the master."),
             user_text="\n\n".join(parts),
             image_bytes=png_bytes,
             schema_name="edit_qa", schema=_QA_SCHEMA, effort="low",
+            reference_bytes=reference_png,
         )
         results = data.get("results") or []
         ok = bool(results) and all(bool(r.get("matches")) for r in results)
