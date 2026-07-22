@@ -55,23 +55,68 @@ never git.
 Frontend key for Phase 2 (safe to ship in the browser):
 `sb_publishable_esM5Vcf8uAYkGa2U6SsiuA_0l-jApIk`
 
-## Phase 2 — Microsoft SSO  (parked — out of scope per the 2026-07-22 decision)
+## Phase 2 — Microsoft SSO  (IN SCOPE again per 2026-07-22 — the step plan)
 
-Our own SAML registration against the same Entra tenant — CreativeOPS proved
-the path and left playbooks: `catalog/docs/sso-azure-setup.md` (Supabase
-side) and `catalog/docs/for-it-entra-sso.md` (the IT ticket). Steps:
-1. IT adds a second Enterprise Application (SAML SP = this project's
-   `/auth/v1/sso/saml/metadata`), assigns the team.
-2. Register the provider on our project
-   (`supabase sso add --type saml --domains tiebreak.dev ...`).
-3. Frontend: `signInWithSSO({ domain: 'tiebreak.dev' })`, session in a
-   builder-specific `storageKey`.
-4. FastAPI `require_user` verifies the Supabase JWT (JWKS) alongside the
-   legacy cookie; password login stays as break-glass behind a flag, then
-   dies — including the local dev fixture.
-5. First login auto-provisions a `users` row (mirror CreativeOPS's
-   `handle_new_user` trigger: role `viewer`, `access_status='pending'`) —
-   role truth lives in the table, never the JWT claim.
+Same model as CreativeOPS: Entra SAML SSO, MFA via Conditional Access, the
+app holds no passwords, role truth in `public.users` — driving the already-
+shipped Settings → Users panel (pending gate, roles, sections).
+
+Already in place: `users` table + `handle_new_user` auto-provision trigger
+(viewer + pending), `auth_role()`/`is_admin()`, the admin Users API/panel,
+the publishable key (safe for the browser):
+`sb_publishable_esM5Vcf8uAYkGa2U6SsiuA_0l-jApIk`.
+
+**Step 1 — IT ticket (user → IT).** Forward `platform/docs/for-it-entra-sso.md`
+(builder-specific: a SECOND Enterprise App named "Creative Builder", our SP
+URLs on project `emoznmkqtlujyvzytztm`). IT returns the App Federation
+Metadata URL and confirms the sign-in domain (assumed `tiebreak.dev`).
+  ⛳ Blocker for step 3; everything in step 4 can proceed in parallel.
+  Checkpoint first: confirm SAML SSO is available on our plan (Auth →
+  Sign In / Up → SSO in the project dashboard, or the Management API);
+  CreativeOPS cleared this on Pro — ours should match, verify before IT
+  spends time.
+
+**Step 2 — register the IdP on our project (user, one command).** With a
+personal access token (dashboard → Account → Tokens; token is a secret —
+terminal only):
+```bash
+curl -X POST "https://api.supabase.com/v1/projects/emoznmkqtlujyvzytztm/config/auth/sso/providers" \
+  -H "Authorization: Bearer YOUR_SUPABASE_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "saml",
+    "metadata_url": "PASTE_THE_IT_METADATA_URL_HERE",
+    "domains": ["tiebreak.dev"],
+    "attribute_mapping": { "keys": {
+      "email":      { "name": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress" },
+      "full_name":  { "name": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name" },
+      "first_name": { "name": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname" },
+      "last_name":  { "name": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname" }
+    } }
+  }'
+```
+GET the same URL to verify the provider id + domain.
+
+**Step 3 — app code (Claude).** Frontend: SSO-only login card,
+`signInWithSSO({ domain })` via supabase-js, session in a builder-specific
+storageKey, pending-access gate screen for `access_status='pending'`.
+Backend: `require_user` accepts a Supabase JWT (Bearer) verified against the
+project JWKS alongside the legacy cookie; role/sections read from
+`public.users` per request; password login demoted to break-glass behind
+`PLATFORM_PASSWORD_LOGIN=break-glass` (default off in production), dev
+fixture included. Dormant behind `PLATFORM_SSO=on` until steps 1–2 land.
+
+**Step 4 — first admin + lockdown (user, after first sign-in).**
+```sql
+update public.users set role = 'admin', access_status = 'active'
+ where email = 'sergey.magditch@tiebreak.dev';
+```
+Then in the dashboard: Authentication → Providers → disable Email
+(password + magic link) so SSO is the only door.
+
+**Step 5 — test matrix (together).** Incognito → Microsoft → MFA → lands
+pending → admin grants access in Settings → Users → role/sections apply;
+unassigned user rejected by Entra; break-glass flag off in prod.
 
 ## Phase 3 — data → Postgres  ✅ SHIPPED (2026-07-22)
 
