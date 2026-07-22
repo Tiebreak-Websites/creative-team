@@ -55,7 +55,21 @@ never git.
 Frontend key for Phase 2 (safe to ship in the browser):
 `sb_publishable_esM5Vcf8uAYkGa2U6SsiuA_0l-jApIk`
 
-## Phase 2 — Microsoft SSO  (IN SCOPE again per 2026-07-22 — the step plan)
+## Phase 2 — Microsoft SSO  ✅ LIVE (2026-07-22)
+
+Working end to end on 2026-07-22: IT's Enterprise App registered, the SAML
+provider connected (saml_enabled + provider on the project, localhost:5173
+in the redirect allow-list), PLATFORM_SSO=on locally with
+PLATFORM_PASSWORD_LOGIN=break-glass, and the first real Microsoft sign-in
+(sergey.magditch@tiebreak.dev) auto-provisioned viewer+pending and now runs
+as admin+active. Teammates who sign in appear as pending in Admin → Users.
+
+Remaining housekeeping: disable the Email provider in the dashboard
+(Authentication → Sign In / Providers) so SSO is the only door; delete the
+personal access token used for setup; when a production host exists, set
+PLATFORM_SSO=on there and add its URL to the auth allow-list.
+
+The original step plan, for reference:
 
 Same model as CreativeOPS: Entra SAML SSO, MFA via Conditional Access, the
 app holds no passwords, role truth in `public.users` — driving the already-
