@@ -307,14 +307,6 @@ export function BrandsSettings() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="font-display text-base font-semibold text-foreground">Brands</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            The registry every picker reads from. A <b className="font-semibold text-foreground">broker</b>{' '}
-            is the product being sold; an <b className="font-semibold text-foreground">academy</b> sells
-            education and a <b className="font-semibold text-foreground">prop firm</b> sells
-            funded-account challenges — both pick like a broker everywhere, and are grouped separately
-            only for reporting. A <b className="font-semibold text-foreground">white label</b> is the one
-            true exception: a surface that routes traffic to a brand, never a brand itself.
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button size="sm" onClick={() => setEditing({ ...EMPTY_DRAFT })}>
