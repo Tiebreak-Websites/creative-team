@@ -162,6 +162,7 @@ _COLS = """
       text type
       column { title }
       ... on BoardRelationValue { display_value }
+      ... on PeopleValue { persons_and_teams { id kind } }
     }"""
 
 
@@ -180,6 +181,22 @@ def _norm_cols(item: dict) -> Dict[str, str]:
     return out
 
 
+def _people_ids(item: dict, field: str = "owner") -> List[str]:
+    """The Monday person ids assigned in the people column that maps to `field`
+    (e.g. "Owner" → owner). Used to match a task's owner to the signed-in
+    user's linked Monday id — names are ambiguous, ids are not."""
+    ids: List[str] = []
+    for cv in item.get("column_values") or []:
+        title = re.sub(r"\s+", " ", _squash((cv.get("column") or {}).get("title") or ""))
+        if _TITLE_MAP.get(title) != field:
+            continue
+        for p in cv.get("persons_and_teams") or []:
+            pid = str(p.get("id") or "")
+            if pid and pid not in ids:
+                ids.append(pid)
+    return ids
+
+
 def _norm_item(item: dict, *, with_subitems: bool = True) -> dict:
     out = {"id": str(item.get("id") or ""),
            "name": item.get("name") or "",
@@ -187,6 +204,9 @@ def _norm_item(item: dict, *, with_subitems: bool = True) -> dict:
            "board": ((item.get("board") or {}).get("name") or ""),
            "group": ((item.get("group") or {}).get("title") or "")}
     out.update(_norm_cols(item))
+    oids = _people_ids(item, "owner")
+    if oids:
+        out["owner_ids"] = oids
     if with_subitems:
         subs = []
         for s in item.get("subitems") or []:
@@ -301,6 +321,23 @@ def ready_for_design(limit: int = 50) -> List[dict]:
     """The email builder's work list: items at the configured queue status on
     the CRM board."""
     return items_at_status(ready_status(), limit=limit)
+
+
+def users() -> List[Dict[str, str]]:
+    """Active Monday people — {id, name, email} — for the admin's owner-link
+    picker (mapping a builder account to the Monday person who owns its tasks).
+    Non-guests only, sorted by name. Dormant (LookupError) until the token."""
+    data = _gql("query { users (kind: non_guests, limit: 500) "
+                "{ id name email enabled } }")
+    out: List[Dict[str, str]] = []
+    for u in data.get("users") or []:
+        if u.get("enabled") is False:
+            continue
+        out.append({"id": str(u.get("id") or ""),
+                    "name": u.get("name") or "",
+                    "email": u.get("email") or ""})
+    out.sort(key=lambda x: x["name"].lower())
+    return out
 
 
 # ---- matching Monday labels to builder vocabulary ---------------------------

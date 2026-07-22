@@ -47,6 +47,7 @@ export interface QueueTask {
     brief?: string
     figma_url?: string
     deadline?: string
+    owner?: string // Monday Owner name(s), for display in the "All" view
   }
   match: {
     brand_id: string
@@ -56,12 +57,35 @@ export interface QueueTask {
   }
 }
 
-/** The banner/LP work queue: Creative Board items at "Ready for Design". */
-export async function bannerQueue(): Promise<{ tasks: QueueTask[]; status: string }> {
-  const r = await fetch(`${BASE}/tools/banner-builder/queue`, { credentials: 'include' })
-  if (!r.ok) return { tasks: [], status: 'Ready for Design' }
+/** The banner/LP work queue plus scope metadata (see bannerQueue). */
+export interface QueueResult {
+  tasks: QueueTask[]
+  status: string
+  scope: 'mine' | 'all' // which scope the server actually returned
+  linked: boolean // whether the current user has a linked Monday person
+  mineCount: number
+  allCount: number
+}
+
+/**
+ * The banner/LP work queue: Creative Board items at "Ready for Design".
+ * scope="mine" (default) returns only the tasks the signed-in user owns on
+ * Monday; "all" returns everyone's. An unlinked user always gets "all" back
+ * (linked=false) — there's no Monday id to filter on.
+ */
+export async function bannerQueue(scope: 'mine' | 'all' = 'mine'): Promise<QueueResult> {
+  const empty: QueueResult = { tasks: [], status: 'Ready for Design', scope: 'all', linked: false, mineCount: 0, allCount: 0 }
+  const r = await fetch(`${BASE}/tools/banner-builder/queue?scope=${scope}`, { credentials: 'include' })
+  if (!r.ok) return empty
   const d = await r.json()
-  return { tasks: d.tasks ?? [], status: d.status ?? 'Ready for Design' }
+  return {
+    tasks: d.tasks ?? [],
+    status: d.status ?? 'Ready for Design',
+    scope: d.scope === 'mine' ? 'mine' : 'all',
+    linked: !!d.linked,
+    mineCount: d.mine_count ?? 0,
+    allCount: d.all_count ?? 0,
+  }
 }
 
 /**

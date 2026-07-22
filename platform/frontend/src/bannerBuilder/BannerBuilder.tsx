@@ -393,6 +393,11 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
   // Monday "Ready for Design" queue, and the creative a run is being built for
   // (set when you start from a task → the run files itself in the Library).
   const [queue, setQueue] = useState<QueueTask[]>([])
+  // 'mine' (default) shows only tasks the signed-in user owns on Monday; 'all'
+  // shows everyone's. queueMeta.linked says whether "mine" is even possible.
+  const [queueScope, setQueueScope] = useState<'mine' | 'all'>('mine')
+  const [queueMeta, setQueueMeta] = useState<{ linked: boolean; mineCount: number; allCount: number }>(
+    { linked: false, mineCount: 0, allCount: 0 })
   const [pendingCreative, setPendingCreative] = useState<{ id: string; name: string } | null>(null)
   // null = let the AI Builder decide placement automatically.
   const [logoCorner, setLogoCorner] = useState<'tl' | 'tr' | 'bl' | 'br' | null>(null)
@@ -623,9 +628,17 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
   }, [])
 
   // The Monday "Ready for Design" queue — best-effort; no strip without a token.
+  // Re-fetches when the Mine/All scope changes. The server downgrades a "mine"
+  // request to "all" for an unlinked user, so mirror whatever scope it returns.
   useEffect(() => {
-    bannerQueue().then((d) => setQueue(d.tasks)).catch(() => { /* dormant */ })
-  }, [])
+    bannerQueue(queueScope)
+      .then((d) => {
+        setQueue(d.tasks)
+        setQueueMeta({ linked: d.linked, mineCount: d.mineCount, allCount: d.allCount })
+        if (d.scope !== queueScope) setQueueScope(d.scope)
+      })
+      .catch(() => { /* dormant */ })
+  }, [queueScope])
 
   // Start building from a queued task: select its brand, sizes and language,
   // seed the first concept from its name, and remember the creative so the run
@@ -981,12 +994,34 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
       </div>
 
       {/* Monday "Ready for Design" queue — click a task to open it pre-filled. */}
-      {mode === 'build' && (queue.length > 0 || pendingCreative) && (
+      {mode === 'build' && (queueMeta.allCount > 0 || pendingCreative) && (
         <div className="shrink-0 border-b border-border bg-primary/[0.03] px-4 py-2">
           <div className="flex items-center gap-2">
             <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
               Ready for design
             </span>
+            {/* Mine / All scope — a toggle only when this account is linked to a
+                Monday person; otherwise a nudge to set the link in Admin. */}
+            {queueMeta.linked ? (
+              <div className="flex shrink-0 overflow-hidden rounded-lg border border-border text-[11px]">
+                {(['mine', 'all'] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setQueueScope(s)}
+                    className={cn('px-2 py-0.5 transition-colors',
+                      queueScope === s ? 'bg-primary text-primary-foreground'
+                                       : 'text-muted-foreground hover:bg-secondary')}
+                  >
+                    {s === 'mine' ? `Mine (${queueMeta.mineCount})` : `All (${queueMeta.allCount})`}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="shrink-0 text-[10px] italic text-muted-foreground">
+                everyone’s — link your Monday user in Admin to filter
+              </span>
+            )}
             {pendingCreative && (
               <span className="flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] text-foreground">
                 <Link2 className="h-3 w-3 text-primary" />
@@ -998,15 +1033,26 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
               </span>
             )}
             <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
-              {queue.map((t) => (
+              {queue.length === 0 ? (
+                <span className="shrink-0 self-center text-[11px] text-muted-foreground">
+                  None assigned to you —{' '}
+                  <button type="button" onClick={() => setQueueScope('all')}
+                          className="underline underline-offset-2 hover:text-foreground">see all {queueMeta.allCount}</button>.
+                </span>
+              ) : queue.map((t) => (
                 <button
                   key={t.item.id}
                   type="button"
                   onClick={() => void startFromTask(t)}
-                  title={`${t.item.name} — open pre-filled`}
+                  title={`${t.item.name} — open pre-filled${t.item.owner ? ` · ${t.item.owner}` : ''}`}
                   className="flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-left transition-colors hover:border-primary/50"
                 >
-                  <span className="max-w-[180px] truncate text-xs font-medium">{t.item.name}</span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="max-w-[180px] truncate text-xs font-medium">{t.item.name}</span>
+                    {queueScope === 'all' && t.item.owner && (
+                      <span className="max-w-[180px] truncate text-[9px] text-muted-foreground">{t.item.owner}</span>
+                    )}
+                  </span>
                   <span className="shrink-0 rounded-full border border-border bg-secondary px-1.5 py-px text-[9px] uppercase text-muted-foreground">
                     {t.match.asset_type}
                   </span>

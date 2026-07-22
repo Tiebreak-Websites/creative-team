@@ -159,12 +159,18 @@ def build_router() -> APIRouter:
         return runner.run_to_dict(run)
 
     @router.get("/queue")
-    def ready_queue(_user: dict = Depends(require_user)):
+    def ready_queue(scope: str = "mine", user: dict = Depends(require_user)):
         """The banner/LP work queue: Creative Board items at "Ready for Design"
         whose Asset Type is Banner or Landing Page (a banner request is often
         part of an LP project, sharing its Monday id). Each carries the details
         the builder pre-fills from — brand, language, the requested sizes (from
-        the Banner Sizes column), brief, Figma, deadline."""
+        the Banner Sizes column), brief, Figma, deadline.
+
+        scope="mine" (default) narrows to tasks the signed-in user owns on
+        Monday, resolved via the Monday person linked to their account in
+        Admin › Users; "all" shows the whole queue. An unlinked user always
+        gets the full list (there's no id to filter on) with linked=false, so
+        the UI can nudge them to set the link."""
         from ... import monday
         from ... import brands as brands_mod
         from ...lp_builder import core as lp_core
@@ -185,17 +191,34 @@ def build_router() -> APIRouter:
         langs = lp_core.languages() or lp_core.DEFAULT_LANGS
         brands = brands_mod.list_brands()
         wanted = {"banner", "landing page"}
-        tasks = []
+        mine_id = str(user.get("monday_user_id") or "").strip()
+        linked = bool(mine_id)
+        all_tasks, mine_tasks = [], []
         for it in items:
             if (it.get("asset_type") or "").strip().lower() not in wanted:
                 continue
-            tasks.append({"item": it, "match": {
+            owned = mine_id in (it.get("owner_ids") or [])
+            task = {"item": {
+                "id": it.get("id"), "name": it.get("name"), "url": it.get("url"),
+                "asset_type": it.get("asset_type") or "",
+                "brand": it.get("brand") or "", "language": it.get("language") or "",
+                "market": it.get("market") or "", "brief": it.get("brief") or "",
+                "figma_url": it.get("figma_url") or "", "deadline": it.get("deadline") or "",
+                "owner": it.get("owner") or "",
+            }, "match": {
                 "brand_id": monday.match_brand(it.get("brand") or "", brands),
                 "language": monday.match_language(it.get("language") or "", langs),
                 "sizes": _parse_sizes(it.get("sizes") or ""),
                 "asset_type": it.get("asset_type") or "",
-            }})
-        return {"tasks": tasks, "status": status}
+            }}
+            all_tasks.append(task)
+            if owned:
+                mine_tasks.append(task)
+        show_mine = scope != "all" and linked
+        return {"tasks": mine_tasks if show_mine else all_tasks, "status": status,
+                "scope": "mine" if show_mine else "all", "linked": linked,
+                "mine_count": len(mine_tasks) if linked else 0,
+                "all_count": len(all_tasks)}
 
     @router.get("/creatives")
     def search_creatives(q: str = "", _user: dict = Depends(require_user)):
