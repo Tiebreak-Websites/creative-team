@@ -210,6 +210,8 @@ def create_app() -> FastAPI:
         checks["tinify"] = bool(get_secret("TINIFY_API_KEY"))
         from . import monday as _monday
         checks["monday"] = _monday.configured()
+        from . import sso as _sso
+        checks["sso"] = _sso.enabled()
         try:
             art = runner.settings.ARTIFACT_ROOT
             art.mkdir(parents=True, exist_ok=True)

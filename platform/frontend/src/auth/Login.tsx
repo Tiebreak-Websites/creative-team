@@ -6,12 +6,32 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Logo } from '@/components/Logo'
 
+/** Microsoft's four-square mark, inline so the login page needs no assets. */
+function MicrosoftMark() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 21 21" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+      <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+    </svg>
+  )
+}
+
 export function Login() {
-  const { login } = useAuth()
+  const { login, loginSSO, config } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [redirecting, setRedirecting] = useState(false)
+  // With SSO on, the password form stays hidden behind an explicit click even
+  // when break-glass allows it — Microsoft is the door.
+  const [showPassword, setShowPassword] = useState(false)
+
+  const sso = config?.sso === true
+  const passwordAllowed = config ? config.password_login : true
+  const passwordVisible = !sso || (passwordAllowed && showPassword)
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -23,6 +43,17 @@ export function Login() {
       setError(err instanceof Error ? err.message : 'Sign in failed')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function onSSO() {
+    setError(null)
+    setRedirecting(true)
+    try {
+      await loginSSO() // navigates away on success
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Microsoft sign-in failed')
+      setRedirecting(false)
     }
   }
 
@@ -41,45 +72,77 @@ export function Login() {
             <p className="mt-5 text-sm text-muted-foreground">Sign in to continue</p>
           </div>
 
-          <form onSubmit={onSubmit} className="mt-7 space-y-4">
-            {error && (
-              <div
-                role="alert"
-                className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          {error && (
+            <div
+              role="alert"
+              className="mt-6 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              {error}
+            </div>
+          )}
+
+          {sso && (
+            <div className="mt-7">
+              <Button
+                type="button"
+                size="lg"
+                className="w-full font-display tb-glow"
+                onClick={onSSO}
+                disabled={redirecting}
               >
-                {error}
+                {redirecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <MicrosoftMark />}
+                {redirecting ? 'Opening Microsoft…' : 'Sign in with Microsoft'}
+              </Button>
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                Your Tiebreak work account — MFA included.
+              </p>
+              {passwordAllowed && !showPassword && (
+                <p className="mt-4 text-center">
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    onClick={() => setShowPassword(true)}
+                  >
+                    Use a password instead
+                  </button>
+                </p>
+              )}
+            </div>
+          )}
+
+          {passwordVisible && (
+            <form onSubmit={onSubmit} className={sso ? 'mt-5 space-y-4' : 'mt-7 space-y-4'}>
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="username"
+                  autoFocus={!sso}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@internovus.com"
+                  required
+                />
               </div>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="username"
-                autoFocus
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@internovus.com"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-              />
-            </div>
-            <Button type="submit" size="lg" className="w-full font-display tb-glow" disabled={submitting}>
-              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {submitting ? 'Signing in…' : 'Sign in'}
-            </Button>
-          </form>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+              <Button type="submit" size="lg" className="w-full font-display tb-glow" disabled={submitting}>
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {submitting ? 'Signing in…' : 'Sign in'}
+              </Button>
+            </form>
+          )}
         </div>
         <p className="mt-5 text-center text-xs text-muted-foreground">Internovus · Creative Builder</p>
       </div>

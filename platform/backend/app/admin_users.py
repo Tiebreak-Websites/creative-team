@@ -92,6 +92,10 @@ def build_admin_users_router() -> APIRouter:
             raise HTTPException(502, str(e))
         if not rows:
             raise HTTPException(404, "User not found.")
+        # Grants and role changes take effect on the user's NEXT request, not
+        # their next login — drop their cached profile.
+        from . import sso
+        sso.invalidate(uid)
         return rows[0]
 
     return router

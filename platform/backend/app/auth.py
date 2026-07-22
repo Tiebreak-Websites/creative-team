@@ -254,7 +254,7 @@ def _clear_login_fails(key: str) -> None:
 
 
 # --- Tokens ----------------------------------------------------------------
-def _issue_token(user: dict) -> str:
+def _issue_token(user: dict, extra: dict | None = None) -> str:
     now = int(time.time())
     payload = {
         "sub": user["email"],
@@ -262,6 +262,8 @@ def _issue_token(user: dict) -> str:
         "iat": now,
         "exp": now + TOKEN_TTL_SECONDS,
     }
+    if extra:
+        payload.update(extra)
     return jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALG)
 
 
@@ -278,12 +280,29 @@ def _public_user(user: dict) -> dict:
 
 # --- Dependencies (route guards) -------------------------------------------
 def require_user(session: str | None = Cookie(default=None)) -> dict:
-    """Verify the session cookie and return the user dict, else 401."""
+    """Verify the session cookie and return the user dict, else 401.
+
+    Two session kinds share the one cookie: password sessions resolve against
+    the env-seeded store exactly as always; SSO sessions (claim sso=true)
+    re-read role/access/sections from the Supabase users table through a short
+    cache — role truth is the table, and a grant applies without re-login.
+    """
     if not session:
         raise HTTPException(status_code=401, detail="Not authenticated")
     claims = _decode_token(session)
     if not claims:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    if claims.get("sso"):
+        from . import sso
+        try:
+            row = sso.profile(str(claims.get("uid") or ""))
+        except LookupError:
+            raise HTTPException(503, detail="Sign-in service is not configured.")
+        except RuntimeError:
+            raise HTTPException(503, detail="Sign-in service is unreachable — try again.")
+        return sso.session_user(sso.gate(row))
+
     user = get_user(claims.get("sub", ""))
     if not user:
         raise HTTPException(status_code=401, detail="Unknown user")
@@ -303,6 +322,11 @@ def build_auth_router() -> APIRouter:
 
     @router.post("/login")
     def login(request: Request, response: Response, payload: dict = Body(default={})):
+        from . import sso as _sso
+        if not _sso.password_login_allowed():
+            # SSO is on and break-glass is not: the password door is closed.
+            raise HTTPException(403, detail="Password sign-in is disabled — "
+                                            "use your Microsoft work account.")
         email = (payload.get("email") or "").strip()
         password = payload.get("password") or ""
         key = _login_key(request, email)
@@ -337,6 +361,55 @@ def build_auth_router() -> APIRouter:
             path="/",
         )
         return {"user": _public_user(user)}
+
+    @router.get("/config")
+    def auth_config():
+        """Public: what the login screen should offer. All values are safe to
+        ship to any browser (the publishable key is designed for it)."""
+        from . import sso as _sso
+        return _sso.config()
+
+    @router.post("/sso-login")
+    def sso_login(response: Response, payload: dict = Body(default={})):
+        """Exchange a Supabase (Microsoft SSO) session for the builder's own
+        cookie — once, at login. Pending users DO get a session: require_user
+        gates them per request, so approval applies without re-login; the
+        response tells the SPA to show the waiting screen meanwhile."""
+        from . import sso as _sso
+        if not _sso.enabled():
+            raise HTTPException(404, detail="SSO is not enabled on this server.")
+        token = (payload.get("access_token") or "").strip()
+        if not token:
+            raise HTTPException(422, detail="access_token is required.")
+        try:
+            ident = _sso.verify_access_token(token)
+        except RuntimeError as e:
+            raise HTTPException(503, detail=str(e))
+        if not ident:
+            raise HTTPException(401, detail="Microsoft sign-in could not be verified.")
+        try:
+            row = _sso.ensure_profile(ident["id"], ident["email"], ident["name"])
+        except LookupError:
+            raise HTTPException(503, detail="Sign-in service is not configured.")
+        except RuntimeError as e:
+            raise HTTPException(503, detail=str(e))
+        _sso.invalidate(ident["id"])  # the freshest row on the first request
+
+        user = _sso.session_user(row)
+        token_out = _issue_token({"email": user["email"], "role": user["role"]},
+                                 extra={"sso": True, "uid": ident["id"]})
+        response.set_cookie(
+            key=COOKIE_NAME,
+            value=token_out,
+            httponly=True,
+            samesite="lax",
+            secure=settings.COOKIE_SECURE,
+            max_age=TOKEN_TTL_SECONDS,
+            path="/",
+        )
+        pending = (row.get("access_status") or "pending") != "active" \
+            or row.get("active") is False
+        return {"user": user, "pending": pending}
 
     @router.post("/logout")
     def logout(response: Response):

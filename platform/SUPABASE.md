@@ -97,14 +97,25 @@ curl -X POST "https://api.supabase.com/v1/projects/emoznmkqtlujyvzytztm/config/a
 ```
 GET the same URL to verify the provider id + domain.
 
-**Step 3 — app code (Claude).** Frontend: SSO-only login card,
-`signInWithSSO({ domain })` via supabase-js, session in a builder-specific
-storageKey, pending-access gate screen for `access_status='pending'`.
-Backend: `require_user` accepts a Supabase JWT (Bearer) verified against the
-project JWKS alongside the legacy cookie; role/sections read from
-`public.users` per request; password login demoted to break-glass behind
-`PLATFORM_PASSWORD_LOGIN=break-glass` (default off in production), dev
-fixture included. Dormant behind `PLATFORM_SSO=on` until steps 1–2 land.
+**Step 3 — app code  ✅ SHIPPED (2026-07-22), dormant behind `PLATFORM_SSO=on`.**
+The exchange design: the SPA signs in with Entra through Supabase
+(`signInWithSSO`), then POSTs the access token to `/api/auth/sso-login`
+ONCE; the backend verifies it against Supabase's `/auth/v1/user`, ensures
+the `public.users` row, and issues the builder's own cookie — every other
+request runs exactly as today. For SSO sessions `require_user` re-reads
+role/access/sections from the users table (10s TTL, cache-busted by admin
+PATCH), so Grant access applies without re-login. Password login is refused
+while SSO is on unless `PLATFORM_PASSWORD_LOGIN=break-glass`. Frontend:
+`/api/auth/config`-driven login card ("Sign in with Microsoft"), pending
+gate screen ("Almost in" + Check again), supabase-js under a builder-specific
+storageKey. Health reports `sso`.
+
+Verified 2026-07-22 without Entra (temp Supabase auth user + real access
+token): handle_new_user provisioned viewer+pending → exchange issued the
+cookie → /me 403 pending_access → gate screen rendered → SQL grant → same
+cookie 200 as `user` within the TTL → campaigns API 200, admin API 403 →
+"Check again" entered the app. Flag off: config sso:false, password login
+200, login page unchanged. Temp user deleted (cascade cleaned the profile).
 
 **Step 4 — first admin + lockdown (user, after first sign-in).**
 ```sql

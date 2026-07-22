@@ -25,6 +25,7 @@ import { EmailBuilder } from './emailBuilder/EmailBuilder'
 import { Home } from './home/Home'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { Login } from './auth/Login'
+import { PendingGate } from './auth/PendingGate'
 import { UserMenu } from './auth/UserMenu'
 import { Logo } from './components/Logo'
 import { FullScreenLoader, LogoLoader } from './components/LogoLoader'
@@ -155,11 +156,11 @@ function StorageBadge({ onOpen, active }: { onOpen?: () => void; active?: boolea
 }
 
 function Gate() {
-  const { user, loading } = useAuth()
+  const { user, loading, pending } = useAuth()
   if (loading) {
     return <FullScreenLoader label="Starting Internovus…" />
   }
-  if (!user) return <Login />
+  if (!user) return pending ? <PendingGate /> : <Login />
   return <Workspace />
 }
 
