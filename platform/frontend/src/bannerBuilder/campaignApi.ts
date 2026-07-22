@@ -30,6 +30,38 @@ export interface CampaignRunRequest {
   brand_id?: string // selected brand (folds colors into art direction)
   logo_corner?: string // 'tl' | 'tr' | 'bl' | 'br' — overlay the brand logo
   art_tags?: { label: string; value: string }[] // Art-Director selections (display-only)
+  monday_id?: string // Creative Board item this run fulfils (files it in the Library)
+  creative_name?: string
+}
+
+/** One Ready-for-Design task from the Creative Board, matched to builder terms. */
+export interface QueueTask {
+  item: {
+    id: string
+    name: string
+    url: string
+    asset_type?: string
+    brand?: string
+    language?: string
+    market?: string
+    brief?: string
+    figma_url?: string
+    deadline?: string
+  }
+  match: {
+    brand_id: string
+    language: string
+    sizes: string[]
+    asset_type: string
+  }
+}
+
+/** The banner/LP work queue: Creative Board items at "Ready for Design". */
+export async function bannerQueue(): Promise<{ tasks: QueueTask[]; status: string }> {
+  const r = await fetch(`${BASE}/tools/banner-builder/queue`, { credentials: 'include' })
+  if (!r.ok) return { tasks: [], status: 'Ready for Design' }
+  const d = await r.json()
+  return { tasks: d.tasks ?? [], status: d.status ?? 'Ready for Design' }
 }
 
 /**

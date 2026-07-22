@@ -75,6 +75,12 @@ _TITLE_MAP = {
     "title": "topic",
     "figma url": "figma_url",
     "landing page url": "lp_url",
+    # The banner-size request column (title-mapped so it works the moment it is
+    # added to the Creative Board, whatever its column id turns out to be).
+    "banner sizes": "sizes",
+    "banner size": "sizes",
+    "sizes": "sizes",
+    "ad sizes": "sizes",
     "requestor": "requestor",
     "owner": "owner",
     "campaign owner": "owner",
@@ -234,6 +240,12 @@ def ready_status() -> str:
     uses lifecycle statuses; Planned is where upcoming campaigns wait for
     their creatives."""
     return (get_secret("MONDAY_READY_STATUS") or "Planned").strip()
+
+
+def creative_ready_status() -> str:
+    """The Creative Board status that means "start designing" — the trigger
+    for the banner / LP work queue."""
+    return (get_secret("MONDAY_CREATIVE_READY_STATUS") or "Ready for Design").strip()
 
 
 _STATUS_COL_CACHE: dict = {}

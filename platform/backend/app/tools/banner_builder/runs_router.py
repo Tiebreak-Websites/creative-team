@@ -38,6 +38,23 @@ def _slug(s: str) -> str:
     return s[:80]
 
 
+_SIZE_RE = re.compile(r"(\d{2,4})\s*[x×]\s*(\d{2,4})")
+
+
+def _parse_sizes(text: str) -> List[str]:
+    """Pull WxH sizes out of the Monday Banner-Sizes column, whatever its
+    separators — "300x250, 728x90", "300 x 250 / 160x600", a dropdown's joined
+    labels. Order-preserving, de-duplicated, normalised to "WxH"."""
+    out: List[str] = []
+    seen = set()
+    for w, h in _SIZE_RE.findall(text or ""):
+        s = f"{int(w)}x{int(h)}"
+        if s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+
 def _dir_bytes(d: Path) -> int:
     """Total size of the files directly inside a run dir (PNGs + run.json).
 
@@ -140,6 +157,45 @@ def build_router() -> APIRouter:
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
         return runner.run_to_dict(run)
+
+    @router.get("/queue")
+    def ready_queue(_user: dict = Depends(require_user)):
+        """The banner/LP work queue: Creative Board items at "Ready for Design"
+        whose Asset Type is Banner or Landing Page (a banner request is often
+        part of an LP project, sharing its Monday id). Each carries the details
+        the builder pre-fills from — brand, language, the requested sizes (from
+        the Banner Sizes column), brief, Figma, deadline."""
+        from ... import monday
+        from ... import brands as brands_mod
+        from ...lp_builder import core as lp_core
+        if not monday.configured():
+            raise HTTPException(424, detail={
+                "missing_secrets": ["MONDAY_API_TOKEN"],
+                "error": "The Monday integration activates once MONDAY_API_TOKEN is configured."})
+        board = monday.creative_board_id()
+        if not board:
+            raise HTTPException(424, detail={
+                "missing_secrets": ["MONDAY_BOARD_CCB_PARENT"],
+                "error": "Set MONDAY_BOARD_CCB_PARENT to the Creative Board id."})
+        status = monday.creative_ready_status()
+        try:
+            items = monday.items_at_status(status, board=board)
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
+        langs = lp_core.languages() or lp_core.DEFAULT_LANGS
+        brands = brands_mod.list_brands()
+        wanted = {"banner", "landing page"}
+        tasks = []
+        for it in items:
+            if (it.get("asset_type") or "").strip().lower() not in wanted:
+                continue
+            tasks.append({"item": it, "match": {
+                "brand_id": monday.match_brand(it.get("brand") or "", brands),
+                "language": monday.match_language(it.get("language") or "", langs),
+                "sizes": _parse_sizes(it.get("sizes") or ""),
+                "asset_type": it.get("asset_type") or "",
+            }})
+        return {"tasks": tasks, "status": status}
 
     @router.get("/creatives")
     def search_creatives(q: str = "", _user: dict = Depends(require_user)):
