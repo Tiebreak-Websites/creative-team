@@ -317,10 +317,11 @@ def _edit_instruction(regions: List[dict], typography: str,
 
 
 def _qa_candidate(api_key: str, png_bytes: bytes, present: List[str],
-                  absent: List[str]) -> dict:
+                  absent: List[str], artifacts: bool = False) -> dict:
     """Vision read-back: replacements rendered exactly AND erased text is gone.
-    Never raises."""
-    if not present and not absent:
+    `artifacts=True` (the recompose QA) adds a layout-artifact sweep — ghost/
+    duplicated text or a second CTA button fails the check. Never raises."""
+    if not present and not absent and not artifacts:
         return {"qa_ok": None, "qa_read": ""}
     parts = []
     if present:
@@ -330,6 +331,14 @@ def _qa_candidate(api_key: str, png_bytes: bytes, present: List[str],
         parts.append("Text(s) that were ERASED and must NOT appear anywhere "
                      "(matches=true only if the text is completely gone):\n"
                      + "\n".join(f"- “{t}”" for t in absent))
+    if artifacts:
+        parts.append(
+            "Layout-artifact sweep (ONE checklist entry; matches=true ONLY if the "
+            "image is completely CLEAN of ALL of these): duplicated text blocks or "
+            "the same wording appearing twice; ghost, faded, partial or cut-off "
+            "letters near any edge; leftover fragments of a different layout behind "
+            "the design; more than one call-to-action button (including a partial "
+            "button stub). In `read`, name any artifact found and where it sits.")
     try:
         data = _vision_json(
             api_key,
@@ -337,7 +346,9 @@ def _qa_candidate(api_key: str, png_bytes: bytes, present: List[str],
                     "against the checklist. For required texts, exact match means "
                     "spelling, punctuation and diacritics all correct (ignore line-break "
                     "differences and purely stylistic all-caps). For erased texts, "
-                    "matches=true means NO trace of that text remains."),
+                    "matches=true means NO trace of that text remains. For a "
+                    "layout-artifact sweep, matches=true means the image is completely "
+                    "clean of every listed artifact."),
             user_text="\n\n".join(parts),
             image_bytes=png_bytes,
             schema_name="edit_qa", schema=_QA_SCHEMA, effort="low",

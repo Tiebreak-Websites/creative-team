@@ -679,8 +679,11 @@ def _qa_check(png_bytes: bytes, width: int, height: int,
 def _vision_qa_frame(run: Run, frame: dict, png: bytes) -> Optional[str]:
     """GPT-5.5 vision proof-read of a recomposed frame: every copy string the
     prompt demanded verbatim (title, subtitle, CTA) must read EXACTLY on the
-    banner. Returns a short failure description, or None when it passes / is
-    unavailable. Reuses banner_edit's proofreader; never raises."""
+    banner, and the layout-artifact sweep must come back clean (no ghost/
+    duplicated text or second button left over from the master — the recompose
+    stage's double-exposure defect). Returns a short failure description, or
+    None when it passes / is unavailable. Reuses banner_edit's proofreader;
+    never raises."""
     try:
         from .banner_edit import _qa_candidate  # lazy — banner_edit imports runner
         base = run.concepts.get(frame["concept"], {})
@@ -691,12 +694,13 @@ def _vision_qa_frame(run: Run, frame: dict, png: bytes) -> Optional[str]:
         cta = (base.get("cta") or "").strip()
         if cta:
             present.append(bprompts.normalize_cta(cta))
-        if not present or not run.api_key:
+        if not run.api_key:
             return None
-        verdict = _qa_candidate(run.api_key, png, present, [])
+        verdict = _qa_candidate(run.api_key, png, present, [], artifacts=True)
         if verdict.get("qa_ok") is False:
             read = (verdict.get("qa_read") or "").strip()
-            return f"copy mismatch — image reads: {read[:200]}" if read else "copy mismatch"
+            return (f"copy/layout QA failed — image reads: {read[:200]}" if read
+                    else "copy mismatch or leftover ghost text/button from the master")
         return None
     except Exception:  # noqa: BLE001 — vision QA must never break a frame
         return None
@@ -754,7 +758,10 @@ def _gen_one_frame(run: Run, frame: dict, shared: Optional[dict] = None,
         prompt += (
             "\n\nPREVIOUS ATTEMPT FAILED PROOFREADING: "
             f"{qa_feedback}. Render every copy string EXACTLY as specified above — "
-            "letter for letter, including diacritics and punctuation. Fix precisely this."
+            "letter for letter, including diacritics and punctuation — and repaint "
+            "CLEAN: every text and the CTA button exactly once, with zero ghost/"
+            "leftover letters or second button surviving from the source image. "
+            "Fix precisely this."
         )
     fr.prompt = prompt  # surface the exact generation prompt in the viewer
 

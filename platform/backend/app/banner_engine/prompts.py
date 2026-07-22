@@ -531,6 +531,23 @@ EDGE_INTEGRITY_RULE = (
 )
 
 
+# The recompose stage's other signature defect: the attached master survives as
+# a half-painted layer, ghosting giant cropped letters, subtitle fragments and
+# a second CTA button at the edge where the square source sat (a double
+# exposure — most often the LEFT edge of wide targets). "Preserve" means
+# preserve the CONTENT, never the master's pixels in place; without this rule
+# the model can satisfy every PRESERVE line and still ship ghosts.
+CLEAN_REPAINT_RULE = (
+    "CLEAN REPAINT: the attached master is REFERENCE ONLY — repaint the ENTIRE "
+    "canvas from scratch in the master's style. Every text string and the CTA "
+    "button appear EXACTLY ONCE, at their NEW positions only; the master's "
+    "text and button at their ORIGINAL positions must be completely gone, "
+    "fully painted over by clean background. Zero double exposure: no "
+    "leftover, faded, partial or cropped letters, no fragments of another "
+    "layout, no second CTA button — inspect the canvas edges especially."
+)
+
+
 def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
     """Compose the OpenAI generation prompt for one (concept, size).
 
@@ -686,7 +703,8 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
     sections = [
         f"RECOMPOSE the attached master ({master_size}) into {target_size}. "
         "Same campaign, same text, same hook, same colors, same visual direction. "
-        "NOT a stretch, NOT a crop, NOT a fresh generation. "
+        "NOT a stretch, NOT a crop, NOT a fresh generation, NOT a collage or "
+        "double exposure with the source image. "
         "Layout is REDESIGNED for this aspect — never split-panel.",
 
         f"NEW LAYOUT ({family}): {layout_lock(target_size, has_cta=has_cta)}",
@@ -706,6 +724,9 @@ def build_recomp_prompt(concept: dict, master_size: str, target_size: str,
     chart_clause = "" if intent in _FINANCE_INTENTS else " or generic candlestick-chart template"
     sections += [
         "PRESERVE (reposition, do not remove):\n" + "\n".join(preserve),
+
+        # Directly counters the PRESERVE block's main misreading (ghost layers).
+        CLEAN_REPAINT_RULE,
 
         BRAND_DEFENCE_LINE,
         COPY_CONTRACT,
