@@ -128,6 +128,44 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="run not found")
         return runner.run_to_dict(run)
 
+    @router.patch("/runs/{run_id}/creative")
+    def set_creative(run_id: str, payload: dict = Body(default={}),
+                     _user: dict = Depends(require_user)):
+        """File this run into a Creative (Monday item), or clear it. The
+        Library's kind -> creative folders read this link."""
+        run = runner.set_run_creative(
+            run_id,
+            str(payload.get("monday_id") or ""),
+            str(payload.get("creative_name") or ""))
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return runner.run_to_dict(run)
+
+    @router.get("/creatives")
+    def search_creatives(q: str = "", _user: dict = Depends(require_user)):
+        """Search the Creative Board (banners + LPs live there) for a creative
+        to file banners under. A pasted numeric id is a direct lookup."""
+        from ... import monday
+        if not monday.configured():
+            raise HTTPException(424, detail={
+                "missing_secrets": ["MONDAY_API_TOKEN"],
+                "error": "The Monday integration activates once MONDAY_API_TOKEN is configured."})
+        board = monday.creative_board_id()
+        if not board:
+            raise HTTPException(424, detail={
+                "missing_secrets": ["MONDAY_BOARD_CCB_PARENT"],
+                "error": "Set MONDAY_BOARD_CCB_PARENT to the Creative Board id."})
+        term = q.strip()
+        if len(term) < 2:
+            return {"items": []}
+        try:
+            if term.isdigit():
+                item = monday.get_item(term)
+                return {"items": [item] if item else []}
+            return {"items": monday.search(term, board=board)}
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
+
     @router.post("/runs/{run_id}/cancel")
     def cancel_run(run_id: str, user: dict = Depends(require_user)):
         # Owner-only: only the user who started the run (or an admin) may stop it,

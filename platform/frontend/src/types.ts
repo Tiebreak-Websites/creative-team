@@ -103,6 +103,9 @@ export interface RunData {
   created_at: string
   updated_at: string
   created_by?: string // email of the user who started the run
+  brand_id?: string | null // brand this run was generated for → its kind folder
+  monday_id?: string // Creative Board item this run is filed under (Library)
+  creative_name?: string // that creative's name, for the folder label
   director?: RunDirector
   style?: string // the composed art-direction string fed to the generator
   art_tags?: { label: string; value: string }[] // Art-Director selections (display-only)

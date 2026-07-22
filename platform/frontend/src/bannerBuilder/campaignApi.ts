@@ -47,6 +47,44 @@ export async function listRuns(): Promise<RunData[] | null> {
   }
 }
 
+/** A Creative Board item — what banners get filed under in the Library. */
+export interface Creative {
+  id: string
+  name: string
+  url: string
+  asset_type?: string
+  brand?: string
+  language?: string
+  status?: string
+}
+
+/** Search the Creative Board for a creative to file banners under. */
+export async function searchCreatives(q: string): Promise<Creative[]> {
+  const r = await fetch(
+    `${BASE}/tools/banner-builder/creatives?q=${encodeURIComponent(q.trim())}`,
+    { credentials: 'include' })
+  if (!r.ok) {
+    const body = await asJson(r)
+    if (r.status === 424) throw new ApiError(424, body.detail?.error ?? 'Monday is not configured.')
+    throw new ApiError(r.status, 'Creative search failed.')
+  }
+  return (await r.json()).items ?? []
+}
+
+/** File a run into a Creative (or clear it with empty values). */
+export async function setRunCreative(
+  runId: string, mondayId: string, creativeName: string,
+): Promise<RunData> {
+  const r = await fetch(`${BASE}/tools/banner-builder/runs/${runId}/creative`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ monday_id: mondayId, creative_name: creativeName }),
+  })
+  if (!r.ok) throw new ApiError(r.status, 'Could not file the run.')
+  return r.json()
+}
+
 export async function createRun(payload: CampaignRunRequest): Promise<RunData> {
   const r = await fetch(`${BASE}/tools/banner-builder/run`, {
     method: 'POST',

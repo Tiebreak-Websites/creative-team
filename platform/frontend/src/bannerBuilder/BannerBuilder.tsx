@@ -22,6 +22,7 @@ import { addSizes, ApiError, approveConcepts, cancelRun, deleteBanner as deleteB
 import { createRun, listRuns } from './campaignApi'
 import type { CampaignRunRequest } from './campaignApi'
 import { OutputPane } from './Results'
+import { BannerGallery } from './Gallery'
 import { CopyDetectModal } from './CopyDetectModal'
 import {
   ArtDirectionModal,
@@ -399,6 +400,8 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
   const [missing, setMissing] = useState<{ env: string; label: string; docs_url: string }[] | null>(null)
 
   const [runs, setRuns] = useState<RunData[]>(() => readSnapshot())
+  // Build (generate + results) vs Library (the kind → creative folder shelf).
+  const [mode, setMode] = useState<'build' | 'library'>('build')
   const [polling, setPolling] = useState(false)
   // Guards Generate from a double-click (or a click during the in-flight POST)
   // starting two runs — i.e. double image spend.
@@ -913,7 +916,40 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
     }
   }
 
+  // Open a run from the Library into the Build view's results pane: fetch it,
+  // merge into the session runs (dedup, newest first), switch to Build.
+  const openRunInBuild = (runId: string) => {
+    setMode('build')
+    getRun(runId)
+      .then((r) => setRuns((prev) => [r, ...prev.filter((p) => p.run_id !== runId)]))
+      .catch(() => { /* the poll will pick it up on next tick */ })
+  }
+
   return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Build ↔ Library switch — Build is the generator, Library the shelf. */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-border bg-card px-4 py-2">
+        <span className="inline-flex rounded-lg border border-border bg-background p-0.5">
+          {(['build', 'library'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              aria-pressed={mode === m}
+              className={cn('rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                mode === m ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground')}
+            >
+              {m === 'build' ? 'Build' : 'Library'}
+            </button>
+          ))}
+        </span>
+      </div>
+
+      {mode === 'library' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <BannerGallery onOpenRun={openRunInBuild} />
+        </div>
+      ) : (
     // Desktop-first 3-pane console. Panes use responsive widths (full at xl); on
     // anything narrower than fits, the row scrolls horizontally rather than
     // overlapping, so every pane stays reachable.
@@ -1823,6 +1859,8 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
             </button>
           </div>
         </div>
+      )}
+    </div>
       )}
     </div>
   )

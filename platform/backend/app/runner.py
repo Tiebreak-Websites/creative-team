@@ -127,6 +127,11 @@ class Run:
     error: Optional[str] = None
     created_by: str = ""               # email of the user who started the run (shown in the gallery)
     brand_id: Optional[str] = None     # brand this run was generated for (drives style memory)
+    # Creative link — the Monday item (Creative Board) this run belongs to.
+    # Files the run into the Library's kind -> creative folders. Optional: a run
+    # with no creative shows as "Unfiled" until assigned.
+    monday_id: str = ""
+    creative_name: str = ""
     style: str = ""                    # campaign look/vibe (fed to the director)
     art_tags: List[dict] = field(default_factory=list)  # Art-Director selections [{label,value}] — display-only
     effort: Optional[str] = None       # per-run GPT-5.5 thinking effort (None -> admin default)
@@ -1725,6 +1730,21 @@ def _counts(run: Run) -> dict:
     return c
 
 
+def set_run_creative(run_id: str, monday_id: str, creative_name: str) -> Optional[Run]:
+    """File a run into a Creative (Monday item) — or clear it with empty
+    values. Persists so the link survives a restart. Returns the run, or None
+    if unknown."""
+    run = STORE.get(run_id)
+    if run is None:
+        return None
+    with run._lock:
+        run.monday_id = (monday_id or "").strip()[:32]
+        run.creative_name = (creative_name or "").strip()[:200]
+        run.updated_at = _now()
+    _persist(run)
+    return run
+
+
 def run_to_dict(run: Run) -> dict:
     # Snapshot run-global state under the lock so a concurrent recompose/approve
     # daemon (Phase 1) can't mutate frames_plan/frame_results mid-serialization.
@@ -1764,6 +1784,8 @@ def run_to_dict(run: Run) -> dict:
             "created_at": run.created_at, "updated_at": run.updated_at,
             "created_by": run.created_by,
             "brand_id": run.brand_id,
+            "monday_id": run.monday_id,
+            "creative_name": run.creative_name,
             "intent": run.intent,
             "intent_meta": run.intent_meta,
             "director": run.director,
@@ -1929,6 +1951,8 @@ def _run_from_dict(d: dict, run_dir: Path) -> Run:
         created_at=d.get("created_at", now), updated_at=d.get("updated_at", now),
         created_by=d.get("created_by", ""),
         brand_id=d.get("brand_id"),
+        monday_id=d.get("monday_id", "") or "",
+        creative_name=d.get("creative_name", "") or "",
         intent=d.get("intent", "general_ad"), intent_meta=d.get("intent_meta") or {},
         director=d.get("director") or {}, logo=d.get("logo") or {},
         approval_state=d.get("approval_state") or {},
