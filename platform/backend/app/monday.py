@@ -105,7 +105,19 @@ def configured() -> bool:
 
 
 def crm_board_id() -> str:
+    """Marketing calendar — the EMAIL builder's home board."""
     return (get_secret("MONDAY_BOARD_CRM") or "").strip()
+
+
+def creative_board_id() -> str:
+    """Creative Board — production requests for BANNERS and LANDING PAGES
+    (Copy → Design → HTML → Dev → QA stages, Asset Type per item, per-language
+    subitems). The banner/LP generator workflows read from here."""
+    return (get_secret("MONDAY_BOARD_CCB_PARENT") or "").strip()
+
+
+def creative_subitems_board_id() -> str:
+    return (get_secret("MONDAY_BOARD_CCB_SUBS") or "").strip()
 
 
 def _gql(query: str, variables: Optional[dict] = None) -> dict:
@@ -196,9 +208,10 @@ def get_item(item_id: str) -> Optional[dict]:
     return _norm_item(items[0]) if items else None
 
 
-def search(term: str, limit: int = 8) -> List[dict]:
-    """Name search on the CRM Tasks board — light rows for a picker list."""
-    board = crm_board_id()
+def search(term: str, limit: int = 8, board: str = "") -> List[dict]:
+    """Name search on a board (default: the email builder's CRM board) —
+    light rows for a picker list."""
+    board = board or crm_board_id()
     if not board:
         return []
     q = f"""query ($board: [ID!], $limit: Int!, $term: CompareValue!) {{
@@ -223,28 +236,59 @@ def ready_status() -> str:
     return (get_secret("MONDAY_READY_STATUS") or "Planned").strip()
 
 
-def ready_for_design(limit: int = 50) -> List[dict]:
-    """Every item at the configured queue status — the work list the builder
-    surfaces. Matched by label TEXT (contains_text is the operator Monday's
-    API actually honours for status text), so the filter survives label-id
-    reshuffles on the board."""
-    board = crm_board_id()
+_STATUS_COL_CACHE: dict = {}
+
+
+def status_column_for(board: str) -> str:
+    """The id of a board's Status column. Column ids are minted per board
+    (the calendar's is literally "status", the Creative Board's is
+    color_mm3f89n1), so resolve by title/type once and cache."""
+    if board in _STATUS_COL_CACHE:
+        return _STATUS_COL_CACHE[board]
+    q = """query ($board: [ID!]) {
+      boards (ids: $board) { columns { id title type } }
+    }"""
+    boards = _gql(q, {"board": [board]}).get("boards") or []
+    cols = (boards[0].get("columns") or []) if boards else []
+    statuses = [c for c in cols if c.get("type") == "status"]
+    named = [c for c in statuses if _squash(c.get("title") or "") == "status"]
+    col = (named or statuses or [{}])[0].get("id") or "status"
+    _STATUS_COL_CACHE[board] = col
+    return col
+
+
+def items_at_status(status: str, limit: int = 50, board: str = "",
+                    status_column: str = "",
+                    with_subitems: bool = False) -> List[dict]:
+    """Every item on a board whose Status column carries `status`. Matched by
+    label TEXT (contains_text is the operator Monday's API actually honours
+    for status text), so the filter survives label-id reshuffles. The status
+    column id is resolved by title per board unless given explicitly."""
+    board = board or crm_board_id()
     if not board:
         return []
+    status_column = status_column or status_column_for(board)
+    subs = f"subitems {{ id name {_COLS} }}" if with_subitems else ""
     q = f"""query ($board: [ID!], $limit: Int!, $status: CompareValue!) {{
       boards (ids: $board) {{
         items_page (limit: $limit, query_params: {{
-          rules: [{{column_id: "status", compare_value: $status,
+          rules: [{{column_id: "{status_column}", compare_value: $status,
                     operator: contains_text}}]
         }}) {{
-          items {{ id name url group {{ title }} {_COLS} }}
+          items {{ id name url group {{ title }} {_COLS} {subs} }}
         }}
       }}
     }}"""
     boards = _gql(q, {"board": [board], "limit": limit,
-                      "status": ready_status()}).get("boards") or []
+                      "status": status}).get("boards") or []
     items = ((boards[0].get("items_page") or {}).get("items") or []) if boards else []
-    return [_norm_item(i, with_subitems=False) for i in items]
+    return [_norm_item(i, with_subitems=with_subitems) for i in items]
+
+
+def ready_for_design(limit: int = 50) -> List[dict]:
+    """The email builder's work list: items at the configured queue status on
+    the CRM board."""
+    return items_at_status(ready_status(), limit=limit)
 
 
 # ---- matching Monday labels to builder vocabulary ---------------------------
