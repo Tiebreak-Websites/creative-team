@@ -70,11 +70,11 @@ the publishable key (safe for the browser):
 (builder-specific: a SECOND Enterprise App named "Creative Builder", our SP
 URLs on project `emoznmkqtlujyvzytztm`). IT returns the App Federation
 Metadata URL and confirms the sign-in domain (assumed `tiebreak.dev`).
-  ⛳ Blocker for step 3; everything in step 4 can proceed in parallel.
-  Checkpoint first: confirm SAML SSO is available on our plan (Auth →
-  Sign In / Up → SSO in the project dashboard, or the Management API);
-  CreativeOPS cleared this on Pro — ours should match, verify before IT
-  spends time.
+  ⛳ Blocker for step 2; app code (step 3) proceeds in parallel.
+  ✅ Plan checkpoint CLEARED (2026-07-22): both projects share the
+  Tiebreak Solutions org (Pro), and
+  `GET /v1/projects/emoznmkqtlujyvzytztm/config/auth/sso/providers`
+  returned `{"items":[]}` — SAML live, no providers yet, no plan gate.
 
 **Step 2 — register the IdP on our project (user, one command).** With a
 personal access token (dashboard → Account → Tokens; token is a secret —
