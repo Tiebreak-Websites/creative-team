@@ -113,10 +113,11 @@ EDITOR_JS = """(function(){
   function post(m){ try { P.postMessage(Object.assign({lp:1}, m), '*'); } catch(e){} }
   var ATTRS = ['data-lp-text','data-lp-rich','data-lp-img','data-lp-link'];
   var SEL = ATTRS.map(function(a){return '['+a+']'}).join(',');
-  // Writer (text-only) mode: set as a body attribute by the compositor because
-  // CSP forbids inline scripts. Text fields stay selectable/editable; section
-  // toolbar, drag-drop and image/link selection are suppressed.
-  function isTxt(){ return document.body.hasAttribute('data-lp-text-only'); }
+  // Writer mode: set as a body attribute by the compositor because CSP
+  // forbids inline scripts. Copywriters keep text editing AND full section
+  // structure (toolbar, drag-to-add); only image/link selection and asset
+  // drops are suppressed — design stays the designers'.
+  function isWriter(){ return document.body.hasAttribute('data-lp-writer'); }
   function fieldsOf(el){
     var out = [];
     for (var i=0;i<ATTRS.length;i++){ var v = el.getAttribute(ATTRS[i]); if (v) out.push({kind:ATTRS[i].slice(8), key:v}); }
@@ -137,7 +138,6 @@ EDITOR_JS = """(function(){
     post({type:'sectionAction', action: b.getAttribute('data-a'), iid: tb._iid});
   });
   function placeToolbar(sec){
-    if (isTxt()) sec = null;
     if (!sec) { tb.style.display='none'; tb._iid=null; return; }
     var r = sec.getBoundingClientRect();
     tb.style.display='flex'; tb._iid = sec.getAttribute('data-iid');
@@ -164,9 +164,10 @@ EDITOR_JS = """(function(){
     e.preventDefault();
     // Innermost-first hierarchy: a field if one is under the cursor, else the
     // repeat item (the whole card — click its padding or gap), else the section.
-    // Writer mode narrows the world to text fields.
-    var el = isTxt()
-          ? e.target.closest('[data-lp-text],[data-lp-rich]')
+    // Writer mode skips image/link fields — a click there selects the card/section.
+    var el = isWriter()
+          ? (e.target.closest('[data-lp-text],[data-lp-rich]') || e.target.closest('[data-lp-item]')
+             || e.target.closest('section[data-iid]'))
           : (e.target.closest(SEL) || e.target.closest('[data-lp-item]')
              || e.target.closest('section[data-iid]'));
     select(el);
@@ -202,8 +203,9 @@ EDITOR_JS = """(function(){
     var el = document.elementFromPoint(e.clientX, e.clientY);
     return el ? el.closest('[data-lp-img]') : null;
   }
-  document.addEventListener('dragover', function(e){ if (isTxt()) return; e.preventDefault();
+  document.addEventListener('dragover', function(e){ e.preventDefault();
     if (isAssetDrag(e)) {
+      if (isWriter()) return;
       line.style.display='none';
       clearDropTarget();
       var img = imgAt(e);
@@ -212,8 +214,9 @@ EDITOR_JS = """(function(){
     }
     var at = insertionAt(e.clientY); line.style.top = at.y + 'px'; line.style.display='block'; });
   document.addEventListener('dragleave', function(e){ if (!e.relatedTarget) { line.style.display='none'; clearDropTarget(); } });
-  document.addEventListener('drop', function(e){ if (isTxt()) return; e.preventDefault(); line.style.display='none';
+  document.addEventListener('drop', function(e){ e.preventDefault(); line.style.display='none';
     if (isAssetDrag(e)) {
+      if (isWriter()) return;
       var url = e.dataTransfer.getData('text/lp-asset');
       var img = imgAt(e);
       clearDropTarget();
@@ -249,8 +252,8 @@ EDITOR_JS = """(function(){
     if (m.type === 'update' && m.html) {
       var doc = new DOMParser().parseFromString(m.html, 'text/html');
       // keep the writer-mode flag in sync across in-place morphs
-      if (doc.body.hasAttribute('data-lp-text-only')) document.body.setAttribute('data-lp-text-only','1');
-      else document.body.removeAttribute('data-lp-text-only');
+      if (doc.body.hasAttribute('data-lp-writer')) document.body.setAttribute('data-lp-writer','1');
+      else document.body.removeAttribute('data-lp-writer');
       var ncss = doc.querySelector('#lp-main-css');
       var ocss = document.querySelector('#lp-main-css');
       if (ncss && ocss) ocss.textContent = ncss.textContent;
@@ -644,7 +647,7 @@ def brand_logo_tokens(project: dict) -> dict:
 def compose_page(project: dict, sections_map: Dict[str, dict], mode: str,
                  resolve_img: Callable[[str], str],
                  css_href: Optional[str] = None, js_href: Optional[str] = None,
-                 hide_scrollbars: bool = False, text_only: bool = False) -> Dict[str, str]:
+                 hide_scrollbars: bool = False, writer_mode: bool = False) -> Dict[str, str]:
     """Returns {"html":…, "css":…, "js":…}. When css_href/js_href are given the
     HTML links to them (export); otherwise CSS is inlined (canvas srcdoc)."""
     lang = project.get("language") or "en"
@@ -739,9 +742,9 @@ def compose_page(project: dict, sections_map: Dict[str, dict], mode: str,
     runtime = (EDITOR_CSS + '\n<script src="/api/tools/lp-builder/editor.js" defer></script>'
                if mode == "editor" else "")
     # Writer mode: the editor runtime reads this body flag (CSP forbids inline
-    # <script>, so a DOM attribute is the only channel into the iframe) and
-    # restricts itself to text selection + inline text editing.
-    body_attr = ' data-lp-text-only="1"' if (text_only and mode == "editor") else ""
+    # <script>, so a DOM attribute is the only channel into the iframe). Text
+    # editing + section structure stay live; image/link targets go inert.
+    body_attr = ' data-lp-writer="1"' if (writer_mode and mode == "editor") else ""
     html_doc = f"""<!doctype html>
 <html lang="{_esc(lang)}">
 <head>

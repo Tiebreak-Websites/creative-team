@@ -228,14 +228,15 @@ export async function composePage(
   project: Project,
   mode: 'editor' | 'preview',
   draftSection?: Partial<SectionDef> & { key: string },
-  /** text_only: writer-mode editor — drag/section toolbars suppressed, text editing kept. */
-  opts?: { text_only?: boolean },
+  /** writer_mode: copywriter editor — structure + text stay editable, image/link
+   *  selection and asset drops are suppressed. */
+  opts?: { writer_mode?: boolean },
 ): Promise<string> {
   const r = await fetch(`${LPB}/compose`, {
     method: 'POST', headers: j, credentials: 'include',
     body: JSON.stringify({
       project, mode, draft_section: draftSection,
-      ...(opts?.text_only ? { text_only: true } : {}),
+      ...(opts?.writer_mode ? { writer_mode: true } : {}),
     }),
   })
   if (!r.ok) return fail(r, 'Could not render the page')

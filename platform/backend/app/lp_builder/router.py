@@ -140,10 +140,13 @@ def _clean_project_patch(payload: dict, p: dict) -> None:
 
 
 def _clean_writer_patch(payload: dict, p: dict) -> None:
-    """The copywriter autosave: text only. Per-instance text overrides on the
-    sections ALREADY on the page (no adds, removals or reorders), the brief,
-    the two meta fields and the draft/copy_ready status. Everything else in
-    the payload is dropped — server-side truth, not UI decoration."""
+    """The copywriter autosave: content, not design. Copywriters manage page
+    STRUCTURE like a designer — add/remove/reorder sections, repeat-item
+    counts, layer names — and write all the TEXT. But a section's design
+    (props/styling, images, links) only carries over unchanged from the live
+    page: sections a writer adds start with template defaults, surviving
+    sections keep whatever the designers set, and nothing in the writer's
+    payload can alter them. Page identity/design keys are dropped."""
     dropped = sorted(k for k in payload
                      if k not in ("sections", "brief", "meta_title", "meta_description", "status"))
     if dropped:
@@ -156,11 +159,30 @@ def _clean_writer_patch(payload: dict, p: dict) -> None:
     if payload.get("status") in _WRITER_STATUSES:
         p["status"] = payload["status"]
     if isinstance(payload.get("sections"), list):
-        by_iid = {str(s.get("iid") or ""): s for s in payload["sections"] if isinstance(s, dict)}
-        for inst in p.get("sections") or []:
-            src = by_iid.get(str(inst.get("iid") or ""))
-            if src is not None and isinstance(src.get("texts"), dict):
-                inst["texts"] = {str(k)[:80]: str(v)[:2000] for k, v in src["texts"].items()}
+        live_by_iid = {str(i.get("iid") or ""): i for i in p.get("sections") or []}
+        secs = []
+        for s in payload["sections"][:_MAX_SECTIONS_PER_PAGE]:
+            if not isinstance(s, dict) or not s.get("template_key"):
+                continue
+            iid = _clean_str(s.get("iid"), 24) or core.new_asset_id()[:8]
+            live = live_by_iid.get(iid) or {}
+            secs.append({
+                "iid": iid,
+                "template_key": _clean_str(s.get("template_key"), 64),
+                "texts": {str(k)[:80]: str(v)[:2000] for k, v in (s.get("texts") or {}).items()},
+                # Design stays the designers': always from the live instance,
+                # never from the writer's payload.
+                "images": dict(live.get("images") or {}),
+                "images_mobile": dict(live.get("images_mobile") or {}),
+                "links": dict(live.get("links") or {}),
+                "props": dict(live.get("props") or {}) if isinstance(live.get("props"), dict) else {},
+                "repeats": {str(k)[:80]: max(1, min(12, int(v)))
+                            for k, v in (s.get("repeats") or {}).items()
+                            if isinstance(v, (int, float))},
+                "names": {str(k)[:80]: str(v)[:120] for k, v in (s.get("names") or {}).items()
+                          if str(v).strip()},
+            })
+        p["sections"] = secs
 
 
 def _public_section(s: dict, with_body: bool = False) -> dict:
@@ -536,9 +558,9 @@ def build_lp_builder_router() -> APIRouter:
         if not isinstance(project, dict):
             raise HTTPException(status_code=422, detail="'project' is required")
         mode = "editor" if payload.get("mode") == "editor" else "preview"
-        # Writer mode asks for a text-only canvas runtime; copywriters get it
-        # regardless of what the client sent.
-        text_only = bool(payload.get("text_only")) or is_copywriter(user)
+        # Writer mode asks for the content-focused canvas runtime; copywriters
+        # get it regardless of what the client sent.
+        writer_mode = bool(payload.get("writer_mode")) or is_copywriter(user)
         with core.lock():
             smap = dict(core.sections())
         # The admin section editor previews its UNSAVED draft through the same
@@ -552,7 +574,7 @@ def build_lp_builder_router() -> APIRouter:
         # hide_scrollbars: the in-app canvas is a Figma-style surface (pan +
         # zoom, no scrollbars); real exports keep native scrolling.
         out = export.compose_page(project, smap, mode=mode, resolve_img=export.serve_url_for,
-                                  hide_scrollbars=True, text_only=text_only)
+                                  hide_scrollbars=True, writer_mode=writer_mode)
         return {"html": out["html"]}
 
     # ---- runtime scripts -------------------------------------------------------

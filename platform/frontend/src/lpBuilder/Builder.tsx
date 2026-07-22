@@ -19,7 +19,6 @@ import {
   Loader2,
   Minus,
   Monitor,
-  PenLine,
   Plus,
   Pencil,
   Redo2,
@@ -150,8 +149,7 @@ export function Builder({
   languages: Language[]
   /** Managing the block library is admin-only. */
   isAdmin?: boolean
-  /** Text-only writer mode is FORCED on (copywriters). When false, the top bar
-   * offers a voluntary "Writer mode" toggle instead. */
+  /** Copywriter writer mode — structure + text editable, design stripped. */
   writerMode?: boolean
   onManageBlocks?: (blockKey?: string) => void
   onBack: () => void
@@ -177,9 +175,8 @@ export function Builder({
   const [exporting, setExporting] = useState(false)
   const [brandOpen, setBrandOpen] = useState(false)
   const [langOpen, setLangOpen] = useState(false)
-  // Writer mode: forced for copywriters (writerMode prop), voluntary otherwise.
-  const [writerOpt, setWriterOpt] = useState(false)
-  const writer = !!writerMode || writerOpt
+  // Writer mode is role-driven (copywriters) — fixed for the session.
+  const writer = !!writerMode
   // AI copy job — panel visibility, the running job, and the per-section
   // "Restore previous text" list the last finished job left behind.
   const [aiOpen, setAiOpen] = useState(false)
@@ -342,12 +339,6 @@ export function Builder({
     [pushHistory],
   )
 
-  // Writer mode is text-only AND desktop-only — the device switch is hidden, so
-  // pin the bucket to the base breakpoint while it's on.
-  useEffect(() => {
-    if (writer) setDevice('desktop')
-  }, [writer])
-
   // ---- compose the canvas ----------------------------------------------------
   // First load (and every editor<->preview switch) sets srcdoc — a full
   // document load. Every edit AFTER that is applied IN PLACE via the runtime's
@@ -358,7 +349,7 @@ export function Builder({
     let alive = true
     const t = window.setTimeout(() => {
       const mode = preview ? 'preview' : 'editor'
-      composePage(project, mode, undefined, writer && mode === 'editor' ? { text_only: true } : undefined)
+      composePage(project, mode, undefined, writer && mode === 'editor' ? { writer_mode: true } : undefined)
         .then((html) => {
           if (!alive) return
           const canMorph =
@@ -426,16 +417,14 @@ export function Builder({
         // Clicking a card's padding selects the whole repeat item; mirror that
         // in the Layers tree so the ITEM row highlights.
         setActiveItem(m.iid && m.item ? `${m.iid}:${m.item}` : null)
-        // Writer mode has no tabs — the Content tree is always showing.
-        if (!writer) {
-          if (m.iid && m.item) setLeftTab('layers')
-          // Clicking an IMAGE brings its assets into view; clicking TEXT/a link
-          // opens the Layers tree (which reveals + highlights that element).
-          if (m.iid && fields.some((f) => f.kind === 'img')) {
-            setLeftTab('assets')
-          } else if (m.iid && fields.some((f) => f.kind === 'text' || f.kind === 'rich' || f.kind === 'link')) {
-            setLeftTab('layers')
-          }
+        if (m.iid && m.item) setLeftTab('layers')
+        // Clicking an IMAGE brings its assets into view; clicking TEXT/a link
+        // opens the Layers tree (which reveals + highlights that element).
+        // Writers have no Assets tab — an image click stays where it is.
+        if (m.iid && fields.some((f) => f.kind === 'img')) {
+          if (!writer) setLeftTab('assets')
+        } else if (m.iid && fields.some((f) => f.kind === 'text' || f.kind === 'rich' || f.kind === 'link')) {
+          setLeftTab('layers')
         }
       } else if (m.type === 'text') {
         mutate((p) => {
@@ -450,7 +439,6 @@ export function Builder({
       } else if (m.type === 'dropImage') {
         if (m.iid && m.key && m.url) void assignImageTo(m.iid, m.key, m.url)
       } else if (m.type === 'sectionAction') {
-        if (writer) return // structural ops don't exist in writer mode
         const iid = String(m.iid || '')
         if (!iid) return
         if (m.action === 'delete') {
@@ -651,7 +639,6 @@ export function Builder({
   // field or editing text on the canvas). Bulk delete of shift-selected rows.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (writer) return // no structural deletes in writer mode
       if (e.key !== 'Delete' && e.key !== 'Backspace') return
       const t = e.target as HTMLElement | null
       const tag = t?.tagName
@@ -671,7 +658,7 @@ export function Builder({
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [selectedIids, mutate, writer])
+  }, [selectedIids, mutate])
 
   // ---- AI copy job ----------------------------------------------------------
   // Mirrors the CRM CopyGenerator: start → poll every 2s → apply once. 'done'
@@ -1152,21 +1139,6 @@ export function Builder({
           </>
         )}
 
-        {/* Voluntary writer mode for designers/admins; copywriters have it
-            forced on (writerMode prop) and never see the toggle. */}
-        {!writerMode && (
-          <Button
-            variant={writer ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setWriterOpt((v) => !v)}
-            aria-pressed={writer}
-            title={writer ? 'Exit writer mode' : 'Writer mode — text-only editing'}
-          >
-            <PenLine className="h-4 w-4" />
-            <span className="hidden lg:inline">Writer mode</span>
-          </Button>
-        )}
-
         <Button variant="ghost" size="icon" disabled={!canUndo} onClick={() => timeTravel(-1)} title="Undo (Ctrl+Z)" aria-label="Undo">
           <Undo2 className="h-4 w-4" />
         </Button>
@@ -1228,38 +1200,21 @@ export function Builder({
 
       {/* ------------------------------- body ------------------------------- */}
       <div className="flex min-h-0 flex-1">
-        {/* left panel — widens while Add is active so 2-per-row thumbnails read well */}
-        {!preview && writer && (
-          /* Writer mode: one Content tab — the tree filtered to text. No Add,
-             no Assets. */
-          <div className="flex w-64 shrink-0 flex-col border-r border-border bg-card/60">
-            <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-3 py-2">
-              <Type className="h-3.5 w-3.5 text-primary" />
-              <span className="text-xs font-semibold">Content</span>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
-              {restore && restore.iids.length > 0 && (
-                <RestoreList
-                  project={project}
-                  lib={lib}
-                  iids={restore.iids}
-                  onRestore={restoreOne}
-                  onDismiss={() => setRestore(null)}
-                />
-              )}
-              {layersTree}
-            </div>
-          </div>
-        )}
-        {!preview && !writer && (
+        {/* left panel — widens while Add is active so 2-per-row thumbnails read well.
+            Writers get the same Add library plus a text-focused Content tree;
+            only the Assets tab is designer-owned. */}
+        {!preview && (
           <div
             className={cn(
               'flex shrink-0 flex-col border-r border-border bg-card/60 transition-[width] duration-200',
               leftTab === 'add' ? 'w-96' : 'w-64',
             )}
           >
-            <div className="grid shrink-0 grid-cols-3 gap-1 border-b border-border p-1.5">
-              {([['add', 'Add', Plus], ['layers', 'Layers', Layers], ['assets', 'Assets', ImagePlus]] as const).map(
+            <div className={cn('grid shrink-0 gap-1 border-b border-border p-1.5', writer ? 'grid-cols-2' : 'grid-cols-3')}>
+              {(writer
+                ? ([['add', 'Add', Plus], ['layers', 'Content', Type]] as const)
+                : ([['add', 'Add', Plus], ['layers', 'Layers', Layers], ['assets', 'Assets', ImagePlus]] as const)
+              ).map(
                 ([id, label, Icon]) => (
                   <button
                     key={id}
@@ -1287,8 +1242,21 @@ export function Builder({
                   onEditBlock={isAdmin && onManageBlocks ? (k) => onManageBlocks(k) : undefined}
                 />
               )}
-              {leftTab === 'layers' && layersTree}
-              {leftTab === 'assets' && (
+              {leftTab === 'layers' && (
+                <>
+                  {restore && restore.iids.length > 0 && (
+                    <RestoreList
+                      project={project}
+                      lib={lib}
+                      iids={restore.iids}
+                      onRestore={restoreOne}
+                      onDismiss={() => setRestore(null)}
+                    />
+                  )}
+                  {layersTree}
+                </>
+              )}
+              {leftTab === 'assets' && !writer && (
                 <AssetsTab assets={assets} brandLogos={brandLogos} selection={selection} onAssign={(u) => void assignImage(u)} onUpload={(f) => void uploadAndAssign(f)} />
               )}
             </div>
@@ -1436,6 +1404,21 @@ export function Builder({
                     field={writerField}
                     project={project}
                     onText={(key, v) => setPanelText(selInst.iid, key, v)}
+                  />
+                ) : selInst && selDef ? (
+                  <WriterSectionPanel
+                    inst={selInst}
+                    def={selDef}
+                    project={project}
+                    onRepeat={(key, n) =>
+                      mutate((p) => {
+                        const i = p.sections.find((s) => s.iid === selInst.iid)
+                        if (i) i.repeats[key] = n
+                        return p
+                      })
+                    }
+                    onDuplicate={() => duplicateSection(selInst.iid)}
+                    onRemove={() => removeSection(selInst.iid)}
                   />
                 ) : (
                   <WriterPagePanel project={project} mutate={mutate} />
@@ -1827,8 +1810,8 @@ function LayersTab({
   selection: Selection | null
   /** Section iids in the shift-click multi-selection (for bulk delete). */
   selectedIids: string[]
-  /** Writer mode: only sections + their text/rich fields, read-only structure
-   * (no drag, duplicate, remove or rename). */
+  /** Writer mode: full section structure (drag, duplicate, remove) but only
+   * text/rich field rows — image/link layers and renaming are designer-owned. */
   writer?: boolean
   onSelect: (iid: string, field?: SectionField, shift?: boolean) => void
   onMove: (from: number, to: number) => void
@@ -1859,11 +1842,7 @@ function LayersTab({
   }, [selection?.iid])
 
   if (project.sections.length === 0) {
-    return (
-      <p className="p-3 text-center text-xs text-muted-foreground">
-        {writer ? 'No sections on this page yet.' : 'No sections yet — drag one in from the Add tab.'}
-      </p>
-    )
+    return <p className="p-3 text-center text-xs text-muted-foreground">No sections yet — drag one in from the Add tab.</p>
   }
 
   const flip = (set: Set<string>, id: string) => {
@@ -1960,15 +1939,15 @@ function LayersTab({
                 if (el) rowRefs.current.set(inst.iid, el)
                 else rowRefs.current.delete(inst.iid)
               }}
-              draggable={!writer}
-              onDragStart={() => !writer && setDrag(i)}
+              draggable
+              onDragStart={() => setDrag(i)}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => {
                 if (drag !== null && drag !== i) onMove(drag, i)
                 setDrag(null)
               }}
-              onClick={(e) => onSelect(inst.iid, undefined, writer ? false : e.shiftKey)}
-              title={writer ? 'Click to select' : 'Click to select · Shift-click to multi-select, then Delete'}
+              onClick={(e) => onSelect(inst.iid, undefined, e.shiftKey)}
+              title="Click to select · Shift-click to multi-select, then Delete"
               className={cn(
                 'group flex cursor-pointer items-center gap-1 rounded-xl border px-1.5 py-1.5 transition-colors',
                 multi
@@ -1995,15 +1974,13 @@ function LayersTab({
               >
                 <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', expanded && 'rotate-90')} />
               </button>
-              {!writer && <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/60" />}
+              <GripVertical className="h-3.5 w-3.5 shrink-0 cursor-grab text-muted-foreground/60" />
               <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-secondary font-display text-[9px] font-bold">
                 {i + 1}
               </span>
               <span className="min-w-0 flex-1 truncate text-sm">
                 {def?.name ?? inst.template_key}
               </span>
-              {!writer && (
-                <>
               <button
                 type="button"
                 onClick={(e) => {
@@ -2028,8 +2005,6 @@ function LayersTab({
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
-                </>
-              )}
             </div>
 
             {expanded && def && (
@@ -2590,6 +2565,72 @@ function WriterFieldPanel({
       </label>
       <p className="text-[10px] leading-snug text-muted-foreground">
         The target matches the template's original length, so the layout keeps its shape.
+      </p>
+    </div>
+  )
+}
+
+/** A selected section in writer mode: structure only — repeat-item counts and
+ * duplicate/remove. Styling (background, padding, width) stays designer-owned. */
+function WriterSectionPanel({
+  inst,
+  def,
+  project,
+  onRepeat,
+  onDuplicate,
+  onRemove,
+}: {
+  inst: Instance
+  def: SectionDef
+  project: Project
+  onRepeat: (key: string, n: number) => void
+  onDuplicate: () => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        <span className="truncate font-medium text-foreground">{def.name}</span>
+      </div>
+      {def.repeats.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Items</p>
+          {def.repeats.map((r) => {
+            const count = inst.repeats[r.key] ?? Math.max(1, countDefaults(def, project.language, r.key))
+            return (
+              <div key={r.key} className="flex items-center justify-between rounded-lg border border-border bg-secondary/40 px-2.5 py-1.5">
+                <span className="text-xs capitalize">{r.key}</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <button type="button" onClick={() => onRepeat(r.key, Math.max(1, count - 1))}
+                          className="rounded-md border border-border p-1 hover:bg-accent" aria-label={`Fewer ${r.key}`}>
+                    <Minus className="h-3 w-3" />
+                  </button>
+                  <span className="w-5 text-center font-display text-xs font-bold">{count}</span>
+                  <button type="button" onClick={() => onRepeat(r.key, Math.min(12, count + 1))}
+                          className="rounded-md border border-border p-1 hover:bg-accent" aria-label={`More ${r.key}`}>
+                    <Plus className="h-3 w-3" />
+                  </button>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <div className="flex gap-2 pt-1">
+        <Button variant="outline" size="sm" className="flex-1" onClick={onDuplicate}>
+          <Copy className="h-3.5 w-3.5" /> Duplicate
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex-1 hover:border-destructive hover:text-destructive"
+          onClick={() => window.confirm('Remove this section?') && onRemove()}
+        >
+          <Trash2 className="h-3.5 w-3.5" /> Remove
+        </Button>
+      </div>
+      <p className="text-[10px] leading-snug text-muted-foreground">
+        Add more blocks from the <b>Add</b> tab — drag one onto the page or use ＋.
       </p>
     </div>
   )

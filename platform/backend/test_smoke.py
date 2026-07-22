@@ -180,22 +180,25 @@ def test_copywriter_sees_only_assigned_pages():
     globals()["_PID_A"], globals()["_PID_B"] = a.json()["id"], b.json()["id"]
 
 
-def test_copywriter_put_is_text_only():
+def test_copywriter_put_is_content_only():
     pid = _PID_B
-    # admin lays out one section instance the writer will fill
+    # admin lays out one styled section instance + an image the writer must not touch
     r = client.put(f"/api/tools/lp-builder/projects/{pid}",
                    json={"sections": [{"iid": "aaaa1111", "template_key": "el-title",
-                                       "texts": {}, "props": {"title": {"base": {"color": "#111111"}}}}]})
+                                       "texts": {}, "images": {"img": "/api/x.png"},
+                                       "props": {"title": {"base": {"color": "#111111"}}}}]})
     assert r.status_code == 200, r.text
-    # writer sends a full hostile doc: only texts / brief / meta / status apply
+    # writer sends a full hostile doc: content applies (texts, structure,
+    # repeats, brief/meta/status) — design and page identity do not
     r = writer.put(f"/api/tools/lp-builder/projects/{pid}", json={
         "name": "HACKED", "brand_id": "evil", "tokens": {"primary": "#000000"},
         "brief": "A launch page for the new savings account",
         "meta_title": "Writer meta title", "status": "copy_ready",
         "sections": [
             {"iid": "aaaa1111", "template_key": "el-title", "texts": {"title": "Written by AI-era human"},
-             "props": {"title": {"base": {"color": "#FF0000"}}}},
-            {"iid": "bbbb2222", "template_key": "el-text", "texts": {"body": "injected section"}},
+             "images": {"img": "/api/evil.png"}, "props": {"title": {"base": {"color": "#FF0000"}}}},
+            {"iid": "bbbb2222", "template_key": "el-cards", "texts": {"body": "new section by the writer"},
+             "repeats": {"cards": 5}, "props": {"body": {"base": {"color": "#FF0000"}}}},
         ]})
     assert r.status_code == 200, r.text
     p = r.json()
@@ -204,10 +207,15 @@ def test_copywriter_put_is_text_only():
     assert p["brief"].startswith("A launch page")  # brief applied
     assert p["meta_title"] == "Writer meta title"  # meta applied
     assert p["status"] == "copy_ready"             # status transition applied
-    assert len(p["sections"]) == 1                 # no injected sections
-    inst = p["sections"][0]
-    assert inst["texts"] == {"title": "Written by AI-era human"}   # texts applied
-    assert inst["props"] == {"title": {"base": {"color": "#111111"}}}  # props untouched
+    assert len(p["sections"]) == 2                 # writers CAN add sections
+    a = next(s for s in p["sections"] if s["iid"] == "aaaa1111")
+    b = next(s for s in p["sections"] if s["iid"] == "bbbb2222")
+    assert a["texts"] == {"title": "Written by AI-era human"}          # texts applied
+    assert a["props"] == {"title": {"base": {"color": "#111111"}}}     # designer styling kept
+    assert a["images"] == {"img": "/api/x.png"}                        # designer image kept
+    assert b["texts"] == {"body": "new section by the writer"}
+    assert b["repeats"] == {"cards": 5}                                # repeat counts applied
+    assert b["props"] == {} and b["images"] == {}                      # new sections design-clean
     # writer cannot touch a page not assigned to them
     assert writer.put(f"/api/tools/lp-builder/projects/{_PID_A}",
                       json={"brief": "nope"}).status_code == 403
@@ -251,7 +259,7 @@ if __name__ == "__main__":
     test_run_rejects_bad_size_with_422()
     test_director_validation_and_fallback()
     test_copywriter_sees_only_assigned_pages()
-    test_copywriter_put_is_text_only()
+    test_copywriter_put_is_content_only()
     test_copywriter_forbidden_surfaces()
     test_writers_listing_and_copy_validation()
     print("ALL BACKEND SMOKE TESTS PASSED")
