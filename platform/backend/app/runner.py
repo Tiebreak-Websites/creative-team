@@ -1780,12 +1780,18 @@ def create_run_from_image(png_bytes: bytes, *, title: str, created_by: str = "",
         mode="gen", phase="master", status="ok",
         bytes=len(png_bytes), png_path=str(png),
     )}
+    # Inherit filing + brand from the SOURCE banner so an edit lands next to its
+    # original — same brand folder AND same Monday creative — not in Other/Unfiled.
+    src = STORE.get((edited_from or {}).get("run_id") or "") if edited_from else None
     run = Run(
         id=run_id, status="completed", model="gpt-image-2", quality="high",
         sizes=[size], concepts=concepts, frames_plan=plan,
         frame_results=frame_results, dir=run_dir,
         created_at=now, updated_at=now, created_by=created_by,
         cards={ck: {"title": title, "subtitle": "", "button": ""}},
+        brand_id=(getattr(src, "brand_id", None) if src else None),
+        monday_id=(getattr(src, "monday_id", "") if src else ""),
+        creative_name=(getattr(src, "creative_name", "") if src else ""),
         intent_meta={"source": "banner_edit", **({"edited_from": edited_from} if edited_from else {})},
     )
     STORE.add(run)
