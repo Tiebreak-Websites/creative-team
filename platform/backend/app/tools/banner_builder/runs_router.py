@@ -310,8 +310,12 @@ def build_router() -> APIRouter:
     def regenerate_banner(run_id: str, label: str, payload: dict = Body(default={}),
                           user: dict = Depends(require_user)):
         """Re-roll ONE banner (a single size) in place — fixes a tile that came out
-        wrong without re-running (and re-paying for) the whole batch. Owner-only.
-        Returns the updated run; the frontend polls it back to 'ok'.
+        wrong without re-running (and re-paying for) the whole batch. Returns the
+        updated run; the frontend polls it back to 'ok'.
+
+        SHARED EDIT: any signed-in user may re-roll any run's banner — banners
+        are a team asset (bring one back from the Library and edit it). This is
+        deliberately NOT owner-gated, unlike cancel/approve/reject/delete.
 
         Optional body {"prompt_override": "..."} re-rolls from a user-edited prompt
         (used verbatim, and it sticks for future re-rolls); pass "" to reset back to
@@ -320,7 +324,6 @@ def build_router() -> APIRouter:
         run = runner.STORE.get(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
-        _enforce_owner(run, user)
         # Validate the label against the run's plan (also blocks path-y input).
         if label not in {runner._label(f["concept"], f["size"]) for f in run.frames_plan}:
             raise HTTPException(status_code=404, detail="unknown banner")
@@ -337,14 +340,16 @@ def build_router() -> APIRouter:
     @router.post("/runs/{run_id}/sizes")
     def add_sizes(run_id: str, payload: dict = Body(default={}), user: dict = Depends(require_user)):
         """Add more sizes to an already-approved version and recompose them off its
-        existing master PNG — no need to start a whole new run. Owner-only.
+        existing master PNG — no need to start a whole new run.
         Body {"concept": "c1", "sizes": ["300x250", ...]}. Returns the updated run;
         the frontend resumes polling to watch the new sizes fill in.
+
+        SHARED EDIT: any signed-in user may add sizes to any run (same rationale
+        as regenerate) — NOT owner-gated.
         """
         run = runner.STORE.get(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
-        _enforce_owner(run, user)
         concept = str(payload.get("concept") or "")
         sizes = payload.get("sizes") or []
         if not concept:

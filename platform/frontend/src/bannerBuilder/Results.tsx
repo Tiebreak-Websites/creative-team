@@ -329,13 +329,14 @@ export function OutputPane({
           }
         : null,
     )
-    // Regenerate + delete are owner-only too: only expose them when the viewer
-    // owns this version, matching the backend guard.
     const owned = canModify(g.createdBy)
+    // Regenerate + add-sizes are SHARED edits — anyone can iterate on any run
+    // they've brought back from the Library (the backend allows it too). Delete
+    // and approve/reject stay owner-only.
     // Wrap in an updater so React stores the function instead of calling it.
-    setLibRegen(() => (owned && onRegenerate ? onRegenerate : null))
-    // Add-sizes: owner-only, and never for a rejected version (it stays MVP-only).
-    const canAddSizes = owned && !!onAddSizes && g.approvalStatus !== 'rejected'
+    setLibRegen(() => (onRegenerate ? onRegenerate : null))
+    // Add-sizes: never for a rejected version (it stays master-only).
+    const canAddSizes = !!onAddSizes && g.approvalStatus !== 'rejected'
     setLibAddSizes(() =>
       canAddSizes ? (sizes: string[]) => onAddSizes?.(g.runId, g.concept, sizes) : null,
     )
