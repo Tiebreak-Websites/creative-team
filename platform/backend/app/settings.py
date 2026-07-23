@@ -38,9 +38,9 @@ class Settings:
 
     # Production detection for auth hardening — INDEPENDENT of the cookie flag so
     # a deploy that forgets PLATFORM_COOKIE_SECURE is still protected. True when
-    # PLATFORM_ENV says so OR TLS cookies are on. In production the weak 'parola'
-    # dev admin is refused, the app fails closed without a real admin, and the
-    # API docs default off. Local dev (neither set) stays zero-config.
+    # PLATFORM_ENV says so OR TLS cookies are on. In production the app fails
+    # closed without a real admin (SSO or an explicitly configured one) and the
+    # API docs default off. Local dev (neither set) signs in via SSO.
     ENV = _env("PLATFORM_ENV", "dev").strip().lower()
     IS_PRODUCTION = COOKIE_SECURE or ENV in ("prod", "production", "staging")
 

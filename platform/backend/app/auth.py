@@ -149,9 +149,10 @@ def _parse_users_env() -> dict[str, dict]:
 def _seed_legacy_admin() -> dict[str, dict]:
     """The single admin from ADMIN_EMAIL + ADMIN_PASSWORD[_HASH] (back-compat).
 
-    Returns {} when no password is configured behind TLS (prod): the caller then
-    relies on PLATFORM_USERS, and fails closed if neither yields an admin. Local
-    dev (no TLS) keeps the convenience 'parola' default.
+    Returns {} whenever no admin password is configured — dev and prod alike.
+    There is NO built-in default admin: access comes from SSO (the Supabase users
+    table) or, only if someone deliberately sets it, ADMIN_PASSWORD[_HASH] /
+    PLATFORM_USERS. The old insecure shared dev-password default is gone for good.
     """
     email = (get_secret("ADMIN_EMAIL") or _DEV_ADMIN_EMAIL).strip().lower()
     pre_hashed = _clean(get_secret("ADMIN_PASSWORD_HASH") or "")
@@ -164,12 +165,7 @@ def _seed_legacy_admin() -> dict[str, dict]:
     plaintext = get_secret("ADMIN_PASSWORD")
     if plaintext:
         return {email: {"email": email, "role": "admin", "password_hash": _pwd.hash(plaintext)}}
-    if settings.IS_PRODUCTION:
-        return {}  # no weak default in prod — rely on PLATFORM_USERS / fail closed below
-    log.warning("auth: using the INSECURE dev admin default (password 'parola'). "
-                "Set ADMIN_PASSWORD_HASH + PLATFORM_ENV=production (or PLATFORM_COOKIE_SECURE=true) "
-                "for any real deploy.")
-    return {email: {"email": email, "role": "admin", "password_hash": _pwd.hash("parola")}}
+    return {}  # no built-in default — rely on SSO / PLATFORM_USERS; fail closed below
 
 
 def _seed_users() -> dict[str, dict]:
