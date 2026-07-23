@@ -252,7 +252,13 @@ function parseSizes(text: string): string[] {
   return out
 }
 
-export function BannerBuilder({ meta }: { meta: Meta }) {
+export function BannerBuilder({ meta, view, onViewChange }: {
+  meta: Meta
+  /** Build (generate + results) vs Library (folder shelf). Lifted to App so the
+   *  switch can live in the top category bar next to Generate/Edit. */
+  view: 'build' | 'library'
+  onViewChange: (v: 'build' | 'library') => void
+}) {
   // ---- Campaign settings ----
   const efforts = meta.thinking_efforts ?? [
     { value: 'high', label: 'High' },
@@ -450,7 +456,10 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     return readSnapshot().filter((r) => !TERMINAL_STATUSES.includes(r.status))
   })
   // Build (generate + results) vs Library (the kind → creative folder shelf).
-  const [mode, setMode] = useState<'build' | 'library'>('build')
+  // The switch lives in App's top category bar now; this component drives the
+  // same state through props, so setMode('build') from openRun/refine still works.
+  const mode = view
+  const setMode = onViewChange
   const [polling, setPolling] = useState(false)
   // Runs I explicitly opened from the Library this session — the ONLY reason a
   // finished run by someone else may sit on the canvas. Everything else on the
@@ -1084,26 +1093,6 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Build ↔ Library switch — Build is the generator, Library the shelf. */}
-      <div className="flex shrink-0 items-center gap-1 border-b border-border bg-card px-4 py-2">
-        <span className="inline-flex rounded-lg border border-border bg-background p-0.5">
-          {(['build', 'library'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              aria-pressed={mode === m}
-              className={cn('rounded-md px-3 py-1 text-xs font-semibold transition-all',
-                mode === m
-                  ? 'bg-primary text-primary-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground')}
-            >
-              {m === 'build' ? 'Build' : 'Library'}
-            </button>
-          ))}
-        </span>
-      </div>
-
       {/* Monday "Ready for Design" queue — click a task to open it pre-filled.
           Shared strip (components/ReadyQueue) — same one the LP Builder shows. */}
       {mode === 'build' && (queueMeta.allCount > 0 || pendingCreative) && (

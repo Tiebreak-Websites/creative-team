@@ -320,6 +320,9 @@ function Workspace() {
   const [meta, setMeta] = useState<Meta | null>(null)
   const [helpOpen, setHelpOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // The banner "Generate" tool's view (Build canvas vs Library shelf) — lifted
+  // here so its switch can sit in the top category bar next to Generate/Edit.
+  const [bannerView, setBannerView] = useState<'build' | 'library'>('build')
 
   useEffect(() => {
     Promise.all([fetchTools(), fetchMeta()])
@@ -484,6 +487,30 @@ function Workspace() {
           })}
         </nav>
 
+        {/* Banner Build ↔ Library view switch — moved up here (was a separate row
+            in the workspace) so it sits with the tool nav and the canvas stays
+            clean. Only for the banner Generate tool. */}
+        {inTool && product.id === 'banner' && ws.tool === 'generate' && (
+          <span className="inline-flex shrink-0 rounded-lg border border-border bg-background p-0.5">
+            {(['build', 'library'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setBannerView(m)}
+                aria-pressed={bannerView === m}
+                className={cn(
+                  'rounded-md px-3 py-1 text-xs font-semibold transition-all',
+                  bannerView === m
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {m === 'build' ? 'Build' : 'Library'}
+              </button>
+            ))}
+          </span>
+        )}
+
         {/* Sub-tools of the active category. Hidden on home (no category is
             active) and for a category with a single tool (nothing to switch). */}
         {view !== 'home' && product.tools.length > 1 && (
@@ -585,7 +612,7 @@ function Workspace() {
             </div>
           </div>
         ) : tool && meta ? (
-          <BannerBuilder meta={meta} />
+          <BannerBuilder meta={meta} view={bannerView} onViewChange={setBannerView} />
         ) : (
           <div className="flex h-full items-center justify-center p-6">
             <LogoLoader label="Loading the builder…" />
