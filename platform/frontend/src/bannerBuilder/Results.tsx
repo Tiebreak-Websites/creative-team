@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import {
   AlertTriangle,
   Check,
@@ -6,7 +6,6 @@ import {
   Download,
   Grid2x2,
   Grid3x3,
-  HelpCircle,
   ImageIcon,
   Layers,
   LayoutGrid,
@@ -160,7 +159,8 @@ function slugify(s: string): string {
 
 export function OutputPane({
   runs,
-  onHelp,
+  plannedSizes,
+  masterSize,
   onDeleteBanner,
   onCancel,
   onCancelRun,
@@ -180,7 +180,9 @@ export function OutputPane({
   onToggleVersion,
 }: {
   runs: RunData[]
-  onHelp?: () => void
+  /** Sizes ticked in the rail (master first) — the empty state previews them. */
+  plannedSizes?: string[]
+  masterSize?: string
   onDeleteBanner?: (runId: string, label: string) => void
   onCancel?: () => void
   onCancelRun?: (runId: string) => void
@@ -284,7 +286,8 @@ export function OutputPane({
       ? 'grid-cols-[repeat(auto-fill,minmax(220px,1fr))]'
       : 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))]'
   if (!runs.length)
-    return <EmptyOutput onHelp={onHelp} myBannersOnly={myBannersOnly} onShowAll={onMyBannersToggle} />
+    return <EmptyOutput plannedSizes={plannedSizes} masterSize={masterSize}
+                        myBannersOnly={myBannersOnly} onShowAll={onMyBannersToggle} />
   const groups = buildGroups(runs)
   const generations = groupByGeneration(groups)
   // Surface EVERY distinct run error, not just the first — otherwise a second
@@ -1194,60 +1197,70 @@ function statusLabel(s: string): string {
 }
 
 function EmptyOutput({
-  onHelp,
+  plannedSizes = [],
+  masterSize,
   myBannersOnly,
   onShowAll,
 }: {
-  onHelp?: () => void
+  /** The sizes currently ticked in the rail (master first) — the empty state
+   *  previews them as ghost frames and redraws live as sizes are toggled. */
+  plannedSizes?: string[]
+  masterSize?: string
   myBannersOnly?: boolean
   onShowAll?: () => void
 }) {
+  // True-ratio thumbnails: fit each WxH inside a 220x150 box, floors keeping
+  // even a 728x90 leaderboard or 160x600 skyscraper legible.
+  const frames = plannedSizes.flatMap((s) => {
+    const m = /^(\d+)x(\d+)$/.exec(s)
+    if (!m) return []
+    const w = Number(m[1]), h = Number(m[2])
+    const k = Math.min(220 / w, 150 / h)
+    return [{ size: s, w: Math.max(48, Math.round(w * k)), h: Math.max(34, Math.round(h * k)) }]
+  })
   return (
     <div className="flex h-full items-center justify-center p-8 animate-fade-up">
-      <div className="w-full max-w-sm text-center">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-card text-primary shadow-sm">
-          <ImageIcon className="h-6 w-6" />
+      <div className="w-full max-w-2xl text-center">
+        <div className="flex flex-wrap items-end justify-center gap-3">
+          {frames.map((f, i) => {
+            const roomy = f.w >= 90 && f.h >= 64
+            return (
+              <div
+                key={f.size}
+                className="relative flex animate-fade-up items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-gradient-to-br from-secondary/80 to-secondary/25"
+                style={{ width: f.w, height: f.h, animationDelay: `${Math.min(i * 60, 480)}ms` }}
+              >
+                {roomy && (
+                  <ImageIcon className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 text-muted-foreground/20" />
+                )}
+                <span
+                  className={cn(
+                    'text-[9px] font-medium tabular-nums text-muted-foreground/80',
+                    roomy && 'absolute inset-x-0 bottom-1',
+                  )}
+                >
+                  {f.size}
+                </span>
+                {f.size === masterSize && roomy && (
+                  <span className="absolute left-1 top-1 rounded bg-primary/90 px-1 py-px text-[8px] font-bold leading-3 text-primary-foreground">
+                    MVP
+                  </span>
+                )}
+              </div>
+            )
+          })}
         </div>
-        <h3 className="font-display text-lg font-bold tracking-tight">Your banners will appear here</h3>
-        <p className="mx-auto mt-1 max-w-xs text-sm text-muted-foreground">
-          Three steps and you're done — the AI fills in anything you leave blank.
+        <p className="mt-5 text-xs text-muted-foreground">
+          {frames.length} size{frames.length === 1 ? '' : 's'} selected
         </p>
-        <ol className="mx-auto mt-5 space-y-2 text-left">
-          <QuickStep n={1}>
-            Pick your <b className="font-semibold text-foreground">sizes</b> on the left
-          </QuickStep>
-          <QuickStep n={2}>
-            Add a concept with a <b className="font-semibold text-foreground">Title</b> on the right
-          </QuickStep>
-          <QuickStep n={3}>
-            Set <b className="font-semibold text-foreground">Art direction</b> (optional), then{' '}
-            <b className="font-semibold text-foreground">Generate</b>
-          </QuickStep>
-        </ol>
-        {onHelp && (
-          <Button variant="outline" size="sm" className="mt-5" onClick={onHelp}>
-            <HelpCircle className="h-4 w-4" /> How it works
-          </Button>
-        )}
         {myBannersOnly && onShowAll && (
           <div>
-            <Button variant="ghost" size="sm" className="mt-3 gap-1.5 text-muted-foreground" onClick={onShowAll}>
+            <Button variant="ghost" size="sm" className="mt-2 gap-1.5 text-muted-foreground" onClick={onShowAll}>
               <Users className="h-4 w-4" /> Showing only yours — show everyone’s
             </Button>
           </div>
         )}
       </div>
     </div>
-  )
-}
-
-function QuickStep({ n, children }: { n: number; children: ReactNode }) {
-  return (
-    <li className="flex items-center gap-3 rounded-lg border border-border bg-card/60 px-3 py-2 text-sm">
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
-        {n}
-      </span>
-      <span className="text-muted-foreground">{children}</span>
-    </li>
   )
 }

@@ -571,7 +571,7 @@ function Workspace() {
             </div>
           </div>
         ) : tool && meta ? (
-          <BannerBuilder meta={meta} onHelp={() => setHelpOpen(true)} />
+          <BannerBuilder meta={meta} />
         ) : (
           <div className="flex h-full items-center justify-center p-6">
             <LogoLoader label="Loading the builder…" />

@@ -225,7 +225,7 @@ function parseSizes(text: string): string[] {
   return out
 }
 
-export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => void }) {
+export function BannerBuilder({ meta }: { meta: Meta }) {
   // ---- Campaign settings ----
   const efforts = meta.thinking_efforts ?? [
     { value: 'high', label: 'High' },
@@ -1181,7 +1181,8 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
         <div className="lg:h-full lg:overflow-y-auto lg:pb-56">
           <OutputPane
             runs={visibleRuns}
-            onHelp={onHelp}
+            plannedSizes={[meta.master_size, ...Array.from(sizes).filter((s) => s !== meta.master_size)]}
+            masterSize={meta.master_size}
             onDeleteBanner={deleteBanner}
             onCancel={cancelRuns}
             onCancelRun={cancelOneRun}
