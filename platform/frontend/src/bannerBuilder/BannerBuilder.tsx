@@ -1093,8 +1093,10 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
               type="button"
               onClick={() => setMode(m)}
               aria-pressed={mode === m}
-              className={cn('rounded-md px-3 py-1 text-xs font-medium transition-colors',
-                mode === m ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground')}
+              className={cn('rounded-md px-3 py-1 text-xs font-semibold transition-all',
+                mode === m
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground')}
             >
               {m === 'build' ? 'Build' : 'Library'}
             </button>
