@@ -7,9 +7,7 @@ import {
   Copy,
   Download,
   FilePlus2,
-  FolderOpen,
   Globe,
-  Languages,
   Layout,
   Loader2,
   Search,
@@ -387,7 +385,6 @@ function Dashboard({
     return list
   }, [projects, query, folder, brandIds])
 
-  const langsInUse = useMemo(() => new Set((projects ?? []).map((p) => p.language)).size, [projects])
 
   return (
     <div className="mx-auto h-full max-w-6xl overflow-y-auto px-6 py-8">
@@ -430,24 +427,6 @@ function Dashboard({
             <FilePlus2 className="h-4 w-4" /> New landing page
           </Button>
         </div>
-      </div>
-
-      <div className="mb-5 grid grid-cols-3 gap-3">
-        {[
-          { label: 'Landing pages', value: projects?.length ?? '—', icon: Layout },
-          { label: 'Folders', value: folders.length || '—', icon: FolderOpen },
-          { label: 'Languages in use', value: projects ? langsInUse : '—', icon: Languages },
-        ].map((s, i) => (
-          <div
-            key={s.label}
-            className="animate-fade-up rounded-2xl border border-border bg-card p-4"
-            style={{ animationDelay: `${60 + i * 70}ms` }}
-          >
-            <s.icon className="mb-2 h-4 w-4 text-primary" />
-            <p className="font-display text-2xl font-bold">{s.value}</p>
-            <p className="text-xs text-muted-foreground">{s.label}</p>
-          </div>
-        ))}
       </div>
 
       {folder === null ? (
