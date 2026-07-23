@@ -751,6 +751,19 @@ export function BannerBuilder({ meta, view, onViewChange }: {
     }
   }
 
+  // Closing the "Building for …" pill means "I'm not doing this task after all".
+  // Reset the whole task-seeded prefill — the creative link, brand, language,
+  // sizes AND the first card — back to a clean slate, so the NEXT banner never
+  // inherits the abandoned task's details.
+  function clearTaskPrefill() {
+    setPendingCreative(null)
+    setSizesLocked(false)
+    setBrandId('')
+    setLocaleAuto(true)
+    setSizes(new Set([meta.master_size]))
+    setCards([blankCard()])
+  }
+
   // LIVE: keep the WORKING SET fresh — statuses of the runs on this canvas
   // (incl. the approve→recompose transition) and deletes made elsewhere (e.g.
   // the Disk Manager). reconcileRuns never ADDS server runs, so other users'
@@ -1109,8 +1122,8 @@ export function BannerBuilder({ meta, view, onViewChange }: {
               <Link2 className="h-3 w-3 text-primary" />
               Building for {pendingCreative.name}
               <button type="button"
-                      onClick={() => { setPendingCreative(null); setSizesLocked(false) }}
-                      aria-label="Clear creative" className="ml-0.5 hover:text-destructive">
+                      onClick={clearTaskPrefill}
+                      aria-label="Clear task and reset the form" className="ml-0.5 hover:text-destructive">
                 <X className="h-3 w-3" />
               </button>
             </span>
