@@ -639,25 +639,30 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
         .filter((s) => s.data)
         .map((s) => s.data as RunData)
         .filter((r) => !TERMINAL_STATUSES.includes(r.status))
+      // Any id whose fetch revealed it FINISHED (terminal) or GONE (404) must
+      // leave the canvas — the instant snapshot paint may have shown it with a
+      // stale in-flight status frozen from when it was captured. (A transient
+      // fetch failure isn't in here, so that run's paint survives — resilient.)
+      const drop = new Set(
+        settled
+          .filter((s) => s.gone || (s.data && TERMINAL_STATUSES.includes((s.data as RunData).status)))
+          .map((s) => s.id),
+      )
       setRuns((prev) => {
-        // Restored-by-id wins over the instant snapshot paint (freshest data);
-        // a run that 404'd (deleted / server restarted) is simply not re-added.
-        const byId = new Map(restored.map((r) => [r.run_id, r]))
-        const merged = prev.map((r) => byId.get(r.run_id) ?? r)
-        const seen = new Set(merged.map((r) => r.run_id))
+        const fresh = new Map(restored.map((r) => [r.run_id, r]))
+        const out = prev
+          .filter((r) => !drop.has(r.run_id))     // drop now-finished / gone runs
+          .map((r) => fresh.get(r.run_id) ?? r)    // refresh the actives
+        const seen = new Set(out.map((r) => r.run_id))
         restored.forEach((r) => {
-          if (!seen.has(r.run_id)) merged.push(r)
+          if (!seen.has(r.run_id)) out.push(r)
         })
-        const goneIds = new Set(settled.filter((s) => s.gone).map((s) => s.id))
-        return merged
-          .filter((r) => !goneIds.has(r.run_id))
-          .sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
+        return out.sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
       })
-      if (restored.some((r) => !TERMINAL_STATUSES.includes(r.status))) setPolling(true)
-      // Persist the surviving working-set ids (drop any that 404'd).
-      const goneIds = new Set(settled.filter((s) => s.gone).map((s) => s.id))
-      const keepIds = ids.filter((id) => !goneIds.has(id))
-      persistRunIds(Array.from(new Set([...keepIds, ...runsRef.current.map((r) => r.run_id)])))
+      if (restored.length) setPolling(true)
+      // Persist only the active runs — the store self-heals to the true working
+      // set every load, so a finished/foreign run can't linger across reloads.
+      persistRunIds(restored.map((r) => r.run_id))
     })()
     return () => {
       alive = false
