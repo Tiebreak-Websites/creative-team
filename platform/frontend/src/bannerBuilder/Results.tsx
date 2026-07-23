@@ -1243,7 +1243,7 @@ function EmptyOutput({
                 </span>
                 {f.size === masterSize && roomy && (
                   <span className="absolute left-1 top-1 rounded bg-primary/90 px-1 py-px text-[8px] font-bold leading-3 text-primary-foreground">
-                    MVP
+                    Master
                   </span>
                 )}
               </div>

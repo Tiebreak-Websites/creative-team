@@ -104,10 +104,6 @@ const PLATFORMS: { label: string; sizes: string[] }[] = [
   { label: 'Criteo · Native', sizes: ['600x600', '600x315', '600x500'] },
 ]
 
-// Compact control button used inside the floating command bar.
-const BAR_BTN =
-  'inline-flex h-9 items-center gap-1.5 rounded-xl border border-border bg-secondary px-3 font-display text-[13px] font-medium text-foreground transition-colors hover:border-foreground/25'
-
 let uid = 0
 function blankCard(): ConceptCard {
   uid += 1
@@ -721,7 +717,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
         key={s}
         type="button"
         onClick={() => toggleSize(s)}
-        title={isMaster ? 'MVP — always generated first' : ''}
+        title={isMaster ? 'Master — always generated first' : ''}
         className={cn(
           'flex items-center justify-between rounded-md border px-2.5 py-1.5 font-display text-[12px] font-semibold transition-colors',
           on
@@ -733,7 +729,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
         <span>{s}</span>
         {isMaster && (
           <span className="rounded bg-primary px-1 py-0.5 text-[8px] font-medium uppercase tracking-wide text-primary-foreground">
-            MVP
+            Master
           </span>
         )}
       </button>
@@ -784,10 +780,6 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   }
 
   const canRun = sizes.size > 0 && cards.length > 0 && cards.every((c) => c.title.trim().length > 0)
-  const selectedSizes = Array.from(sizes)
-  // The MVP master is always on, so don't clutter the console with it — only show
-  // the extra sizes the user added (which are the removable ones).
-  const extraSizes = selectedSizes.filter((s) => s !== meta.master_size)
   const selectedBrand = brands.find((b) => b.id === brandId)
 
   // Stop every still-running batch. We ask the backend to cancel AND optimistically
@@ -1012,10 +1004,465 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     // anything narrower than fits, the row scrolls horizontally rather than
     // overlapping, so every pane stays reachable.
     <div className="flex h-full min-h-0 flex-col overflow-y-auto pb-28 lg:flex-row lg:overflow-x-auto lg:overflow-y-hidden lg:pb-0">
-      {/* ---------------- Left: sizes ---------------- */}
-      <aside className="order-1 flex w-full shrink-0 flex-col border-b border-border bg-card animate-fade-in lg:order-none lg:w-[280px] lg:border-b-0 xl:w-[320px]">
-        <div className="space-y-3 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-          <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Sizes</h2>
+      {/* ---------------- Left: the BRIEF ----------------
+          One column that reads like the task, top to bottom: brand & language →
+          concepts (the copy) → art direction → sizes → Generate pinned below.
+          Everything that used to float in the bottom console lives here now, so
+          the centre pane is pure output. */}
+      <aside className="order-1 flex w-full shrink-0 flex-col border-b border-border bg-card animate-fade-in lg:order-none lg:w-[390px] lg:border-b-0 lg:border-r xl:w-[440px]">
+        <div className="space-y-5 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+
+          {/* 1 · Setup — brand, language, engine. Inline expanders (not popovers:
+              a scrolling panel clips floating layers). */}
+          <section className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setBarPopover((p) => (p === 'brand' ? null : 'brand'))}
+                title={selectedBrand ? selectedBrand.name : 'Brand'}
+                aria-expanded={barPopover === 'brand'}
+                className={cn(
+                  'flex h-9 w-full min-w-0 items-center gap-1.5 rounded-lg border bg-background px-2.5 text-xs transition-colors hover:border-primary/50',
+                  brandId ? 'border-primary/50 text-primary' : 'border-border text-foreground',
+                )}
+              >
+                <Tag className="h-4 w-4 shrink-0" />
+                {selectedBrand ? (
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="flex shrink-0 -space-x-1">
+                      {selectedBrand.colors.slice(0, 3).map((c) => (
+                        <span key={c} className="h-3.5 w-3.5 rounded-full border border-card"
+                              style={{ backgroundColor: c }} />
+                      ))}
+                    </span>
+                    <span className="truncate">{selectedBrand.name}</span>
+                  </span>
+                ) : (
+                  <span>Brand</span>
+                )}
+                <ChevronDown className={cn('ml-auto h-3.5 w-3.5 shrink-0 opacity-60 transition-transform',
+                  barPopover === 'brand' && 'rotate-180')} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setBarPopover((p) => (p === 'lang' ? null : 'lang'))}
+                title={localeAuto ? 'Language auto-detected — click to change' : 'Language'}
+                aria-expanded={barPopover === 'lang'}
+                className="flex h-9 w-full min-w-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs text-foreground transition-colors hover:border-primary/50"
+              >
+                <img src={`https://flagcdn.com/h20/${currentLocale.cc}.png`} alt=""
+                     className="h-3.5 w-auto shrink-0 rounded-[2px]" loading="lazy" />
+                <span className="font-semibold">{currentLocale.short}</span>
+                {localeAuto && (
+                  <span title="Auto-detected from your concept text"
+                        className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-primary">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    auto
+                  </span>
+                )}
+                <ChevronDown className={cn('ml-auto h-3.5 w-3.5 shrink-0 opacity-60 transition-transform',
+                  barPopover === 'lang' && 'rotate-180')} />
+              </button>
+            </div>
+
+            {barPopover === 'brand' && (
+              <div className="animate-fade-in space-y-3 rounded-xl border border-border bg-popover p-2.5">
+                <div className="max-h-44 space-y-0.5 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => setBrandId('')}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                      !brandId ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60',
+                    )}
+                  >
+                    None
+                  </button>
+                  {brands.map((b) => (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => setBrandId(b.id)}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                        brandId === b.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60',
+                      )}
+                    >
+                      <span className="flex -space-x-1">
+                        {b.colors.slice(0, 3).map((c) => (
+                          <span key={c} className="h-3 w-3 rounded-full border border-card"
+                                style={{ backgroundColor: c }} />
+                        ))}
+                      </span>
+                      <span className="truncate">{b.name}</span>
+                    </button>
+                  ))}
+                  {brands.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">No brands available.</div>
+                  )}
+                </div>
+                {selectedBrand && (
+                  <div className="space-y-3 border-t border-border pt-2.5">
+                    <div className="flex flex-wrap gap-1.5">
+                      {(selectedBrand.swatches?.length
+                        ? selectedBrand.swatches
+                        : selectedBrand.colors.map((h) => ({ hex: h, role: '' }))
+                      ).map((s, i) => (
+                        <span key={`${s.hex}-${i}`} title={s.hex}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card py-1 pl-1.5 pr-2">
+                          <span className="h-4 w-4 rounded border border-border" style={{ backgroundColor: s.hex }} />
+                          <span className="leading-tight">
+                            <span className="block font-mono text-[10px] font-medium text-foreground">{s.hex.toUpperCase()}</span>
+                            {s.role && <span className="block text-[9px] text-muted-foreground">{s.role}</span>}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                    {selectedBrand.logo_svg && (
+                      <div className="space-y-1.5">
+                        <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Logo placement
+                        </div>
+                        <div className="relative aspect-[2.4/1] w-full overflow-hidden rounded-lg border border-border bg-muted">
+                          {(['tl', 'tr', 'bl', 'br'] as const).map((c) => {
+                            const pos = {
+                              tl: 'left-2 top-2',
+                              tr: 'right-2 top-2',
+                              bl: 'left-2 bottom-2',
+                              br: 'right-2 bottom-2',
+                            }[c]
+                            const on = logoCorner === c
+                            return (
+                              <button
+                                key={c}
+                                type="button"
+                                onClick={() => setLogoCorner(on ? null : c)}
+                                title={`Logo ${c.toUpperCase()}${on ? ' (selected — click to clear)' : ''}`}
+                                className={cn(
+                                  'absolute flex h-7 w-7 items-center justify-center rounded-md border transition-colors',
+                                  pos,
+                                  on ? 'border-primary bg-primary/20' : 'border-border bg-card/70 hover:border-foreground/40',
+                                )}
+                              >
+                                {on && <span className="h-3 w-3 rounded-sm bg-primary/80" />}
+                              </button>
+                            )
+                          })}
+                          {!logoCorner && (
+                            <span className="pointer-events-none absolute inset-0 flex items-center justify-center px-10 text-center text-[11px] leading-tight text-muted-foreground">
+                              Placement decided automatically by the AI Builder
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {barPopover === 'lang' && (
+              <div className="animate-fade-in max-h-56 space-y-0.5 overflow-y-auto rounded-xl border border-border bg-popover p-2">
+                {LOCALES.map((l) => (
+                  <button
+                    key={l.value}
+                    type="button"
+                    onClick={() => {
+                      setLocale(l.value)
+                      setLocaleAuto(false)
+                      setBarPopover(null)
+                    }}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                      locale === l.value ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60',
+                    )}
+                  >
+                    <img src={`https://flagcdn.com/h20/${l.cc}.png`} alt=""
+                         className="h-3.5 w-auto rounded-[2px]" loading="lazy" />
+                    <span className="truncate">{l.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setBarPopover((p) => (p === 'model' ? null : 'model'))}
+              aria-label="Model and image quality settings"
+              aria-expanded={barPopover === 'model'}
+              className="flex h-8 w-full items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">
+                {MODEL_LABELS[model] ?? model} · {QUALITY_LABELS[quality] ?? quality}
+                {EFFORT_ETA[effort] ? ` · ${EFFORT_ETA[effort]}` : ''}
+              </span>
+              <ChevronDown className={cn('ml-auto h-3.5 w-3.5 shrink-0 opacity-60 transition-transform',
+                barPopover === 'model' && 'rotate-180')} />
+            </button>
+            {barPopover === 'model' && (
+              <div className="animate-fade-in space-y-3 rounded-xl border border-border bg-popover p-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Model">
+                    <Select value={model} onValueChange={setModel}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {meta.models.map((m) => (
+                          <SelectItem key={m} value={m}>{MODEL_LABELS[m] ?? m}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="Image quality">
+                    <Select value={quality} onValueChange={setQuality}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {meta.qualities.map((q) => (
+                          <SelectItem key={q} value={q}>{QUALITY_LABELS[q] ?? q}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+                <Field
+                  label="Thinking"
+                  hint={`GPT-5.5${EFFORT_ETA[effort] ? ` · ${EFFORT_ETA[effort]}` : ''}`}
+                >
+                  <Select value={effort} onValueChange={setEffort}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {efforts.map((ef) => (
+                        <SelectItem key={ef.value} value={ef.value}>
+                          <span className="flex w-full items-center justify-between gap-4">
+                            {ef.label}
+                            {EFFORT_ETA[ef.value] && (
+                              <span className="text-xs text-muted-foreground">{EFFORT_ETA[ef.value]}</span>
+                            )}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+            )}
+          </section>
+
+          {/* 2 · Concepts — the copy. Each card becomes a banner version. */}
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Concepts</h2>
+              <button
+                type="button"
+                onClick={() => setCopyDetectOpen(true)}
+                title="Paste a block of text and split it into concepts"
+                aria-label="Paste copy and split it into concepts"
+                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
+              >
+                <ScanText className="h-3.5 w-3.5" /> Paste copy
+              </button>
+            </div>
+
+            {cards.map((c, i) => (
+              <div
+                key={c.key}
+                draggable
+                onDragStart={() => setDragIndex(i)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => onDrop(i)}
+                onDragEnd={() => setDragIndex(null)}
+                className={cn(
+                  'relative animate-fade-up space-y-3 overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-sm transition-shadow',
+                  dragIndex === i && 'opacity-60 ring-2 ring-primary/40',
+                )}
+              >
+                <span className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-primary" aria-hidden />
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-2">
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-primary font-display text-xs font-bold text-primary-foreground">
+                      {i + 1}
+                    </span>
+                    <span className="font-display text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      concept
+                    </span>
+                  </span>
+                  <div className="flex items-center gap-0.5">
+                    <IconBtn onClick={() => moveCard(i, -1)} disabled={i === 0} title="Move up">
+                      <ChevronUp className="h-4 w-4" />
+                    </IconBtn>
+                    <IconBtn onClick={() => moveCard(i, 1)} disabled={i === cards.length - 1} title="Move down">
+                      <ChevronDown className="h-4 w-4" />
+                    </IconBtn>
+                    {cards.length > 1 && (
+                      <IconBtn onClick={() => removeCard(c.key)} title="Remove concept">
+                        <X className="h-4 w-4" />
+                      </IconBtn>
+                    )}
+                  </div>
+                </div>
+
+                <Field label="Title">
+                  <Input
+                    value={c.title}
+                    onChange={(e) => updateCard(c.key, { title: e.target.value })}
+                    placeholder="Oil prices fell. The ringgit moved."
+                  />
+                </Field>
+                <Field label="Subtitle" hint="optional">
+                  <Textarea
+                    rows={2}
+                    value={c.subtitle}
+                    onChange={(e) => updateCard(c.key, { subtitle: e.target.value })}
+                    placeholder="Three signals, one connected story."
+                  />
+                </Field>
+                <Field label="Button" hint="optional">
+                  <Input
+                    value={c.button}
+                    onChange={(e) => updateCard(c.key, { button: e.target.value })}
+                    placeholder="Learn more"
+                  />
+                </Field>
+              </div>
+            ))}
+
+            {cards.length < 5 && (
+              <Button variant="outline" className="w-full border-dashed" onClick={addCard}>
+                <Plus className="h-4 w-4" />
+                Add concept
+              </Button>
+            )}
+          </section>
+
+          {/* 3 · Art direction — free text, the Art Director, style references. */}
+          <section
+            onDragOver={(e) => {
+              e.preventDefault()
+              if (!dragOver) setDragOver(true)
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDragOver(false)
+              addRefs(e.dataTransfer.files)
+            }}
+            className={cn('relative space-y-2 rounded-xl transition-colors', dragOver && 'ring-2 ring-primary/50')}
+          >
+            {dragOver && (
+              <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-primary bg-card/95 px-4 text-center backdrop-blur-md">
+                <ImagePlus className="h-6 w-6 text-primary" />
+                <span className="font-display text-sm font-semibold text-foreground">Drop images</span>
+                <span className="text-[11px] text-muted-foreground">
+                  used as style reference only (visual style, not text)
+                </span>
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Art direction</h2>
+              <button
+                type="button"
+                onClick={() => setArtOpen(true)}
+                title="Art Director"
+                aria-label="Open Art Director"
+                className={cn(
+                  'inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 text-[11px] font-semibold transition-colors',
+                  isArtActive(art) || style.trim()
+                    ? 'border-primary/40 bg-primary/5 text-primary hover:bg-primary/10'
+                    : 'border-border text-muted-foreground hover:border-primary/40 hover:text-primary',
+                )}
+              >
+                <Paintbrush className="h-3.5 w-3.5" /> Art Director
+                {artActiveCount(art) > 0 && (
+                  <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                    {artActiveCount(art)}
+                  </span>
+                )}
+              </button>
+            </div>
+            <div className="flex items-stretch gap-2">
+              <Textarea
+                value={style}
+                onChange={(e) => setStyle(e.target.value)}
+                rows={2}
+                aria-label="Describe the banners"
+                placeholder="Describe the banners in your own words — or open the Art Director →"
+                className="w-full flex-1 resize-none"
+              />
+              {(() => {
+                const cellCount = refs.length + (refs.length < 4 ? 1 : 0)
+                const gridCls =
+                  cellCount <= 1
+                    ? 'grid-cols-1'
+                    : cellCount === 2
+                      ? 'grid-cols-2 grid-rows-1'
+                      : 'grid-cols-2 grid-rows-2'
+                return (
+                  <div
+                    title="Style-reference images (visual style only — text is ignored). Click or drag & drop."
+                    className={cn(
+                      'grid h-[60px] w-[60px] shrink-0 gap-0.5 self-start overflow-hidden rounded-xl border bg-secondary',
+                      gridCls,
+                      refs.length > 0 ? 'border-primary/50' : 'border-border',
+                    )}
+                  >
+                    {refs.slice(0, 4).map((r) => (
+                      <span key={r.id} className="group relative overflow-hidden bg-background">
+                        <img src={r.url} alt="" className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => removeRef(r.id)}
+                          title="Remove reference"
+                          aria-label="Remove reference image"
+                          className="absolute right-0.5 top-0.5 hidden rounded bg-foreground/70 p-0.5 text-background group-hover:block"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                    {refs.length < 4 && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={refBusy}
+                        title="Attach style-reference images"
+                        aria-label="Attach style-reference images"
+                        className="flex flex-col items-center justify-center gap-0.5 bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                      >
+                        {refBusy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <ImagePlus className={cn('h-4 w-4', refs.length > 0 && 'text-primary')} />
+                        )}
+                        {refs.length === 0 && <span className="text-[9px] font-medium">Reference</span>}
+                      </button>
+                    )}
+                  </div>
+                )
+              })()}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                hidden
+                aria-label="Upload style-reference images"
+                onChange={(e) => {
+                  addRefs(e.target.files)
+                  e.target.value = ''
+                }}
+              />
+            </div>
+          </section>
+
+          {/* 4 · Sizes */}
+          <div className="flex items-baseline justify-between gap-2">
+            <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Sizes</h2>
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              {sizes.size} selected
+            </span>
+          </div>
 
           {/* Search first — the fastest path to a size sits on top of the rail. */}
           <div className="relative">
@@ -1159,11 +1606,56 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             </div>
           )}
         </div>
+
+        {/* Generate — pinned under the brief, always in reach. */}
+        <div className="shrink-0 space-y-2 border-t border-border p-4">
+          {missing && (
+            <Alert tone="warn">
+              A required key is missing: {missing.map((s) => s.label).join(', ')}. Set it in the
+              server <code>.env</code>.
+            </Alert>
+          )}
+          {formError && <Alert tone="err">{formError}</Alert>}
+          {formErrors.length > 0 && (
+            <Alert tone="err">
+              <div className="font-medium">Couldn't proceed:</div>
+              <ul className="mt-1 list-disc pl-4">
+                {formErrors.map((e, i) => (
+                  <li key={i}>{e}</li>
+                ))}
+              </ul>
+            </Alert>
+          )}
+          <Button
+            className={cn(
+              'w-full bg-emerald-600 font-display text-white hover:bg-emerald-700',
+              canRun && !submitting && 'tb-glow-success',
+            )}
+            size="lg"
+            onClick={startRun}
+            disabled={!canRun || submitting}
+            title="Generate banners — you can start more while others are running"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Starting…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" /> Generate
+              </>
+            )}
+          </Button>
+          <p className="text-center text-[11px] tabular-nums text-muted-foreground">
+            {sizes.size} size{sizes.size === 1 ? '' : 's'} · {cards.length} concept{cards.length === 1 ? '' : 's'}
+            {!canRun && ' — every concept needs a title'}
+          </p>
+        </div>
       </aside>
 
-      {/* ---------------- Center: results + floating command bar ---------------- */}
+      {/* ---------------- Centre: results ---------------- */}
       <section className="relative order-3 min-h-[55vh] min-w-0 bg-background lg:order-none lg:min-h-0 lg:flex-1">
-        <div className="lg:h-full lg:overflow-y-auto lg:pb-56">
+        <div className="lg:h-full lg:overflow-y-auto lg:pb-24">
           <OutputPane
             runs={visibleRuns}
             plannedSizes={[meta.master_size, ...Array.from(sizes).filter((s) => s !== meta.master_size)]}
@@ -1188,515 +1680,9 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
           />
         </div>
 
-        {/* click-away backdrop for the bar popovers */}
-        {barPopover && (
-          <button
-            type="button"
-            aria-hidden
-            tabIndex={-1}
-            onClick={() => setBarPopover(null)}
-            className="fixed inset-0 z-30 cursor-default"
-          />
-        )}
 
-        {selected.size === 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-40 flex flex-col items-center gap-2 px-4 pb-3 lg:absolute lg:bottom-5 lg:pb-0">
-          {(missing || formError || formErrors.length > 0) && (
-            <div className="w-full max-w-md space-y-2">
-              {missing && (
-                <Alert tone="warn">
-                  A required key is missing: {missing.map((s) => s.label).join(', ')}. Set it in the
-                  server <code>.env</code>.
-                </Alert>
-              )}
-              {formError && <Alert tone="err">{formError}</Alert>}
-              {formErrors.length > 0 && (
-                <Alert tone="err">
-                  <div className="font-medium">Couldn't proceed:</div>
-                  <ul className="mt-1 list-disc pl-4">
-                    {formErrors.map((e, i) => (
-                      <li key={i}>{e}</li>
-                    ))}
-                  </ul>
-                </Alert>
-              )}
-            </div>
-          )}
 
-          {/* Selected sizes — surfaced in the central console. The MVP master is
-              always on; we show it here ONLY once the user adds another size (so it
-              isn't permanently taking space when the master is the only size). */}
-          {extraSizes.length > 0 && (
-            <div className="flex max-w-2xl flex-wrap items-center justify-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary py-1 pl-3.5 pr-2 font-display text-[13px] font-semibold text-primary-foreground shadow-sm">
-                {meta.master_size}
-                <span className="rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[9px] uppercase text-primary-foreground">
-                  MVP
-                </span>
-              </span>
-              {extraSizes.map((s) => (
-                <span
-                  key={s}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary py-1 pl-3.5 pr-2 font-display text-[13px] font-semibold text-primary-foreground shadow-sm"
-                >
-                  {s}
-                  <button
-                    type="button"
-                    onClick={() => toggleSize(s)}
-                    title="Remove size"
-                    aria-label={`Remove size ${s}`}
-                    className="text-primary-foreground/80 hover:text-primary-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
 
-          <div
-            onDragOver={(e) => {
-              e.preventDefault()
-              if (!dragOver) setDragOver(true)
-            }}
-            onDragLeave={(e) => {
-              // Only clear when the cursor actually leaves the console, not when
-              // it moves over a child element.
-              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false)
-            }}
-            onDrop={(e) => {
-              e.preventDefault()
-              setDragOver(false)
-              addRefs(e.dataTransfer.files)
-            }}
-            className={cn(
-              'relative flex w-full max-w-3xl animate-slide-up flex-col gap-2 rounded-2xl border bg-card/95 p-2 shadow-[0_32px_80px_-12px_rgba(0,0,0,0.85),0_12px_28px_-10px_rgba(0,0,0,0.6)] ring-1 ring-black/5 backdrop-blur-md transition-colors',
-              dragOver ? 'border-primary' : 'border-border',
-            )}
-          >
-            {/* Drag-and-drop overlay — references are visual style only */}
-            {dragOver && (
-              <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-primary bg-card/95 px-4 text-center backdrop-blur-md">
-                <ImagePlus className="h-6 w-6 text-primary" />
-                <span className="font-display text-sm font-semibold text-foreground">Drop images</span>
-                <span className="text-[11px] text-muted-foreground">
-                  used as style reference only (visual style, not text)
-                </span>
-              </div>
-            )}
-
-            {/* Row 1 — prompt + a square reference tile (matches the prompt height;
-                shows attached images, with a grid for multiples) */}
-            <div className="flex items-stretch gap-2">
-              <Textarea
-                value={style}
-                onChange={(e) => setStyle(e.target.value)}
-                rows={2}
-                aria-label="Describe the banners"
-                placeholder="Describe the banners in your own words — or open the Art Director →"
-                className="w-full flex-1 resize-none"
-              />
-              {(() => {
-                const cellCount = refs.length + (refs.length < 4 ? 1 : 0)
-                const gridCls =
-                  cellCount <= 1
-                    ? 'grid-cols-1'
-                    : cellCount === 2
-                      ? 'grid-cols-2 grid-rows-1'
-                      : 'grid-cols-2 grid-rows-2'
-                return (
-                  <div
-                    title="Style-reference images (visual style only — text is ignored). Click or drag & drop."
-                    className={cn(
-                      'grid h-[60px] w-[60px] shrink-0 gap-0.5 self-start overflow-hidden rounded-xl border bg-secondary',
-                      gridCls,
-                      refs.length > 0 ? 'border-primary/50' : 'border-border',
-                    )}
-                  >
-                    {refs.slice(0, 4).map((r) => (
-                      <span key={r.id} className="group relative overflow-hidden bg-background">
-                        <img src={r.url} alt="" className="h-full w-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => removeRef(r.id)}
-                          title="Remove reference"
-                          aria-label="Remove reference image"
-                          className="absolute right-0.5 top-0.5 hidden rounded bg-foreground/70 p-0.5 text-background group-hover:block"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                    {refs.length < 4 && (
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={refBusy}
-                        title="Attach style-reference images"
-                        aria-label="Attach style-reference images"
-                        className="flex flex-col items-center justify-center gap-0.5 bg-secondary text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                      >
-                        {refBusy ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <ImagePlus className={cn('h-4 w-4', refs.length > 0 && 'text-primary')} />
-                        )}
-                        {refs.length === 0 && <span className="text-[9px] font-medium">Reference</span>}
-                      </button>
-                    )}
-                  </div>
-                )
-              })()}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                multiple
-                hidden
-                aria-label="Upload style-reference images"
-                onChange={(e) => {
-                  addRefs(e.target.files)
-                  e.target.value = ''
-                }}
-              />
-            </div>
-
-            {/* Row 2 — controls + generate. Always allowed to WRAP: the console's
-                real width is the centre pane (viewport minus both side rails), so
-                a viewport breakpoint (lg:flex-nowrap) lies on laptop widths — the
-                pane can be ~500px on a 1366px screen and the nowrap row pushed
-                Generate out through the console's border. Wrapping only engages
-                when the row genuinely doesn't fit. */}
-            <div className="flex flex-wrap items-center gap-2">
-            {/* Art direction */}
-            <button
-              type="button"
-              onClick={() => setArtOpen(true)}
-              title="Art Director"
-              aria-label="Open Art Director"
-              className={cn(BAR_BTN, 'shrink-0', (isArtActive(art) || style.trim()) && 'border-primary/50 text-primary')}
-            >
-              <Paintbrush className="h-4 w-4" />
-              <span className="hidden 2xl:inline">Art Director</span>
-              {artActiveCount(art) > 0 && (
-                <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
-                  {artActiveCount(art)}
-                </span>
-              )}
-            </button>
-
-            {/* Model & output */}
-            <div className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => setBarPopover((p) => (p === 'model' ? null : 'model'))}
-                aria-label="Model and image quality settings"
-                className={BAR_BTN}
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-                <span className="hidden 2xl:inline">
-                  {MODEL_LABELS[model] ?? model} · {QUALITY_LABELS[quality] ?? quality}
-                </span>
-                <span className="2xl:hidden">{QUALITY_LABELS[quality] ?? quality}</span>
-                <ChevronDown
-                  className={cn('h-3.5 w-3.5 opacity-60 transition-transform', barPopover === 'model' && 'rotate-180')}
-                />
-              </button>
-              {barPopover === 'model' && (
-                <div className="absolute bottom-full left-1/2 z-50 mb-2 w-72 -translate-x-1/2 space-y-3 rounded-xl border border-border bg-popover p-3 shadow-xl">
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="Model">
-                      <Select value={model} onValueChange={setModel}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {meta.models.map((m) => (
-                            <SelectItem key={m} value={m}>{MODEL_LABELS[m] ?? m}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field label="Image quality">
-                      <Select value={quality} onValueChange={setQuality}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {meta.qualities.map((q) => (
-                            <SelectItem key={q} value={q}>{QUALITY_LABELS[q] ?? q}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  </div>
-                  <Field
-                    label="Thinking"
-                    hint={`GPT-5.5${EFFORT_ETA[effort] ? ` · ${EFFORT_ETA[effort]}` : ''}`}
-                  >
-                    <Select value={effort} onValueChange={setEffort}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {efforts.map((ef) => (
-                          <SelectItem key={ef.value} value={ef.value}>
-                            <span className="flex w-full items-center justify-between gap-4">
-                              {ef.label}
-                              {EFFORT_ETA[ef.value] && (
-                                <span className="text-xs text-muted-foreground">{EFFORT_ETA[ef.value]}</span>
-                              )}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </div>
-              )}
-            </div>
-
-            {/* Brand — palette + optional corner logo */}
-            <div className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => setBarPopover((p) => (p === 'brand' ? null : 'brand'))}
-                title={selectedBrand ? selectedBrand.name : 'Brand'}
-                className={cn(BAR_BTN, brandId && 'border-primary/50 text-primary')}
-              >
-                <Tag className="h-4 w-4" />
-                {selectedBrand ? (
-                  <span className="flex items-center gap-1.5">
-                    <span className="flex -space-x-1">
-                      {selectedBrand.colors.slice(0, 3).map((c) => (
-                        <span
-                          key={c}
-                          className="h-3.5 w-3.5 rounded-full border border-card"
-                          style={{ backgroundColor: c }}
-                        />
-                      ))}
-                    </span>
-                    <span className="hidden 2xl:inline">{selectedBrand.name}</span>
-                  </span>
-                ) : (
-                  <span className="hidden 2xl:inline">Brand</span>
-                )}
-                <ChevronDown
-                  className={cn(
-                    'h-3.5 w-3.5 opacity-60 transition-transform',
-                    barPopover === 'brand' && 'rotate-180',
-                  )}
-                />
-              </button>
-              {barPopover === 'brand' && (
-                <div className="absolute bottom-full left-1/2 z-50 mb-2 flex w-[480px] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
-                  {/* Left — brand catalog */}
-                  <div className="w-44 shrink-0 border-r border-border p-2">
-                    <div className="px-1 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Brands
-                    </div>
-                    <div className="max-h-64 space-y-0.5 overflow-y-auto">
-                      <button
-                        type="button"
-                        onClick={() => setBrandId('')}
-                        className={cn(
-                          'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                          !brandId ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60',
-                        )}
-                      >
-                        None
-                      </button>
-                      {brands.map((b) => (
-                        <button
-                          key={b.id}
-                          type="button"
-                          onClick={() => setBrandId(b.id)}
-                          className={cn(
-                            'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                            brandId === b.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60',
-                          )}
-                        >
-                          <span className="flex -space-x-1">
-                            {b.colors.slice(0, 3).map((c) => (
-                              <span
-                                key={c}
-                                className="h-3 w-3 rounded-full border border-card"
-                                style={{ backgroundColor: c }}
-                              />
-                            ))}
-                          </span>
-                          <span className="truncate">{b.name}</span>
-                        </button>
-                      ))}
-                      {brands.length === 0 && (
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground">No brands available.</div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Right — selected brand: colours + logo placement */}
-                  <div className="min-w-0 flex-1 p-3">
-                    {selectedBrand ? (
-                      <div className="space-y-3">
-                        <div className="space-y-1.5">
-                          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                            {selectedBrand.name} · colours
-                          </div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {(selectedBrand.swatches?.length
-                              ? selectedBrand.swatches
-                              : selectedBrand.colors.map((h) => ({ hex: h, role: '' }))
-                            ).map((s, i) => (
-                              <span
-                                key={`${s.hex}-${i}`}
-                                title={s.hex}
-                                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card py-1 pl-1.5 pr-2"
-                              >
-                                <span
-                                  className="h-4 w-4 rounded border border-border"
-                                  style={{ backgroundColor: s.hex }}
-                                />
-                                <span className="leading-tight">
-                                  <span className="block font-mono text-[10px] font-medium text-foreground">
-                                    {s.hex.toUpperCase()}
-                                  </span>
-                                  {s.role && (
-                                    <span className="block text-[9px] text-muted-foreground">{s.role}</span>
-                                  )}
-                                </span>
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-
-                        {selectedBrand.logo_svg && (
-                          <div className="space-y-1.5">
-                            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                              Logo placement
-                            </div>
-                            <div className="relative aspect-[1.6/1] w-full overflow-hidden rounded-lg border border-border bg-muted">
-                              {(['tl', 'tr', 'bl', 'br'] as const).map((c) => {
-                                const pos = {
-                                  tl: 'left-2 top-2',
-                                  tr: 'right-2 top-2',
-                                  bl: 'left-2 bottom-2',
-                                  br: 'right-2 bottom-2',
-                                }[c]
-                                const on = logoCorner === c
-                                return (
-                                  <button
-                                    key={c}
-                                    type="button"
-                                    onClick={() => setLogoCorner(on ? null : c)}
-                                    title={`Logo ${c.toUpperCase()}${on ? ' (selected — click to clear)' : ''}`}
-                                    className={cn(
-                                      'absolute flex h-8 w-8 items-center justify-center rounded-md border transition-colors',
-                                      pos,
-                                      on
-                                        ? 'border-primary bg-primary/20'
-                                        : 'border-border bg-card/70 hover:border-foreground/40',
-                                    )}
-                                  >
-                                    {on && <span className="h-3.5 w-3.5 rounded-sm bg-primary/80" />}
-                                  </button>
-                                )
-                              })}
-                              {!logoCorner && (
-                                <span className="pointer-events-none absolute inset-0 flex items-center justify-center px-10 text-center text-[11px] leading-tight text-muted-foreground">
-                                  Placement decided automatically by the AI Builder
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="flex h-full min-h-[140px] items-center justify-center px-6 text-center text-xs text-muted-foreground">
-                        Select a brand to see its colours and choose where the logo goes.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Language — auto-detected, click to change (real flags) */}
-            <div className="relative shrink-0">
-              <button
-                type="button"
-                onClick={() => setBarPopover((p) => (p === 'lang' ? null : 'lang'))}
-                title={localeAuto ? 'Language auto-detected — click to change' : 'Language'}
-                className={BAR_BTN}
-              >
-                <img
-                  src={`https://flagcdn.com/h20/${currentLocale.cc}.png`}
-                  alt=""
-                  className="h-3.5 w-auto rounded-[2px]"
-                  loading="lazy"
-                />
-                <span className="font-semibold">{currentLocale.short}</span>
-                {localeAuto && (
-                  <span
-                    title="Auto-detected from your concept text"
-                    className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-primary"
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                    <span className="hidden 2xl:inline">auto</span>
-                  </span>
-                )}
-                <ChevronDown
-                  className={cn('h-3.5 w-3.5 opacity-60 transition-transform', barPopover === 'lang' && 'rotate-180')}
-                />
-              </button>
-              {barPopover === 'lang' && (
-                <div className="absolute bottom-full left-1/2 z-50 mb-2 max-h-72 w-56 -translate-x-1/2 space-y-0.5 overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-xl">
-                  {LOCALES.map((l) => (
-                    <button
-                      key={l.value}
-                      type="button"
-                      onClick={() => {
-                        setLocale(l.value)
-                        setLocaleAuto(false)
-                        setBarPopover(null)
-                      }}
-                      className={cn(
-                        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                        locale === l.value ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60',
-                      )}
-                    >
-                      <img
-                        src={`https://flagcdn.com/h20/${l.cc}.png`}
-                        alt=""
-                        className="h-3.5 w-auto rounded-[2px]"
-                        loading="lazy"
-                      />
-                      <span className="truncate">{l.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Generate is ALWAYS available — start more runs while others generate;
-                cancel a run from its own card. */}
-            <Button
-              className={cn(
-                'ml-auto min-w-[140px] shrink-0 bg-emerald-600 px-6 font-display text-white hover:bg-emerald-700 2xl:min-w-[180px] 2xl:px-10',
-                canRun && !submitting && 'tb-glow-success',
-              )}
-              size="lg"
-              onClick={startRun}
-              disabled={!canRun || submitting}
-              title="Generate banners — you can start more while others are running"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Starting…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" /> Generate
-                </>
-              )}
-            </Button>
-            </div>
-          </div>
-        </div>
-        )}
 
         {/* Selection console — replaces the Generate console while banners are picked. */}
         {selected.size > 0 && (
@@ -1785,94 +1771,6 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
           languageLabel={localeLabel}
         />
       </section>
-
-      {/* ---------------- Right: concepts ---------------- */}
-      <aside className="order-2 flex w-full shrink-0 flex-col border-t border-border bg-card animate-fade-in lg:order-none lg:w-[340px] lg:border-t-0 xl:w-[400px]">
-        <div className="space-y-4 p-5 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Banner Versions</h2>
-            <button
-              type="button"
-              onClick={() => setCopyDetectOpen(true)}
-              title="Detect copy — paste a block of text and split it into versions"
-              aria-label="Detect copy from pasted text"
-              className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
-            >
-              <ScanText className="h-3.5 w-3.5" /> Text Detect
-            </button>
-          </div>
-
-          {cards.map((c, i) => (
-            <div
-              key={c.key}
-              draggable
-              onDragStart={() => setDragIndex(i)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => onDrop(i)}
-              onDragEnd={() => setDragIndex(null)}
-              className={cn(
-                'relative animate-fade-up space-y-3 overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-sm transition-shadow',
-                dragIndex === i && 'opacity-60 ring-2 ring-primary/40',
-              )}
-            >
-              <span className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-primary" aria-hidden />
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-2">
-                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-primary font-display text-xs font-bold text-primary-foreground">
-                    {i + 1}
-                  </span>
-                  <span className="font-display text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    version
-                  </span>
-                </span>
-                <div className="flex items-center gap-0.5">
-                  <IconBtn onClick={() => moveCard(i, -1)} disabled={i === 0} title="Move up">
-                    <ChevronUp className="h-4 w-4" />
-                  </IconBtn>
-                  <IconBtn onClick={() => moveCard(i, 1)} disabled={i === cards.length - 1} title="Move down">
-                    <ChevronDown className="h-4 w-4" />
-                  </IconBtn>
-                  {cards.length > 1 && (
-                    <IconBtn onClick={() => removeCard(c.key)} title="Remove version">
-                      <X className="h-4 w-4" />
-                    </IconBtn>
-                  )}
-                </div>
-              </div>
-
-              <Field label="Title">
-                <Input
-                  value={c.title}
-                  onChange={(e) => updateCard(c.key, { title: e.target.value })}
-                  placeholder="Oil prices fell. The ringgit moved."
-                />
-              </Field>
-              <Field label="Subtitle" hint="optional">
-                <Textarea
-                  rows={2}
-                  value={c.subtitle}
-                  onChange={(e) => updateCard(c.key, { subtitle: e.target.value })}
-                  placeholder="Three signals, one connected story."
-                />
-              </Field>
-              <Field label="Button" hint="optional">
-                <Input
-                  value={c.button}
-                  onChange={(e) => updateCard(c.key, { button: e.target.value })}
-                  placeholder="Learn more"
-                />
-              </Field>
-            </div>
-          ))}
-
-          {cards.length < 5 && (
-            <Button variant="outline" className="w-full border-dashed" onClick={addCard}>
-              <Plus className="h-4 w-4" />
-              Add version
-            </Button>
-          )}
-        </div>
-      </aside>
 
       <CopyDetectModal
         open={copyDetectOpen}
