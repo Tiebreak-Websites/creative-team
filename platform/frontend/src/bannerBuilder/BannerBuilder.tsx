@@ -429,6 +429,39 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     writeSnapshot(runs)
   }, [runs])
 
+  // A generation that FINISHES here (transitions into 'completed' — approved
+  // and recomposed) graduates to the Library: it leaves the canvas and its
+  // persisted id, and a notice offers the jump. Only fresh completions move —
+  // a run OPENED from the Library arrives already completed (no transition)
+  // and stays while you work on it. Failed/partial/cancelled runs also stay,
+  // so problems are never swept out of sight.
+  const prevStatusRef = useRef<Map<string, string>>(new Map())
+  const [movedNotice, setMovedNotice] = useState<{ names: string[] } | null>(null)
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    const done = runs.filter(
+      (r) =>
+        r.status === 'completed' &&
+        prev.has(r.run_id) &&
+        !TERMINAL_STATUSES.includes(prev.get(r.run_id) as string),
+    )
+    prevStatusRef.current = new Map(runs.map((r) => [r.run_id, r.status]))
+    if (!done.length) return
+    const doneIds = new Set(done.map((r) => r.run_id))
+    setRuns((cur) => cur.filter((r) => !doneIds.has(r.run_id)))
+    persistRunIds(runs.filter((r) => !doneIds.has(r.run_id)).map((r) => r.run_id))
+    setMovedNotice({
+      names: done.map(
+        (r) => r.creative_name || r.banners.find((b) => b.title)?.title || 'Generation',
+      ),
+    })
+  }, [runs])
+  useEffect(() => {
+    if (!movedNotice) return
+    const t = window.setTimeout(() => setMovedNotice(null), 9000)
+    return () => window.clearTimeout(t)
+  }, [movedNotice])
+
   // Delete a banner for EVERYONE: ask the server to remove the PNG from the disk
   // and drop it from the run, then optimistically remove it from the local
   // gallery. Deletes are now shared (no per-user localStorage hide).
@@ -982,6 +1015,41 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             </span>
           )}
         />
+      )}
+
+      {/* A finished generation just graduated to the Library — offer the jump. */}
+      {movedNotice && (
+        <div className="animate-fade-up fixed left-1/2 top-4 z-[200] w-full max-w-md -translate-x-1/2 px-4">
+          <div className="flex items-center gap-3 rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm shadow-lg backdrop-blur-md">
+            <Layers className="h-4 w-4 shrink-0 text-primary" />
+            <div className="min-w-0 flex-1 font-medium text-foreground">
+              <span className="truncate">
+                {movedNotice.names[0]}
+                {movedNotice.names.length > 1 ? ` +${movedNotice.names.length - 1} more` : ''}
+              </span>{' '}
+              ready — moved to the Library.
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 shrink-0 px-2 text-xs"
+              onClick={() => {
+                setMovedNotice(null)
+                setMode('library')
+              }}
+            >
+              Open Library
+            </Button>
+            <button
+              type="button"
+              onClick={() => setMovedNotice(null)}
+              aria-label="Dismiss"
+              className="shrink-0 opacity-70 transition-opacity hover:opacity-100"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       )}
 
       {mode === 'library' ? (

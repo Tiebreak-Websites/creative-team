@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  ArrowLeft, Layers, Link2, Loader2, Search, Tag, X,
+  ArrowLeft, Download, Layers, Link2, Loader2, Pencil, Search, Tag, X,
   ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
 import { FolderGrid, type FolderItem } from '@/components/FolderGrid'
-import { assetUrl } from '../api'
+import { assetUrl, zipAllUrl } from '../api'
 import type { RunData, Banner } from '../types'
 import {
   KIND_HINT, KIND_LABEL, kindOf, listBrands, type Brand, type EntityKind,
@@ -338,7 +338,7 @@ function RunCard({
           </button>
         ))}
       </div>
-      <div className="mt-2.5 flex items-center gap-2">
+      <div className="mt-2.5 flex items-center gap-1.5">
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{runTitle(run)}</span>
           <span className="block text-[11px] text-muted-foreground">
@@ -348,7 +348,17 @@ function RunCard({
               ` · ${new Date(run.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
           </span>
         </span>
-        <Button variant="outline" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={onFile}>
+        <Button asChild variant="outline" size="sm" className="h-7 shrink-0 px-2 text-xs">
+          <a href={zipAllUrl([run.run_id])} download title="Download every banner in this run (zip)">
+            <Download className="h-3.5 w-3.5" />
+          </a>
+        </Button>
+        <Button variant="outline" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={onOpen}
+                title="Open in the builder — regenerate, add sizes, edit">
+          <Pencil className="h-3.5 w-3.5" /> Edit
+        </Button>
+        <Button variant="outline" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={onFile}
+                title="File this run under a Monday creative">
           <Link2 className="h-3.5 w-3.5" /> {run.monday_id ? 'Change' : 'File'}
         </Button>
       </div>
