@@ -7,6 +7,7 @@ import {
   LayoutTemplate,
   Globe,
   Languages as LanguagesIcon,
+  ArrowUpRight,
   Mail,
   MapPin,
   PanelsTopLeft,
@@ -398,6 +399,19 @@ function Workspace() {
           <span className="hidden sm:inline-flex">
             <VersionBadge />
           </span>
+          {/* Sibling platform — the catalogue the finished work is uploaded to.
+              New tab so an in-flight generation is never abandoned. */}
+          <Button asChild variant="ghost" size="sm" className="font-display">
+            <a
+              href="https://creativeops.internovus.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open CreativeOPS — the creative catalogue"
+            >
+              <ArrowUpRight className="h-4 w-4" />
+              <span className="hidden xl:inline">CreativeOPS</span>
+            </a>
+          </Button>
           {isAdmin && (
             <Button
               variant={view === 'settings' ? 'secondary' : 'ghost'}

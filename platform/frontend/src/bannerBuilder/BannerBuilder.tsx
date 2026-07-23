@@ -394,6 +394,9 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   const { tasks: queue, scope: queueScope, setScope: setQueueScope, meta: queueMeta } =
     useReadyQueue(bannerQueue)
   const [pendingCreative, setPendingCreative] = useState<{ id: string; name: string } | null>(null)
+  // When a Monday task supplied the sizes, the request is authoritative — the
+  // Sizes section shows just those (no catalogue) until the user asks to edit.
+  const [sizesLocked, setSizesLocked] = useState(false)
   // null = let the AI Builder decide placement automatically.
   const [logoCorner, setLogoCorner] = useState<'tl' | 'tr' | 'bl' | 'br' | null>(null)
 
@@ -642,6 +645,10 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       for (const s of want.filter((s) => !allSizes.includes(s))) {
         await addCustomSize(s, true)
       }
+      // The task said exactly what to build — hide the catalogue.
+      setSizesLocked(true)
+    } else {
+      setSizesLocked(false)
     }
   }
 
@@ -986,7 +993,8 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             <span className="flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] text-foreground">
               <Link2 className="h-3 w-3 text-primary" />
               Building for {pendingCreative.name}
-              <button type="button" onClick={() => setPendingCreative(null)}
+              <button type="button"
+                      onClick={() => { setPendingCreative(null); setSizesLocked(false) }}
                       aria-label="Clear creative" className="ml-0.5 hover:text-destructive">
                 <X className="h-3 w-3" />
               </button>
@@ -1248,15 +1256,16 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             )}
           </section>
 
-          {/* 2 · Concepts — the copy. Each card becomes a banner version. */}
+          {/* 2 · Versions — the copy. V1, V2, V3… exactly like the CreativeOPS
+              catalogue names banner versions. */}
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Concepts</h2>
+              <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Versions</h2>
               <button
                 type="button"
                 onClick={() => setCopyDetectOpen(true)}
-                title="Paste a block of text and split it into concepts"
-                aria-label="Paste copy and split it into concepts"
+                title="Paste a block of text and split it into versions"
+                aria-label="Paste copy and split it into versions"
                 className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
               >
                 <ScanText className="h-3.5 w-3.5" /> Paste copy
@@ -1279,11 +1288,11 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
                 <span className="pointer-events-none absolute inset-y-0 left-0 w-[3px] bg-primary" aria-hidden />
                 <div className="flex items-center justify-between">
                   <span className="inline-flex items-center gap-2">
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-primary font-display text-xs font-bold text-primary-foreground">
-                      {i + 1}
+                    <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-lg bg-primary px-1 font-display text-xs font-bold text-primary-foreground">
+                      V{i + 1}
                     </span>
                     <span className="font-display text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      concept
+                      version
                     </span>
                   </span>
                   <div className="flex items-center gap-0.5">
@@ -1294,7 +1303,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
                       <ChevronDown className="h-4 w-4" />
                     </IconBtn>
                     {cards.length > 1 && (
-                      <IconBtn onClick={() => removeCard(c.key)} title="Remove concept">
+                      <IconBtn onClick={() => removeCard(c.key)} title="Remove version">
                         <X className="h-4 w-4" />
                       </IconBtn>
                     )}
@@ -1329,7 +1338,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             {cards.length < 5 && (
               <Button variant="outline" className="w-full border-dashed" onClick={addCard}>
                 <Plus className="h-4 w-4" />
-                Add concept
+                Add version
               </Button>
             )}
           </section>
@@ -1456,7 +1465,9 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             </div>
           </section>
 
-          {/* 4 · Sizes */}
+          {/* 4 · Sizes — a Monday task's sizes are the request itself, so they
+              show as a done deal (no catalogue); manual builds and edits get
+              the full picker. */}
           <div className="flex items-baseline justify-between gap-2">
             <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Sizes</h2>
             <span className="text-[11px] tabular-nums text-muted-foreground">
@@ -1464,6 +1475,40 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             </span>
           </div>
 
+          {sizesLocked && (
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-1.5">
+                {(sizes.has(meta.master_size)
+                  ? [meta.master_size, ...Array.from(sizes).filter((s) => s !== meta.master_size)]
+                  : Array.from(sizes)
+                ).map((s) => (
+                  <span
+                    key={s}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 font-display text-xs font-semibold text-foreground"
+                  >
+                    {s}
+                    {s === meta.master_size && (
+                      <span className="rounded bg-primary px-1 py-0.5 text-[8px] font-medium uppercase tracking-wide text-primary-foreground">
+                        Master
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] text-muted-foreground">From the Monday request.</p>
+                <button
+                  type="button"
+                  onClick={() => setSizesLocked(false)}
+                  className="text-[11px] font-medium text-primary underline-offset-2 hover:underline"
+                >
+                  Edit sizes
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!sizesLocked && (<>
           {/* Search first — the fastest path to a size sits on top of the rail. */}
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -1605,6 +1650,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
               })}
             </div>
           )}
+          </>)}
         </div>
 
         {/* Generate — pinned under the brief, always in reach. */}
@@ -1647,8 +1693,8 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             )}
           </Button>
           <p className="text-center text-[11px] tabular-nums text-muted-foreground">
-            {sizes.size} size{sizes.size === 1 ? '' : 's'} · {cards.length} concept{cards.length === 1 ? '' : 's'}
-            {!canRun && ' — every concept needs a title'}
+            {sizes.size} size{sizes.size === 1 ? '' : 's'} · {cards.length} version{cards.length === 1 ? '' : 's'}
+            {!canRun && ' — every version needs a title'}
           </p>
         </div>
       </aside>
