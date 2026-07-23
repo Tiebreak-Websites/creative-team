@@ -27,6 +27,7 @@ import {
   KIND_HINT, KIND_LABEL, kindOf, listBrands, type Brand, type EntityKind,
 } from './brandsApi'
 import { listRuns, searchCreatives, setRunCreative, type Creative } from './campaignApi'
+import { useAuth } from '../auth/AuthContext'
 
 /** Shelf order — same as the CRM dashboard: active kinds first, white labels
  *  parked last and collapsed by default. */
@@ -56,6 +57,10 @@ export function BannerGallery({
   onOpenRun: (runId: string) => void
 }) {
   const dark = useIsDark()
+  const { user } = useAuth()
+  const myEmail = (user?.email || '').toLowerCase()
+  // Mine (my own banners) vs All (everyone's) — mirrors the Ready-for-Design strip.
+  const [scope, setScope] = useState<'mine' | 'all'>('mine')
   const [runs, setRuns] = useState<RunData[] | null>(null)
   const [brands, setBrands] = useState<Brand[]>([])
   /** null = the folder shelf; a brand id = inside that folder; '' = "Other". */
@@ -78,6 +83,13 @@ export function BannerGallery({
 
   // Only runs with at least one finished banner belong in the library.
   const filled = useMemo(() => (runs ?? []).filter((r) => okBanners(r).length > 0), [runs])
+  // Mine/All: "Mine" narrows the shelf to banners I generated; "All" is everyone's.
+  const scoped = useMemo(
+    () => (scope === 'all'
+      ? filled
+      : filled.filter((r) => (r.created_by || '').toLowerCase() === myEmail)),
+    [filled, scope, myEmail],
+  )
   const bannerCount = (rs: RunData[]) => rs.reduce((n, r) => n + okBanners(r).length, 0)
 
   // One folder per brand, grouped into kind sections — the CRM shelf, with
@@ -90,7 +102,7 @@ export function BannerGallery({
       const items: FolderItem[] = brands
         .filter((b) => kindOf(b) === kind)
         .map((b) => {
-          const mine = filled.filter((r) => r.brand_id === b.id)
+          const mine = scoped.filter((r) => r.brand_id === b.id)
           return {
             id: b.id,
             name: b.name,
@@ -102,11 +114,11 @@ export function BannerGallery({
         .filter((f) => f.count > 0)
       return { kind, items }
     }).filter((g) => g.items.length)
-  }, [brands, filled])
+  }, [brands, scoped])
 
   const orphans = useMemo(
-    () => filled.filter((r) => !r.brand_id || !brandById[r.brand_id]),
-    [filled, brandById],
+    () => scoped.filter((r) => !r.brand_id || !brandById[r.brand_id]),
+    [scoped, brandById],
   )
 
   if (runs === null) {
@@ -122,7 +134,7 @@ export function BannerGallery({
   // ------------------------------------------------------------ inside a folder
   if (folder !== null) {
     const brand = folder === '' ? null : brandById[folder]
-    const inFolder = folder === '' ? orphans : filled.filter((r) => r.brand_id === folder)
+    const inFolder = folder === '' ? orphans : scoped.filter((r) => r.brand_id === folder)
     const q = query.trim().toLowerCase()
     const visible = q
       ? inFolder.filter((r) =>
@@ -229,6 +241,24 @@ export function BannerGallery({
           <p className="mt-0.5 text-sm text-muted-foreground">
             One folder per brand — inside, banners grouped by their Monday creative.
           </p>
+        </div>
+        <div className="ml-auto inline-flex shrink-0 rounded-lg border border-border bg-background p-0.5 text-sm">
+          {(['mine', 'all'] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setScope(s)}
+              className={cn(
+                'rounded-md px-3 py-1 font-medium transition-colors',
+                scope === s
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              title={s === 'mine' ? 'Only banners I generated' : "Everyone's banners"}
+            >
+              {s === 'mine' ? 'Mine' : 'All'}
+            </button>
+          ))}
         </div>
       </div>
 

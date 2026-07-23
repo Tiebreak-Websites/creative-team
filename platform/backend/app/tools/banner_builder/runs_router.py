@@ -150,8 +150,19 @@ def build_router() -> APIRouter:
         scoping (mine/all) and the priority tint are shared with the LP
         builder's queue (creative_queue.build_queue)."""
         from ...creative_queue import build_queue
+        # A task drops off the BANNER queue once its BANNER exists — a run carrying
+        # its Monday id with at least one finished banner. The LP part is tracked
+        # separately (the LP builder's own queue), so a task whose LP is ready but
+        # banner isn't still shows here, and one whose banner is ready but LP isn't
+        # still shows in the LP builder. Only when a deliverable is actually made
+        # does its task leave that builder's strip.
+        taken = {
+            mid for r in runner.STORE.all()
+            if (mid := ((getattr(r, "monday_id", "") or "").strip()))
+            and any(fr.status == "ok" for fr in r.frame_results.values())
+        }
         return build_queue(user, scope, wanted={"banner", "landing page"},
-                           require_sizes=True)
+                           require_sizes=True, exclude_ids=taken)
 
     @router.get("/creatives")
     def search_creatives(q: str = "", _user: dict = Depends(require_user)):

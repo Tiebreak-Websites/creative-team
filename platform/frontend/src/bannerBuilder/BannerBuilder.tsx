@@ -1062,6 +1062,20 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     setRuns((prev) => [run, ...prev.filter((p) => p.run_id !== run.run_id)])
   }
 
+  // "Send to Library": the run is already in the shared Library; this just clears
+  // it off MY canvas so the workspace is empty for the next project. Drops it from
+  // the working set (state + opened + persisted ids) — the reconcile never re-adds
+  // it, so the canvas stays clean.
+  const handleSendToLibrary = (runId: string) => {
+    setOpenedIds((prev) => {
+      const n = new Set(prev)
+      n.delete(runId)
+      return n
+    })
+    setRuns((cur) => cur.filter((r) => r.run_id !== runId))
+    persistRunIds(runsRef.current.filter((r) => r.run_id !== runId).map((r) => r.run_id))
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Build ↔ Library switch — Build is the generator, Library the shelf. */}
@@ -1846,6 +1860,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             onReject={rejectVersion}
             onRegenerate={regenerateBannerFrame}
             onRefined={handleRefined}
+            onSendToLibrary={handleSendToLibrary}
             onAddSizes={addSizesToVersion}
             availableSizes={allSizes}
             sizeGroups={sizeGroups}

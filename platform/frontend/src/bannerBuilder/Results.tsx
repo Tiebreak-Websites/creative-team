@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import {
   AlertTriangle,
+  Archive,
   Check,
   ChevronRight,
   Download,
@@ -48,6 +49,8 @@ interface ConceptGroup {
   running: boolean
   createdAt: string
   createdBy?: string
+  creativeName?: string // the Monday creative name ("Test banner"), when linked
+  mondayId?: string // the Monday item id, when linked
   approvalStatus?: string // awaiting | approved | rejected (from run.approval_state)
 }
 
@@ -81,6 +84,8 @@ function buildGroups(runs: RunData[]): ConceptGroup[] {
         running: RUNNING.includes(run.status),
         createdAt: run.created_at,
         createdBy: run.created_by,
+        creativeName: run.creative_name || undefined,
+        mondayId: run.monday_id || undefined,
         approvalStatus: run.approval_state?.[ck],
       })
     })
@@ -93,6 +98,8 @@ interface GenerationGroup {
   runId: string
   number: number
   name: string
+  creativeName?: string
+  mondayId?: string
   createdAt: string
   createdBy?: string
   concepts: ConceptGroup[]
@@ -121,6 +128,8 @@ function groupByGeneration(groups: ConceptGroup[]): GenerationGroup[] {
       runId: rid,
       number: n,
       name: cs[0].title || '',
+      creativeName: cs[0].creativeName,
+      mondayId: cs[0].mondayId,
       createdAt: cs[0].createdAt,
       createdBy: cs[0].createdBy,
       concepts: cs,
@@ -164,6 +173,7 @@ export function OutputPane({
   onReject,
   onRegenerate,
   onRefined,
+  onSendToLibrary,
   onAddSizes,
   availableSizes,
   sizeGroups,
@@ -186,6 +196,8 @@ export function OutputPane({
   onRegenerate?: (runId: string, label: string, promptOverride?: string) => void
   /** A refine (free-text correction) was accepted → its new run. */
   onRefined?: (run: RunData) => void
+  /** Clear a finished run off the canvas (it stays in the Library). Owner-only. */
+  onSendToLibrary?: (runId: string) => void
   /** Add more sizes to a version → recompose off its master. Owner-only. */
   onAddSizes?: (runId: string, concept: string, sizes: string[]) => void
   /** Every size the app can generate — the add-sizes picker offers these. */
@@ -398,6 +410,7 @@ export function OutputPane({
               onView={openLibrary}
               onDelete={canModify(gen.createdBy) ? onDeleteBanner : undefined}
               onCancelRun={onCancelRun}
+              onSendToLibrary={canModify(gen.createdBy) ? onSendToLibrary : undefined}
               selected={selected}
               onToggleSelect={onToggleSelect}
               onToggleVersion={onToggleVersion}
@@ -529,6 +542,7 @@ function GenerationSection({
   onView,
   onDelete,
   onCancelRun,
+  onSendToLibrary,
   selected,
   onToggleSelect,
   onToggleVersion,
@@ -544,6 +558,7 @@ function GenerationSection({
   onView: (runId: string, label: string) => void
   onDelete?: (runId: string, label: string) => void
   onCancelRun?: (runId: string) => void
+  onSendToLibrary?: (runId: string) => void
   selected: Set<string>
   onToggleSelect: (runId: string, label: string) => void
   onToggleVersion?: (runId: string, labels: string[]) => void
@@ -565,9 +580,18 @@ function GenerationSection({
           <ChevronRight
             className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', !collapsed && 'rotate-90')}
           />
-          <span className="font-display text-[15px] font-bold tracking-tight">Generation {gen.number}</span>
+          <span className="truncate font-display text-[15px] font-bold tracking-tight">
+            {gen.creativeName || gen.name || 'Untitled banner'}
+          </span>
         </button>
-        {gen.name && <span className="truncate text-sm text-muted-foreground">{gen.name}</span>}
+        {gen.mondayId && (
+          <span
+            className="rounded border border-border px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
+            title="Monday item ID"
+          >
+            ID {gen.mondayId}
+          </span>
+        )}
         {gen.createdAt && (
           <span className="text-xs text-muted-foreground/80" title={`Requested ${new Date(gen.createdAt).toLocaleString()}`}>
             · {fmtRequested(gen.createdAt)}
@@ -586,6 +610,17 @@ function GenerationSection({
             <a href={zipAllUrl([gen.runId])} title="Download this whole generation as a zip">
               <Download className="h-3.5 w-3.5" /> All
             </a>
+          </Button>
+        )}
+        {onSendToLibrary && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onSendToLibrary(gen.runId)}
+            className="h-7 gap-1 px-2.5 text-primary hover:text-primary"
+            title="Done with this one — clear it off the canvas (it stays in the Library)"
+          >
+            <Archive className="h-3.5 w-3.5" /> Send to Library
           </Button>
         )}
       </div>
