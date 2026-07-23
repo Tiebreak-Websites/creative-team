@@ -35,6 +35,7 @@ import {
   type Brand,
   type EntityKind,
 } from '../bannerBuilder/brandsApi'
+import { searchCreatives } from '../bannerBuilder/campaignApi'
 import { AdminTemplates } from './AdminTemplates'
 import { Builder } from './Builder'
 import {
@@ -552,8 +553,13 @@ function Dashboard({
                   </div>
                 </button>
                 {p.monday_id && (
-                  <div className="px-3 pb-2">
+                  <div className="flex min-w-0 items-center gap-1.5 px-3 pb-2">
                     <CopyId value={p.monday_id} />
+                    {p.monday_name && (
+                      <span className="truncate text-[10px] text-muted-foreground" title={p.monday_name}>
+                        {p.monday_name}
+                      </span>
+                    )}
                   </div>
                 )}
                 <div className="flex items-center gap-1 border-t border-border px-2 py-1.5 opacity-0 transition-opacity group-hover:opacity-100">
@@ -713,6 +719,9 @@ function NewLpModal({
 }) {
   const [name, setName] = useState('')
   const [mondayId, setMondayId] = useState('')
+  /** The Monday item's name (creative name), resolved from the id — attached
+   *  to the project so every asset carries the id + name pair. */
+  const [mondayName, setMondayName] = useState('')
   const [brandId, setBrandId] = useState(presetBrandId ?? '')
   const [language, setLanguage] = useState('en')
   const [brands, setBrands] = useState<Brand[]>([])
@@ -731,6 +740,21 @@ function NewLpModal({
   // Monday ID must be EXACTLY the placeholder's length — not fewer, not more.
   const mondayValid = mondayId.length === MONDAY_LEN
   const canCreate = name.trim() && mondayValid && !saving
+
+  // Resolve the creative name from the Monday board as soon as the id is
+  // complete — best-effort (a failed lookup never blocks creation).
+  useEffect(() => {
+    setMondayName('')
+    if (!mondayValid) return
+    let alive = true
+    searchCreatives(mondayId)
+      .then((items) => {
+        const hit = items.find((c) => c.id === mondayId) ?? items[0]
+        if (alive && hit) setMondayName(hit.name)
+      })
+      .catch(() => { /* Monday dormant or item unseen — id alone is fine */ })
+    return () => { alive = false }
+  }, [mondayId, mondayValid])
   // Active brands grouped by registry kind (broker / white label / academy),
   // all visible. Records without a kind default to broker.
   const kindOf = (b: Brand): EntityKind =>
@@ -746,6 +770,7 @@ function NewLpModal({
         brand_id: brandId || undefined,
         language,
         monday_id: mondayId.trim() || undefined,
+        monday_name: mondayName || undefined,
         tokens: brand ? brandTokens(brand) : undefined,
         assigned_to: assignTo || undefined,
       })
@@ -795,6 +820,12 @@ function NewLpModal({
             />
             {mondayId.length > 0 && !mondayValid && (
               <span className="mt-1 block text-[11px] text-destructive">Must be exactly {MONDAY_LEN} digits.</span>
+            )}
+            {mondayName && (
+              <span className="mt-1 block max-w-56 truncate text-[11px] text-muted-foreground"
+                    title={mondayName}>
+                ↳ {mondayName}
+              </span>
             )}
           </label>
         </div>

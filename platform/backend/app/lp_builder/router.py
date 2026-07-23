@@ -90,6 +90,8 @@ def _clean_project_patch(payload: dict, p: dict) -> None:
             p[k] = _clean_str(payload.get(k), 400) or ("" if k != "fonts" else "system")
     if "monday_id" in payload:  # Monday.com item id — digits only
         p["monday_id"] = re.sub(r"\D", "", str(payload.get("monday_id") or ""))[:20]
+    if "monday_name" in payload:  # the Monday item's name (the creative name)
+        p["monday_name"] = _clean_str(payload.get("monday_name"), 200)
     if "assigned_to" in payload:  # copywriter assignment (email or null)
         p["assigned_to"] = _clean_str(payload.get("assigned_to"), 200).lower() or None
     if payload.get("status") in _WRITER_STATUSES:
@@ -375,7 +377,8 @@ def build_lp_builder_router() -> APIRouter:
         if is_copywriter(user):  # copywriters see exactly their assigned pages
             ps = [p for p in ps if _assigned_to_me(p, user)]
         return {"projects": [{k: p.get(k) for k in
-                              ("id", "name", "brand_id", "language", "monday_id", "campaign_id",
+                              ("id", "name", "brand_id", "language", "monday_id", "monday_name",
+                               "campaign_id",
                                "assigned_to", "status", "created_by", "created_at", "updated_at")}
                              | {"sections": len(p.get("sections") or []),
                                 "cover_url": _cover_url(p)} for p in ps]}
@@ -412,6 +415,11 @@ def build_lp_builder_router() -> APIRouter:
             "brand_id": brand_id,
             "language": lang,
             "monday_id": re.sub(r"\D", "", str(payload.get("monday_id") or ""))[:20],
+            # The Monday item's name (creative name) — every asset carries the
+            # pair monday_id + name so it can be matched to the Creative Board
+            # and the CreativeOPS catalogue. Banners store the same pair as
+            # monday_id + creative_name; emails inside their monday snapshot.
+            "monday_name": _clean_str(payload.get("monday_name"), 200),
             "campaign_id": _clean_str(payload.get("campaign_id"), 64),
             "sections": _seed_sections(brand_id), "tokens": dict(payload.get("tokens") or {}),
             "form": {"action_url": "", "success_url": ""}, "fonts": "system",

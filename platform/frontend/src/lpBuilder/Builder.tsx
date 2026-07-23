@@ -1050,7 +1050,13 @@ export function Builder({
           <input
             value={project.monday_id ?? ''}
             onChange={(e) =>
-              mutate((p) => ({ ...p, monday_id: e.target.value.replace(/\D/g, '').slice(0, 20) }), { structural: false })
+              // Editing the id detaches the old creative name — the pair must
+              // never disagree. (The create dialog re-resolves names; here the
+              // id alone is enough for tracking.)
+              mutate((p) => {
+                const next = e.target.value.replace(/\D/g, '').slice(0, 20)
+                return { ...p, monday_id: next, ...(next !== p.monday_id ? { monday_name: '' } : {}) }
+              }, { structural: false })
             }
             inputMode="numeric"
             placeholder="Monday ID"

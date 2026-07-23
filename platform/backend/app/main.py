@@ -200,6 +200,11 @@ def create_app() -> FastAPI:
         # Markets + domains taxonomy lists — same merge discipline.
         from . import taxonomies as _tax
         _tax.rehydrate()
+        # Banner retention: runs auto-delete after the window (default 14 days)
+        # so the artifact disk stays healthy. Banners only — LPs and emails are
+        # the team's archive and are kept forever.
+        from . import retention as _retention
+        _retention.start_retention_thread()
     except Exception:  # noqa: BLE001
         pass
 

@@ -1,41 +1,37 @@
-// Banner Library — the folder shelf, deliberately less detailed than the LP /
-// CRM dashboards. Two levels of folders, then the banners:
+// Banner Library — the SAME shelf the LP Builder and CRM Emails open onto.
 //
-//   Kind        Brokers · White Labels · Academies · Prop firms (+ Other)
-//     Creative  one folder per Monday Creative Board item (id + name), plus
-//               "Unfiled" for runs not yet filed
-//       Banners the generated PNGs, grouped by their run
+// Deliberately the same components (FolderGrid, kind sections, the stat row)
+// rather than lookalikes: someone who has used Landing Pages or CRM Emails
+// should not have to relearn this screen, and two copies of a folder drift
+// apart. Kind sections (Brokers · Academies · Prop firms · White labels) hold
+// one folder per brand; inside a folder the banners are grouped by their
+// Monday creative — the Creative Board item (id + name) they were built for.
 //
-// White labels share styles, so every white-label run lands in the one
-// "White Labels" folder — the kind is the folder, not the brand. A run's kind
-// comes from its brand_id; its creative from the Monday link set in the build
-// view or here via "File".
+// Banners are working files, not an archive: runs auto-delete 14 days after
+// creation (the finished assets live in the CreativeOPS catalogue), so the
+// shelf reminds people to download in time.
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  ArrowLeft, FolderOpen, Layers, Link2, Loader2, Search, Tag, X,
+  ArrowLeft, Clock, Layers, Link2, Loader2, Search, Tag, X,
+  ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { brandLogoSrc, useIsDark } from '@/lib/brandLogo'
+import { FolderGrid, type FolderItem } from '@/components/FolderGrid'
 import { assetUrl } from '../api'
 import type { RunData, Banner } from '../types'
 import {
-  ENTITY_KINDS, kindOf, listBrands, type Brand, type EntityKind,
+  KIND_HINT, KIND_LABEL, kindOf, listBrands, type Brand, type EntityKind,
 } from './brandsApi'
-// (KIND_LABEL not reused here — the library labels kinds in the plural.)
 import { listRuns, searchCreatives, setRunCreative, type Creative } from './campaignApi'
 
-/** Kind order for the shelf; 'other' is appended for unbranded / unknown runs. */
-type Bucket = EntityKind | 'other'
-const KIND_ORDER: Bucket[] = [...ENTITY_KINDS, 'other']
-const BUCKET_LABEL: Record<Bucket, string> = {
-  broker: 'Brokers',
-  whitelabel: 'White Labels',
-  academy: 'Academies',
-  prop: 'Prop firms',
-  other: 'Other',
-}
+/** Shelf order — same as the CRM dashboard: active kinds first, white labels
+ *  parked last and collapsed by default. */
+const KIND_ORDER: EntityKind[] = ['broker', 'academy', 'prop', 'whitelabel']
+const COLLAPSED_KINDS = new Set<EntityKind>(['whitelabel'])
 
 const UNFILED = '__unfiled__'
 
@@ -48,170 +44,289 @@ function runTitle(run: RunData): string {
   return b?.title || 'Untitled run'
 }
 
+function latestOf(items: { updated_at: string }[]): string {
+  const sorted = items.map((i) => i.updated_at).sort()
+  return sorted.length ? sorted[sorted.length - 1] : ''
+}
+
 export function BannerGallery({
   onOpenRun,
 }: {
   /** Open a run in the build view's results pane. */
   onOpenRun: (runId: string) => void
 }) {
+  const dark = useIsDark()
   const [runs, setRuns] = useState<RunData[] | null>(null)
   const [brands, setBrands] = useState<Brand[]>([])
-  const [kind, setKind] = useState<Bucket | null>(null)
-  const [creativeKey, setCreativeKey] = useState<string | null>(null)
+  /** null = the folder shelf; a brand id = inside that folder; '' = "Other". */
+  const [folder, setFolder] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
   const [filing, setFiling] = useState<RunData | null>(null)
+  /** Kind sections expanded past their default (white label starts collapsed). */
+  const [openKinds, setOpenKinds] = useState<Set<EntityKind>>(new Set())
 
   const refresh = () => { listRuns().then((r) => setRuns(r ?? [])).catch(() => setRuns([])) }
   useEffect(() => {
     refresh()
-    listBrands().then(setBrands).catch(() => { /* kinds fall back to Other */ })
+    listBrands().then(setBrands).catch(() => { /* folders fall back to Other */ })
   }, [])
 
   const brandById = useMemo(
     () => Object.fromEntries(brands.map((b) => [b.id, b])) as Record<string, Brand>,
     [brands],
   )
-  const bucketOf = (run: RunData): Bucket => {
-    const b = run.brand_id ? brandById[run.brand_id] : undefined
-    return b ? kindOf(b) : 'other'
-  }
 
   // Only runs with at least one finished banner belong in the library.
   const filled = useMemo(() => (runs ?? []).filter((r) => okBanners(r).length > 0), [runs])
-
-  const byKind = useMemo(() => {
-    const m = new Map<Bucket, RunData[]>()
-    for (const r of filled) {
-      const k = bucketOf(r)
-      ;(m.get(k) ?? m.set(k, []).get(k)!).push(r)
-    }
-    return m
-  }, [filled, brandById])
-
   const bannerCount = (rs: RunData[]) => rs.reduce((n, r) => n + okBanners(r).length, 0)
+
+  // One folder per brand, grouped into kind sections — the CRM shelf, with
+  // banner counts. Every brand shows a folder even when empty? No: like the
+  // LP/CRM shelf we list every ACTIVE brand so there's always a place to look,
+  // but here empty folders would dominate (banners are transient), so only
+  // brands that currently hold banners get a folder.
+  const buckets = useMemo(() => {
+    return KIND_ORDER.map((kind) => {
+      const items: FolderItem[] = brands
+        .filter((b) => kindOf(b) === kind)
+        .map((b) => {
+          const mine = filled.filter((r) => r.brand_id === b.id)
+          return {
+            id: b.id,
+            name: b.name,
+            brand: b,
+            count: bannerCount(mine),
+            latest: latestOf(mine),
+          }
+        })
+        .filter((f) => f.count > 0)
+      return { kind, items }
+    }).filter((g) => g.items.length)
+  }, [brands, filled])
+
+  const orphans = useMemo(
+    () => filled.filter((r) => !r.brand_id || !brandById[r.brand_id]),
+    [filled, brandById],
+  )
 
   if (runs === null) {
     return (
-      <GalleryShell>
+      <Shell>
         <div className="flex items-center gap-2 p-8 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading the library…
         </div>
-      </GalleryShell>
+      </Shell>
     )
   }
 
-  // ---- level 2: the runs inside one creative of one kind --------------------
-  if (kind && creativeKey) {
-    const inKind = byKind.get(kind) ?? []
-    const runsHere = inKind.filter((r) => (r.monday_id || UNFILED) === creativeKey)
-    const label = creativeKey === UNFILED
-      ? 'Unfiled'
-      : runsHere[0]?.creative_name || `#${creativeKey}`
-    return (
-      <GalleryShell>
-        <Crumbs
-          trail={[
-            { label: 'Library', onClick: () => { setKind(null); setCreativeKey(null) } },
-            { label: BUCKET_LABEL[kind], onClick: () => setCreativeKey(null) },
-            { label },
-          ]}
-        />
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {runsHere.map((r) => (
-            <RunCard key={r.run_id} run={r} onOpen={() => onOpenRun(r.run_id)}
-                     onFile={() => setFiling(r)} />
-          ))}
-        </div>
-        {filing && (
-          <FileModal run={filing} onClose={() => setFiling(null)}
-                     onDone={() => { setFiling(null); refresh() }} />
-        )}
-      </GalleryShell>
-    )
-  }
+  // ------------------------------------------------------------ inside a folder
+  if (folder !== null) {
+    const brand = folder === '' ? null : brandById[folder]
+    const inFolder = folder === '' ? orphans : filled.filter((r) => r.brand_id === folder)
+    const q = query.trim().toLowerCase()
+    const visible = q
+      ? inFolder.filter((r) =>
+          (r.creative_name || '').toLowerCase().includes(q)
+          || (r.monday_id || '').includes(q)
+          || runTitle(r).toLowerCase().includes(q))
+      : inFolder
 
-  // ---- level 1: the creatives inside one kind -------------------------------
-  if (kind) {
-    const inKind = byKind.get(kind) ?? []
+    // Group the folder's runs by their Monday creative; Unfiled last.
     const creatives = new Map<string, { name: string; runs: RunData[] }>()
-    for (const r of inKind) {
+    for (const r of visible) {
       const key = r.monday_id || UNFILED
       const entry = creatives.get(key) ?? { name: r.creative_name || '', runs: [] }
       if (!entry.name && r.creative_name) entry.name = r.creative_name
       entry.runs.push(r)
       creatives.set(key, entry)
     }
-    // Real creatives first (alpha), Unfiled last.
-    const rows = [...creatives.entries()].sort((a, b) => {
+    const groups = [...creatives.entries()].sort((a, b) => {
       if (a[0] === UNFILED) return 1
       if (b[0] === UNFILED) return -1
       return (a[1].name || a[0]).localeCompare(b[1].name || b[0])
     })
+
     return (
-      <GalleryShell>
-        <Crumbs trail={[
-          { label: 'Library', onClick: () => setKind(null) },
-          { label: BUCKET_LABEL[kind] },
-        ]} />
-        {rows.length === 0 ? (
-          <Empty>No banners in {BUCKET_LABEL[kind]} yet.</Empty>
+      <Shell>
+        <div className="mb-5 flex flex-wrap items-center gap-3 animate-fade-up">
+          <Button variant="ghost" size="icon" onClick={() => { setFolder(null); setQuery('') }}
+                  title="Back to folders" aria-label="Back to folders">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          {brand?.logo_svg && (
+            <img src={brandLogoSrc(brand, dark)} alt=""
+                 className="h-8 max-w-32 rounded-md bg-white p-1 shadow-sm ring-1 ring-black/5" />
+          )}
+          <div className="min-w-0">
+            <h1 className="truncate font-display text-xl font-bold tracking-tight">
+              {brand?.name ?? 'Other'}
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              Banners in the {brand?.name ?? 'Other'} folder, grouped by Monday creative.
+            </p>
+          </div>
+        </div>
+
+        {inFolder.length > 3 && (
+          <div className="relative mb-4 max-w-xs animate-fade-up">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input value={query} onChange={(e) => setQuery(e.target.value)}
+                   className="h-9 pl-8" placeholder="Search creatives…" />
+          </div>
+        )}
+
+        {groups.length === 0 ? (
+          <Empty>{query ? 'Nothing matches your search.' : 'This folder is empty.'}</Empty>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {rows.map(([key, entry]) => (
-              <FolderCard
-                key={key}
-                icon={key === UNFILED ? <Layers className="h-5 w-5" /> : <Tag className="h-5 w-5" />}
-                title={key === UNFILED ? 'Unfiled' : entry.name || `#${key}`}
-                sub={key === UNFILED
-                  ? `${bannerCount(entry.runs)} banner${bannerCount(entry.runs) === 1 ? '' : 's'} to file`
-                  : `#${key} · ${bannerCount(entry.runs)} banner${bannerCount(entry.runs) === 1 ? '' : 's'}`}
-                muted={key === UNFILED}
-                onOpen={() => setCreativeKey(key)}
-              />
+          <div className="space-y-6">
+            {groups.map(([key, entry]) => (
+              <section key={key}>
+                <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {key === UNFILED
+                    ? <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+                    : <Tag className="h-3.5 w-3.5 text-primary" />}
+                  <h2 className="font-display text-sm font-semibold">
+                    {key === UNFILED ? 'Unfiled' : entry.name || `#${key}`}
+                  </h2>
+                  {key !== UNFILED && (
+                    <span className="rounded-full border border-border bg-secondary px-1.5 py-px font-mono text-[10px] text-muted-foreground">
+                      #{key}
+                    </span>
+                  )}
+                  <span className="text-[11px] tabular-nums text-muted-foreground">
+                    {bannerCount(entry.runs)} banner{bannerCount(entry.runs) === 1 ? '' : 's'}
+                  </span>
+                  {key === UNFILED && (
+                    <span className="text-[11px] text-muted-foreground">
+                      Not linked to a Monday creative yet — use File.
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {entry.runs.map((r) => (
+                    <RunCard key={r.run_id} run={r} onOpen={() => onOpenRun(r.run_id)}
+                             onFile={() => setFiling(r)} />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}
-      </GalleryShell>
+        {filing && (
+          <FileModal run={filing} onClose={() => setFiling(null)}
+                     onDone={() => { setFiling(null); refresh() }} />
+        )}
+      </Shell>
     )
   }
 
-  // ---- level 0: the kinds ---------------------------------------------------
-  const kinds = KIND_ORDER.filter((k) => (byKind.get(k) ?? []).length > 0)
+  // --------------------------------------------------------------- folder shelf
+  const total = bannerCount(filled)
+  const unfiled = filled.filter((r) => !r.monday_id).length
   return (
-    <GalleryShell>
-      <div className="mb-4">
-        <h1 className="font-display text-2xl font-bold tracking-tight">Library</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Banners by entity kind, then by their Monday creative.
-        </p>
+    <Shell>
+      <div className="mb-6 flex items-start gap-3 animate-fade-up">
+        <div>
+          <h1 className="font-display text-2xl font-bold tracking-tight">Banner Library</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            One folder per brand — inside, banners grouped by their Monday creative.
+          </p>
+        </div>
       </div>
-      {kinds.length === 0 ? (
+
+      <div className="mb-5 grid grid-cols-3 gap-3 animate-fade-up">
+        <Stat value={total} label={total === 1 ? 'Banner' : 'Banners'} />
+        <Stat value={buckets.reduce((n, g) => n + g.items.length, 0)} label="Folders" />
+        <Stat value={unfiled} label="Runs to file" />
+      </div>
+
+      {/* Banners are transient here — the catalogue lives in CreativeOPS. */}
+      <p className="mb-5 flex items-center gap-1.5 rounded-2xl border border-border bg-secondary/40 px-4 py-2.5 text-[11px] text-muted-foreground animate-fade-up">
+        <Clock className="h-3.5 w-3.5 shrink-0" />
+        Banners auto-delete 14 days after creation — download what you need and
+        upload it to the CreativeOPS catalogue. Landing pages and emails are kept.
+      </p>
+
+      {buckets.length === 0 && orphans.length === 0 ? (
         <Empty>No banners yet — generate some in the Build tab.</Empty>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {kinds.map((k) => {
-            const rs = byKind.get(k) ?? []
-            const unfiled = rs.filter((r) => !r.monday_id).length
+        <div className="space-y-6">
+          {buckets.map(({ kind, items }) => {
+            const startsCollapsed = COLLAPSED_KINDS.has(kind)
+            const open = startsCollapsed ? openKinds.has(kind) : true
+            const toggle = () =>
+              setOpenKinds((cur) => {
+                const next = new Set(cur)
+                next.has(kind) ? next.delete(kind) : next.add(kind)
+                return next
+              })
             return (
-              <FolderCard
-                key={k}
-                icon={<FolderOpen className="h-5 w-5" />}
-                title={BUCKET_LABEL[k]}
-                sub={`${bannerCount(rs)} banner${bannerCount(rs) === 1 ? '' : 's'}`}
-                badge={unfiled > 0 ? `${unfiled} unfiled` : undefined}
-                onOpen={() => setKind(k)}
-              />
+              <section key={kind}>
+                <div className="mb-2 flex flex-wrap items-baseline gap-x-2">
+                  {startsCollapsed ? (
+                    <button
+                      type="button"
+                      onClick={toggle}
+                      aria-expanded={open}
+                      className="group -ml-1 flex items-center gap-1 rounded px-1 py-0.5 hover:bg-secondary/60"
+                    >
+                      {open
+                        ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                      <h2 className="font-display text-sm font-semibold">{KIND_LABEL[kind]}</h2>
+                      <span className="text-[11px] tabular-nums text-muted-foreground">{items.length}</span>
+                    </button>
+                  ) : (
+                    <>
+                      <h2 className="font-display text-sm font-semibold">{KIND_LABEL[kind]}</h2>
+                      <span className="text-[11px] tabular-nums text-muted-foreground">{items.length}</span>
+                    </>
+                  )}
+                  <span className="text-[11px] text-muted-foreground">
+                    {startsCollapsed && !open ? 'Not in active use — click to show.' : KIND_HINT[kind]}
+                  </span>
+                </div>
+                {open && (
+                  <FolderGrid folders={items} dark={dark} noun="banner"
+                              onOpen={(id) => setFolder(id)} />
+                )}
+              </section>
             )
           })}
+
+          {orphans.length > 0 && (
+            <section>
+              <div className="mb-2 flex items-baseline gap-2">
+                <h2 className="font-display text-sm font-semibold">Other</h2>
+                <span className="text-[11px] tabular-nums text-muted-foreground">{orphans.length}</span>
+                <span className="text-[11px] text-muted-foreground">Runs with no brand set.</span>
+              </div>
+              <FolderGrid
+                folders={[{ id: '', name: 'Other', brand: null, count: bannerCount(orphans),
+                            latest: latestOf(orphans) }]}
+                dark={dark} noun="banner" onOpen={() => setFolder('')}
+              />
+            </section>
+          )}
         </div>
       )}
-    </GalleryShell>
+    </Shell>
   )
 }
 
 // ---- pieces -----------------------------------------------------------------
 
-function GalleryShell({ children }: { children: ReactNode }) {
-  return <div className="mx-auto max-w-5xl px-6 py-6">{children}</div>
+function Shell({ children }: { children: ReactNode }) {
+  return <div className="mx-auto max-w-6xl px-6 py-8">{children}</div>
+}
+
+function Stat({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <p className="font-display text-2xl font-bold tabular-nums">{value}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
+    </div>
+  )
 }
 
 function Empty({ children }: { children: ReactNode }) {
@@ -219,70 +334,6 @@ function Empty({ children }: { children: ReactNode }) {
     <div className="rounded-2xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
       {children}
     </div>
-  )
-}
-
-function Crumbs({ trail }: { trail: { label: string; onClick?: () => void }[] }) {
-  // Back goes up ONE level — to the parent crumb, not all the way to root.
-  const up = trail[trail.length - 2]?.onClick
-  return (
-    <div className="mb-4 flex items-center gap-1.5 text-sm">
-      {up && (
-        <Button variant="ghost" size="icon" className="mr-1 h-7 w-7"
-                onClick={up} aria-label="Back">
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-      )}
-      {trail.map((c, i) => (
-        <span key={i} className="flex items-center gap-1.5">
-          {i > 0 && <span className="text-muted-foreground/50">/</span>}
-          {c.onClick ? (
-            <button type="button" onClick={c.onClick}
-                    className="text-muted-foreground hover:text-foreground hover:underline">
-              {c.label}
-            </button>
-          ) : (
-            <span className="font-medium">{c.label}</span>
-          )}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-function FolderCard({
-  icon, title, sub, badge, muted, onOpen,
-}: {
-  icon: ReactNode
-  title: string
-  sub: string
-  badge?: string
-  muted?: boolean
-  onOpen: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className={cn(
-        'group flex flex-col rounded-2xl border border-border bg-card p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm',
-        muted && 'border-dashed',
-      )}
-    >
-      <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl',
-        muted ? 'bg-secondary text-muted-foreground' : 'bg-primary/10 text-primary')}>
-        {icon}
-      </span>
-      <span className="mt-3 flex items-center gap-1.5">
-        <span className="truncate font-display text-sm font-semibold">{title}</span>
-        {badge && (
-          <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
-            {badge}
-          </span>
-        )}
-      </span>
-      <span className="mt-0.5 truncate text-[11px] text-muted-foreground">{sub}</span>
-    </button>
   )
 }
 
@@ -317,6 +368,8 @@ function RunCard({
           <span className="block text-[11px] text-muted-foreground">
             {banners.length} banner{banners.length === 1 ? '' : 's'}
             {run.created_by ? ` · ${run.created_by.split('@')[0]}` : ''}
+            {run.created_at &&
+              ` · ${new Date(run.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}
           </span>
         </span>
         <Button variant="outline" size="sm" className="h-7 shrink-0 px-2 text-xs" onClick={onFile}>

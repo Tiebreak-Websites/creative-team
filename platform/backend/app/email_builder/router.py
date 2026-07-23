@@ -300,6 +300,9 @@ def build_email_builder_router() -> APIRouter:
             | {"blocks": len(c.get("sections") or []),
                "parent_id": c.get("parent_id") or "",
                "monday_id": c.get("monday_id") or "",
+               # The Monday item's name (creative name) rides with the id on
+               # every asset — pulled from the stored snapshot.
+               "monday_name": ((c.get("monday") or {}).get("name") or ""),
                "active": bool(c.get("active", False)),
                "variants": by_parent.get(c.get("id"), 0)}
             for c in cs]}

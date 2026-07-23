@@ -79,6 +79,8 @@ export interface Project {
   language: string
   /** Monday.com item id (digits only) — the project's tracking key. */
   monday_id?: string
+  /** The Monday item's name (creative name) — rides with the id. */
+  monday_name?: string
   campaign_id: string
   sections: Instance[]
   tokens: Record<string, string>
@@ -107,6 +109,7 @@ export interface ProjectSummary {
   brand_id: string
   language: string
   monday_id?: string
+  monday_name?: string
   campaign_id: string
   created_by: string
   created_at: string
@@ -193,6 +196,7 @@ export async function createProject(payload: {
   brand_id?: string
   language: string
   monday_id?: string
+  monday_name?: string
   tokens?: Record<string, string>
   assigned_to?: string
 }): Promise<Project> {
