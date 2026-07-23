@@ -443,7 +443,11 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     // Runs BEFORE the snapshot is read, so a legacy (pre-working-set) browser
     // starts clean instead of restoring the whole old shared feed.
     purgeLegacyWorkingSet()
-    return readSnapshot()
+    // Restore ONLY active runs. Finished ones live in the Library (they
+    // graduate off the canvas on completion), so a stale snapshot carrying old
+    // completed runs — yours OR anyone else's — can never repaint here. This is
+    // the durable guard behind the one-time purge above: self-healing, no flag.
+    return readSnapshot().filter((r) => !TERMINAL_STATUSES.includes(r.status))
   })
   // Build (generate + results) vs Library (the kind → creative folder shelf).
   const [mode, setMode] = useState<'build' | 'library'>('build')
@@ -611,7 +615,15 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   // Library), refreshed by id. Deliberately NOT the shared listRuns() feed:
   // the canvas is a workspace, and everyone's history lives in the Library.
   useEffect(() => {
+    // Prune ids the snapshot already knows are FINISHED — they graduated to the
+    // Library and don't belong on the canvas. This is what makes a legacy feed
+    // (dozens of completed runs) collapse to nothing without dozens of fetches.
+    const snapStatus = new Map(readSnapshot().map((r) => [r.run_id, r.status]))
     const ids = Array.from(new Set([...readRunIdsFromUrl(), ...readRunIdsFromStore()]))
+      .filter((id) => {
+        const st = snapStatus.get(id)
+        return st === undefined || !TERMINAL_STATUSES.includes(st)
+      })
     let alive = true
     ;(async () => {
       const settled = await Promise.all(
@@ -622,7 +634,11 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
         ),
       )
       if (!alive) return
-      const restored = settled.filter((s) => s.data).map((s) => s.data as RunData)
+      // Keep only ACTIVE restored runs — a completed one belongs to the Library.
+      const restored = settled
+        .filter((s) => s.data)
+        .map((s) => s.data as RunData)
+        .filter((r) => !TERMINAL_STATUSES.includes(r.status))
       setRuns((prev) => {
         // Restored-by-id wins over the instant snapshot paint (freshest data);
         // a run that 404'd (deleted / server restarted) is simply not re-added.
