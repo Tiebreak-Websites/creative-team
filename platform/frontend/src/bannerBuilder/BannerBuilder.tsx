@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ChevronDown,
   ChevronUp,
@@ -461,11 +461,27 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   const [submitting, setSubmitting] = useState(false)
   const runsRef = useRef<RunData[]>(runs)
   runsRef.current = runs
+  const { user } = useAuth()
+  const myEmail = (user?.email || '').toLowerCase()
+  // The ONE rule every layer below obeys (display, restore, persistence): a run
+  // belongs to THIS user iff the server stamped it with their email. Strict on
+  // purpose — a run by anyone else, whatever its status (generating, awaiting
+  // approval, recomposing, completed), is never "mine". Mirrors the backend's
+  // created_by === email owner check in runs_router._enforce_owner.
+  const ownedByMe = useCallback(
+    (r: RunData) => !!r.created_by && r.created_by.toLowerCase() === myEmail,
+    [myEmail],
+  )
 
-  // Mirror runs to localStorage so a reload or tab switch restores instantly.
+  // Mirror runs to localStorage so a reload or tab switch restores instantly —
+  // but persist ONLY my own runs. A foreign run that slipped into state (a stale
+  // ?runs= URL, a legacy snapshot) is never written back, so it cannot survive a
+  // reload or re-seed the canvas. Until auth resolves we don't yet know who I am,
+  // so persist as-is for that first instant; the render gate still hides foreign
+  // runs on screen, and the next change self-heals the store.
   useEffect(() => {
-    writeSnapshot(runs)
-  }, [runs])
+    writeSnapshot(myEmail ? runs.filter(ownedByMe) : runs)
+  }, [runs, myEmail, ownedByMe])
 
   // A generation that FINISHES here (transitions into 'completed' — approved
   // and recomposed) graduates to the Library: it leaves the canvas and its
@@ -553,25 +569,19 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     })
     clearSelection()
   }
-  const { user } = useAuth()
-  const myEmail = (user?.email || '').toLowerCase()
-
   const visibleRuns = useMemo(() => {
-    // The render-layer guarantee. Whatever ends up in `runs` (a stale snapshot,
-    // a fetch quirk, a cached bundle — anything), the canvas only ever SHOWS:
-    //   • active runs (in-flight work, incl. the just-started with no banners),
-    //   • my own runs,
-    //   • runs I explicitly opened from the Library this session.
-    // A FINISHED run by someone else — the leak people keep seeing — is filtered
-    // out here no matter how it slipped into state. This can't be defeated: it's
-    // the last gate before render and keys off each run's own data.
+    // The render-layer guarantee. Whatever ends up in `runs` (a stale ?runs= URL,
+    // an old snapshot, a fetch quirk, a cached bundle — anything), the canvas only
+    // ever SHOWS a run that is MINE or that I deliberately opened from the Library
+    // this session. Keyed off OWNERSHIP, never status: a run by someone else that
+    // is merely awaiting approval (or still generating, or recomposing) is still
+    // theirs and stays off my canvas. That status blind spot was the leak people
+    // kept seeing. Everyone's finished work lives in the Library.
     return runs.filter((r) => {
       if (r.banners.length === 0 && TERMINAL_STATUSES.includes(r.status)) return false
-      if (!TERMINAL_STATUSES.includes(r.status)) return true // active work
-      if ((r.created_by || '').toLowerCase() === myEmail) return true // mine
-      return openedIds.has(r.run_id) // opened from the Library on purpose
+      return ownedByMe(r) || openedIds.has(r.run_id)
     })
-  }, [runs, myEmail, openedIds])
+  }, [runs, ownedByMe, openedIds])
 
   // Poll every non-terminal run until all reach a terminal status.
   useEffect(() => {
@@ -674,9 +684,11 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
         return out.sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
       })
       if (restored.length) setPolling(true)
-      // Persist only the active runs — the store self-heals to the true working
+      // Persist only my own active runs — the store self-heals to the true working
       // set every load, so a finished/foreign run can't linger across reloads.
-      persistRunIds(restored.map((r) => r.run_id))
+      // (Pre-auth we don't know ownership yet; persist as-is, then the render gate
+      // hides foreign runs and the next persist prunes them.)
+      persistRunIds((myEmail ? restored.filter(ownedByMe) : restored).map((r) => r.run_id))
     })()
     return () => {
       alive = false
@@ -1015,7 +1027,9 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     }
     try {
       const initial = await createRun(payload)
-      const ids = [...runsRef.current.map((r) => r.run_id), initial.run_id]
+      // Persist my own working-set ids + the new run — never a foreign id that may
+      // be sitting in state, so the store can't re-seed someone else's run.
+      const ids = [...runsRef.current.filter(ownedByMe).map((r) => r.run_id), initial.run_id]
       setRuns((prev) => [...prev, initial])
       setPolling(true)
       persistRunIds(ids)
