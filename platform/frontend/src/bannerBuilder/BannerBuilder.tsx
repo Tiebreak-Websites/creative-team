@@ -1430,8 +1430,13 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
               />
             </div>
 
-            {/* Row 2 — controls + generate, kept on a single line inside the console */}
-            <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
+            {/* Row 2 — controls + generate. Always allowed to WRAP: the console's
+                real width is the centre pane (viewport minus both side rails), so
+                a viewport breakpoint (lg:flex-nowrap) lies on laptop widths — the
+                pane can be ~500px on a 1366px screen and the nowrap row pushed
+                Generate out through the console's border. Wrapping only engages
+                when the row genuinely doesn't fit. */}
+            <div className="flex flex-wrap items-center gap-2">
             {/* Art direction */}
             <button
               type="button"
@@ -1739,7 +1744,7 @@ export function BannerBuilder({ meta, onHelp }: { meta: Meta; onHelp?: () => voi
                 cancel a run from its own card. */}
             <Button
               className={cn(
-                'ml-auto min-w-[180px] shrink-0 bg-emerald-600 px-10 font-display text-white hover:bg-emerald-700',
+                'ml-auto min-w-[140px] shrink-0 bg-emerald-600 px-6 font-display text-white hover:bg-emerald-700 2xl:min-w-[180px] 2xl:px-10',
                 canRun && !submitting && 'tb-glow-success',
               )}
               size="lg"
