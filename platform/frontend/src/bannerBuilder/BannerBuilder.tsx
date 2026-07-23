@@ -1054,6 +1054,14 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       .catch(() => { /* the poll will pick it up on next tick */ })
   }
 
+  // A "Refine" from the lightbox produced a new run (my correction, same design).
+  // It's mine, so the display gate shows it; drop it on the canvas so I see it.
+  const handleRefined = (run: RunData) => {
+    setMode('build')
+    setOpenedIds((prev) => new Set(prev).add(run.run_id))
+    setRuns((prev) => [run, ...prev.filter((p) => p.run_id !== run.run_id)])
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Build ↔ Library switch — Build is the generator, Library the shelf. */}
@@ -1837,6 +1845,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             onApprove={approveVersion}
             onReject={rejectVersion}
             onRegenerate={regenerateBannerFrame}
+            onRefined={handleRefined}
             onAddSizes={addSizesToVersion}
             availableSizes={allSizes}
             sizeGroups={sizeGroups}

@@ -324,6 +324,34 @@ def _edit_instruction(regions: List[dict], typography: str,
     return "\n".join(lines)
 
 
+def _free_instruction(instruction: str, keep_texts: List[str]) -> str:
+    """Whole-image reproduction prompt driven by a FREE-TEXT correction (e.g.
+    'make the title red instead of blue') instead of marked regions. Recreate the
+    banner exactly and apply only the one change the user described — everything
+    else, text included, stays identical."""
+    lines = [
+        "The attached image is a finished advertising banner. Recreate THIS EXACT "
+        "banner as a faithful 1:1 reproduction: identical composition and layout, "
+        "the SAME person (same face, expression, pose, hair, clothing), the same "
+        "background and scene, the same colours, lighting, graphic elements, logos, "
+        "icons, button shapes AND the same text content. Then apply ONLY the "
+        "following change, and change nothing else:",
+        f"→ {instruction}",
+    ]
+    if keep_texts:
+        lines.append(
+            "Unless the change above explicitly says otherwise, every text on the "
+            "banner stays exactly as it is — reproduce these verbatim, letter-perfect:\n"
+            + "\n".join(f"- “{t}”" for t in keep_texts)
+        )
+    lines.append(
+        "Keep perfect spelling and punctuation. Do not add, remove or rephrase any "
+        "text except as the change above requires. Add no new logos, no watermarks, "
+        "no extra elements."
+    )
+    return "\n".join(lines)
+
+
 def _qa_candidate(api_key: str, png_bytes: bytes, present: List[str],
                   absent: List[str], artifacts: bool = False,
                   reference_png: Optional[bytes] = None) -> dict:
@@ -581,13 +609,17 @@ def build_edits_router() -> APIRouter:
             raise HTTPException(status_code=429,
                                 detail="You've started a lot of jobs in a short time. Please wait a minute.")
         png, title = _resolve_source(payload.get("source") or {})
+        # A free-text correction ("make the title red") is a whole-image edit with
+        # NO marked regions — the one-box path behind the lightbox's Refine button.
+        instruction = str(payload.get("instruction") or "").strip()[:600]
         regions_in = payload.get("regions")
-        if not isinstance(regions_in, list) or not regions_in:
-            raise HTTPException(status_code=422, detail="mark at least one region to correct")
-        if len(regions_in) > _MAX_REGIONS:
+        if not instruction and (not isinstance(regions_in, list) or not regions_in):
+            raise HTTPException(status_code=422,
+                                detail="describe the change, or mark at least one region to correct")
+        if isinstance(regions_in, list) and len(regions_in) > _MAX_REGIONS:
             raise HTTPException(status_code=422, detail=f"at most {_MAX_REGIONS} regions per job")
         regions: List[dict] = []
-        for i, r in enumerate(regions_in):
+        for i, r in enumerate(regions_in or []):
             if not isinstance(r, dict):
                 raise HTTPException(status_code=422, detail=f"regions[{i}] must be an object")
             try:
@@ -644,9 +676,10 @@ def build_edits_router() -> APIRouter:
             "created_by": user_key, "created_at": runner._now(),
             "dir": job_dir, "width": w, "height": h,
             "regions": regions, "candidates": candidates,
-            "keep_texts": keep_texts,
+            "keep_texts": keep_texts, "instruction": instruction,
             "results": [None] * candidates,
-            "prompt": _edit_instruction(regions, typography, keep_texts),
+            "prompt": (_free_instruction(instruction, keep_texts) if instruction
+                       else _edit_instruction(regions, typography, keep_texts)),
             "gen_size": gen_size, "api_key": api_key, "quality": quality,
             "source_title": title,
         }
@@ -693,7 +726,8 @@ def build_edits_router() -> APIRouter:
         if not png.is_file():
             raise HTTPException(status_code=404, detail="candidate image is gone")
         title = (str(payload.get("title") or "").strip()
-                 or job["regions"][0]["new_text"] or job.get("source_title") or "Edited banner")
+                 or (job["regions"][0]["new_text"] if job.get("regions") else "")
+                 or job.get("source_title") or "Edited banner")
         src = payload.get("edited_from") if isinstance(payload.get("edited_from"), dict) else None
         try:
             run = runner.create_run_from_image(

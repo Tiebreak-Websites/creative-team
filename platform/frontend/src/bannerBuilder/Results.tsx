@@ -163,6 +163,7 @@ export function OutputPane({
   onApprove,
   onReject,
   onRegenerate,
+  onRefined,
   onAddSizes,
   availableSizes,
   sizeGroups,
@@ -183,6 +184,8 @@ export function OutputPane({
   onApprove?: (runId: string, concept: string) => void
   onReject?: (runId: string, concept: string) => void
   onRegenerate?: (runId: string, label: string, promptOverride?: string) => void
+  /** A refine (free-text correction) was accepted → its new run. */
+  onRefined?: (run: RunData) => void
   /** Add more sizes to a version → recompose off its master. Owner-only. */
   onAddSizes?: (runId: string, concept: string, sizes: string[]) => void
   /** Every size the app can generate — the add-sizes picker offers these. */
@@ -416,6 +419,7 @@ export function OutputPane({
         onApprove={libApprove?.approve}
         onReject={libApprove?.reject}
         onRegenerate={libRegen ?? undefined}
+        onRefined={onRefined}
         onAddSizes={libAddSizes ?? undefined}
         availableSizes={availableSizes}
         sizeGroups={sizeGroups}

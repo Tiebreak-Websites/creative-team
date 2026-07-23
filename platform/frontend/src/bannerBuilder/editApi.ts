@@ -88,7 +88,10 @@ export async function detectText(
 /** Start a correction job (whole-image regeneration, N candidates). */
 export async function createEdit(payload: {
   source: EditSource
-  regions: EditRegionInput[]
+  /** Free-text correction ("make the title red instead of blue") — the simple
+   * whole-image path. Provide this OR `regions` (region-based text replacement). */
+  instruction?: string
+  regions?: EditRegionInput[]
   candidates: number
   typography?: string
   /** Image model quality for the correction (default high). */
