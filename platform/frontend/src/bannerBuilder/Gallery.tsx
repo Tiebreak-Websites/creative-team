@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  ArrowLeft, Clock, Layers, Link2, Loader2, Search, Tag, X,
+  ArrowLeft, Layers, Link2, Loader2, Search, Tag, X,
   ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -231,13 +231,6 @@ export function BannerGallery({
           </p>
         </div>
       </div>
-
-      {/* Banners are transient here — the catalogue lives in CreativeOPS. */}
-      <p className="mb-5 flex items-center gap-1.5 rounded-2xl border border-border bg-secondary/40 px-4 py-2.5 text-[11px] text-muted-foreground animate-fade-up">
-        <Clock className="h-3.5 w-3.5 shrink-0" />
-        Banners auto-delete 14 days after creation — download what you need and
-        upload it to the CreativeOPS catalogue. Landing pages and emails are kept.
-      </p>
 
       {buckets.length === 0 && orphans.length === 0 ? (
         <Empty>No banners yet — generate some in the Build tab.</Empty>
