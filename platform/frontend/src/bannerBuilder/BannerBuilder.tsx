@@ -37,6 +37,7 @@ import {
 } from './artDirection'
 import { loadBrand } from './brand'
 import { detectLocale } from './detectLocale'
+import { brandLogoSrc, brandLogoUri, useIsDark } from '@/lib/brandLogo'
 import { brandOptions, listBrands, type Brand } from './brandsApi'
 import { addCustomSize as addCustomSizeApi, getSizeConfig, type SizeConfig, type SizeGroup } from './sizesApi'
 import { useAuth } from '../auth/AuthContext'
@@ -387,6 +388,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   // Brands (palette + optional corner logo). Loaded from the brands API.
   const [brands, setBrands] = useState<Brand[]>([])
   const [brandId, setBrandId] = useState<string>('')
+  const dark = useIsDark()
   // Monday "Ready for Design" queue (kept fresh by the shared hook — focus +
   // interval refetch, so a Banner-Sizes edit on the board reaches the chip),
   // and the creative a run is being built for (set when you start from a task
@@ -1034,19 +1036,16 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
                   brandId ? 'border-primary/50 text-primary' : 'border-border text-foreground',
                 )}
               >
-                <Tag className="h-4 w-4 shrink-0" />
                 {selectedBrand ? (
                   <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="flex shrink-0 -space-x-1">
-                      {selectedBrand.colors.slice(0, 3).map((c) => (
-                        <span key={c} className="h-3.5 w-3.5 rounded-full border border-card"
-                              style={{ backgroundColor: c }} />
-                      ))}
-                    </span>
+                    <BrandMark brand={selectedBrand} dark={dark} />
                     <span className="truncate">{selectedBrand.name}</span>
                   </span>
                 ) : (
-                  <span>Brand</span>
+                  <>
+                    <Tag className="h-4 w-4 shrink-0" />
+                    <span>Brand</span>
+                  </>
                 )}
                 <ChevronDown className={cn('ml-auto h-3.5 w-3.5 shrink-0 opacity-60 transition-transform',
                   barPopover === 'brand' && 'rotate-180')} />
@@ -1096,12 +1095,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
                         brandId === b.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/60',
                       )}
                     >
-                      <span className="flex -space-x-1">
-                        {b.colors.slice(0, 3).map((c) => (
-                          <span key={c} className="h-3 w-3 rounded-full border border-card"
-                                style={{ backgroundColor: c }} />
-                        ))}
-                      </span>
+                      <BrandMark brand={b} dark={dark} />
                       <span className="truncate">{b.name}</span>
                     </button>
                   ))}
@@ -1913,6 +1907,37 @@ function CustomSizeInput({ busy, onAdd }: { busy: boolean; onAdd: (value: string
 }
 
 // ---- small presentational helpers ----
+
+/** A brand's real mark, smallest first: the square registry icon, else the
+ *  wordmark, else (logo-less records) the palette dots as a last resort. */
+function BrandMark({ brand, dark }: { brand: Brand; dark: boolean }) {
+  if (brand.icon_svg) {
+    return (
+      <img
+        src={brandLogoUri(brand.icon_svg, false)}
+        alt=""
+        className="h-5 w-5 shrink-0 rounded bg-white object-contain ring-1 ring-black/5"
+      />
+    )
+  }
+  if (brand.logo_svg) {
+    return (
+      <img
+        src={brandLogoSrc(brand, dark)}
+        alt=""
+        className="h-4 max-w-20 shrink-0 rounded-sm bg-white object-contain p-0.5 ring-1 ring-black/5"
+      />
+    )
+  }
+  return (
+    <span className="flex shrink-0 -space-x-1">
+      {brand.colors.slice(0, 3).map((c) => (
+        <span key={c} className="h-3 w-3 rounded-full border border-card" style={{ backgroundColor: c }} />
+      ))}
+    </span>
+  )
+}
+
 function Field({
   label,
   hint,
