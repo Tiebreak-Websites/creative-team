@@ -409,11 +409,38 @@ def card_to_concept(c, locale: str, style: str) -> dict:
     return d
 
 
+def _choose_master(sizes: List[str]) -> str:
+    """The one size generated from scratch; every OTHER size recomposes off it.
+    Prefer the square MASTER_SIZE when the user asked for it (best scene plate),
+    otherwise the LARGEST requested size — so a run never generates a size the user
+    didn't request. "Only 300x250" makes JUST 300x250 (no wasted 1200x1200)."""
+    if engine.MASTER_SIZE in sizes:
+        return engine.MASTER_SIZE
+
+    def _area(s: str) -> int:
+        try:
+            w, h = s.lower().split("x")
+            return int(w) * int(h)
+        except Exception:
+            return 0
+
+    return max(sizes, key=_area) if sizes else engine.MASTER_SIZE
+
+
+def _master_size(run: Run) -> str:
+    """This run's master size — the size of its phase=='master' frame. Falls back to
+    the global MASTER_SIZE for any run whose plan predates per-run masters."""
+    for f in run.frames_plan:
+        if f.get("phase") == "master":
+            return f["size"]
+    return engine.MASTER_SIZE
+
+
 def normalize_sizes(sizes: List[str]) -> List[str]:
-    seen = list(dict.fromkeys(sizes))          # dedupe, preserve order
-    if engine.MASTER_SIZE not in seen:
-        seen = [engine.MASTER_SIZE] + seen     # master is always present
-    return seen
+    # Dedupe, preserve order. The master is CHOSEN from these (see _choose_master /
+    # _build_plan) rather than force-injecting MASTER_SIZE, so a run only ever
+    # generates the sizes the user actually requested.
+    return list(dict.fromkeys(sizes))
 
 
 def validate_request(req: RunRequest):
@@ -459,6 +486,7 @@ def validate_request(req: RunRequest):
 
 
 def _build_plan(concepts: Dict[str, dict], sizes: List[str]) -> List[dict]:
+    master = _choose_master(sizes)
     plan = []
     for ck in concepts:
         for s in sizes:
@@ -467,7 +495,7 @@ def _build_plan(concepts: Dict[str, dict], sizes: List[str]) -> List[dict]:
             openai_size = engine.OPENAI_SIZE_MAP.get(s)
             if openai_size is None:
                 continue
-            is_master = (s == engine.MASTER_SIZE)
+            is_master = (s == master)
             plan.append({
                 "concept": ck, "size": s,
                 "openai_size": openai_size,
@@ -628,7 +656,7 @@ def _brand_memory_refs(brand_id: str, limit: int = 2) -> List[str]:
             for ck, st in (r.approval_state or {}).items():
                 if st != "approved":
                     continue
-                fr = r.frame_results.get(_label(ck, engine.MASTER_SIZE))
+                fr = r.frame_results.get(_label(ck, _master_size(r)))
                 if fr is None or fr.status != "ok" or not fr.png_path:
                     continue
                 p = Path(fr.png_path)
@@ -690,7 +718,7 @@ def _ensure_plate(run: Run, concept: str) -> Optional[str]:
     caller then recomposes from the typeset master exactly as before."""
     try:
         path = _frame_png_path(run.dir, concept, "plate")
-        master = _frame_png_path(run.dir, concept, engine.MASTER_SIZE)
+        master = _frame_png_path(run.dir, concept, _master_size(run))
     except ValueError:
         return None
     with _PLATE_LOCKS_GUARD:
@@ -704,7 +732,7 @@ def _ensure_plate(run: Run, concept: str) -> Optional[str]:
             with _OPENAI_SEM:
                 png = engine.generate_png(
                     api_key=run.api_key, prompt=bprompts.PLATE_PROMPT, mode="edit",
-                    openai_size=engine.OPENAI_SIZE_MAP[engine.MASTER_SIZE],
+                    openai_size=engine.OPENAI_SIZE_MAP[_master_size(run)],
                     model=run.model, quality=run.quality,
                     master_png_path=str(master),
                     timeout=settings.OPENAI_IMAGE_TIMEOUT,
@@ -743,7 +771,7 @@ def _vision_qa_frame(run: Run, frame: dict, png: bytes) -> Optional[str]:
             return None
         master_png = None
         try:  # the approved master rides along as the compare reference
-            mp = _frame_png_path(run.dir, frame["concept"], engine.MASTER_SIZE)
+            mp = _frame_png_path(run.dir, frame["concept"], _master_size(run))
             if mp.is_file():
                 master_png = mp.read_bytes()
         except Exception:  # noqa: BLE001 — reference is a bonus, never a blocker
@@ -785,7 +813,7 @@ def _gen_one_frame(run: Run, frame: dict, shared: Optional[dict] = None,
     # Normally only the master frame has that size, but if one ever slips through,
     # treat it as a master generation (the mode=="gen" path) instead of crashing.
     mode = frame["mode"]
-    if mode == "edit" and frame["size"] == engine.MASTER_SIZE:
+    if mode == "edit" and frame["size"] == _master_size(run):
         mode = "gen"
 
     # Recomposes work from the concept's TEXT-FREE plate whenever it can be
@@ -796,7 +824,7 @@ def _gen_one_frame(run: Run, frame: dict, shared: Optional[dict] = None,
     style_ref = None
     if mode == "edit":
         try:
-            master_path = str(_frame_png_path(run.dir, frame["concept"], engine.MASTER_SIZE))
+            master_path = str(_frame_png_path(run.dir, frame["concept"], _master_size(run)))
         except ValueError as e:
             fr.status, fr.error = "gen_failed", f"{type(e).__name__}: {e}"
             run.touch()
@@ -818,7 +846,7 @@ def _gen_one_frame(run: Run, frame: dict, shared: Optional[dict] = None,
         try:
             if mode == "edit":
                 prompt = engine.build_recomp_prompt(
-                    concept, engine.MASTER_SIZE, frame["size"], art_direction=brief,
+                    concept, _master_size(run), frame["size"], art_direction=brief,
                     intent=run.intent, from_plate=bool(style_ref))
             else:
                 prompt = engine.build_prompt(concept, frame["size"], intent=run.intent)
@@ -1005,7 +1033,7 @@ def _derive_frame(run: Run, frame: dict, leader_frame: dict, prelogo_png: bytes)
     # Surface the leader's prompt so the viewer shows what produced these pixels.
     fr.prompt = run.fr(leader_frame["concept"], leader_frame["size"]).prompt
     try:
-        master_png = str(_frame_png_path(run.dir, frame["concept"], engine.MASTER_SIZE))
+        master_png = str(_frame_png_path(run.dir, frame["concept"], _master_size(run)))
     except Exception:  # noqa: BLE001
         master_png = None
     _finish_frame(run, frame, fr, png, master_png=master_png, outpaint_note=None, t0=t0)
@@ -1603,7 +1631,7 @@ def regenerate_frame(run: Run, label: str, api_key: str = "",
         if not run.api_key:
             return {"ok": False, "reason": "no OpenAI key available for this run"}
         if plan["phase"] == "recomp":
-            master = run.dir / f"{plan['concept']}__{engine.MASTER_SIZE}.png"
+            master = run.dir / f"{plan['concept']}__{_master_size(run)}.png"
             if not master.is_file():
                 return {"ok": False, "reason": "the master image is gone — regenerate the master size first"}
         fr = run.frame_results.get(label)
@@ -1662,7 +1690,7 @@ def add_sizes(run: Run, concept: str, new_sizes: List[str], api_key: str = "") -
             run.api_key = api_key  # re-fetched by the route; never persisted
         if not run.api_key:
             return {"ok": False, "reason": "no OpenAI key available for this run"}
-        master = run.dir / f"{concept}__{engine.MASTER_SIZE}.png"
+        master = run.dir / f"{concept}__{_master_size(run)}.png"
         if not master.is_file():
             return {"ok": False, "reason": "the master image is gone — can't add sizes to this version"}
         existing = {f["size"] for f in run.frames_plan if f["concept"] == concept}

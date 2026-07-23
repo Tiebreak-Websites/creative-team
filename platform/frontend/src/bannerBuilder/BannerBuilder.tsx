@@ -767,8 +767,10 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   }, [])
 
   // ---- Sizes ----
+  // Any size can be toggled — including the square master. The backend generates
+  // exactly the sizes picked, choosing ONE of them as the master (the plate every
+  // other size recomposes off), so "only 300x250" costs one image, not two.
   function toggleSize(s: string) {
-    if (s === meta.master_size) return // master always on
     setSizes((prev) => {
       const next = new Set(prev)
       if (next.has(s)) next.delete(s)
@@ -777,9 +779,21 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     })
   }
 
+  // The size that will be generated from scratch — mirrors the backend's choice:
+  // the square master if it's among the picks, otherwise the LARGEST picked size.
+  // Everything else recomposes off it. Used only for display (badge/ordering).
+  const masterOf = (selected: string[]): string => {
+    if (selected.includes(meta.master_size)) return meta.master_size
+    const area = (s: string) => {
+      const [w, h] = s.split('x').map(Number)
+      return (w || 0) * (h || 0)
+    }
+    return [...selected].sort((a, b) => area(b) - area(a))[0] || meta.master_size
+  }
+
   // One-click size bundles — server-driven (admins create/edit them); falls back
-  // to the standard set. Applying a bundle REPLACES the current selection (the
-  // MVP master is always kept, matching the master-always-on invariant).
+  // to the standard set. Applying a bundle REPLACES the current selection with
+  // exactly the bundle's sizes (no forced master — the backend picks one of them).
   const bundles = useMemo(() => {
     const list = sizeConfig?.bundles?.length
       ? sizeConfig.bundles
@@ -789,7 +803,7 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       .filter((b) => b.sizes.length > 0)
   }, [sizeConfig, allSizes])
   const bundleSelection = (b: { sizes: string[] }) =>
-    Array.from(new Set([meta.master_size, ...b.sizes]))
+    Array.from(new Set(b.sizes))
   const bundleActive = (b: { sizes: string[] }) => {
     const want = bundleSelection(b)
     return sizes.size === want.length && want.every((s) => sizes.has(s))
@@ -808,28 +822,20 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   }
 
   function renderSizeChip(s: string) {
-    const isMaster = s === meta.master_size
     const on = sizes.has(s)
     return (
       <button
         key={s}
         type="button"
         onClick={() => toggleSize(s)}
-        title={isMaster ? 'Master — always generated first' : ''}
         className={cn(
           'flex items-center justify-between rounded-md border px-2.5 py-1.5 font-display text-[12px] font-semibold transition-colors',
           on
             ? 'border-primary/50 bg-primary/10 text-primary'
             : 'border-border bg-secondary text-muted-foreground hover:border-foreground/25 hover:text-foreground',
-          isMaster && 'cursor-default',
         )}
       >
         <span>{s}</span>
-        {isMaster && (
-          <span className="rounded bg-primary px-1 py-0.5 text-[8px] font-medium uppercase tracking-wide text-primary-foreground">
-            Master
-          </span>
-        )}
       </button>
     )
   }
@@ -1623,22 +1629,23 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
           {sizesLocked && (
             <div className="space-y-2">
               <div className="flex flex-wrap gap-1.5">
-                {(sizes.has(meta.master_size)
-                  ? [meta.master_size, ...Array.from(sizes).filter((s) => s !== meta.master_size)]
-                  : Array.from(sizes)
-                ).map((s) => (
-                  <span
-                    key={s}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 font-display text-xs font-semibold text-foreground"
-                  >
-                    {s}
-                    {s === meta.master_size && (
-                      <span className="rounded bg-primary px-1 py-0.5 text-[8px] font-medium uppercase tracking-wide text-primary-foreground">
-                        Master
-                      </span>
-                    )}
-                  </span>
-                ))}
+                {(() => {
+                  const m = masterOf(Array.from(sizes))
+                  const ordered = [m, ...Array.from(sizes).filter((s) => s !== m)]
+                  return ordered.map((s) => (
+                    <span
+                      key={s}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/5 px-2.5 py-1 font-display text-xs font-semibold text-foreground"
+                    >
+                      {s}
+                      {s === m && (
+                        <span className="rounded bg-primary px-1 py-0.5 text-[8px] font-medium uppercase tracking-wide text-primary-foreground">
+                          Master
+                        </span>
+                      )}
+                    </span>
+                  ))
+                })()}
               </div>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[11px] text-muted-foreground">From the Monday request.</p>
@@ -1849,8 +1856,11 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
         <div className="lg:h-full lg:overflow-y-auto lg:pb-24">
           <OutputPane
             runs={visibleRuns}
-            plannedSizes={[meta.master_size, ...Array.from(sizes).filter((s) => s !== meta.master_size)]}
-            masterSize={meta.master_size}
+            plannedSizes={(() => {
+              const m = masterOf(Array.from(sizes))
+              return [m, ...Array.from(sizes).filter((s) => s !== m)]
+            })()}
+            masterSize={masterOf(Array.from(sizes))}
             onDeleteBanner={deleteBanner}
             onCancel={cancelRuns}
             onCancelRun={cancelOneRun}
