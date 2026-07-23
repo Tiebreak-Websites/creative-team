@@ -22,9 +22,17 @@ _SIZE_RE = re.compile(r"(\d{2,4})\s*[x×]\s*(\d{2,4})")
 
 
 def parse_sizes(text: str) -> List[str]:
-    """Pull WxH sizes out of the Monday Banner-Sizes column, whatever its
+    """Pull sizes out of the Monday Banner-Sizes column, whatever its
     separators — "300x250, 728x90", "300 x 250 / 160x600", a dropdown's joined
-    labels. Order-preserving, de-duplicated, normalised to "WxH"."""
+    labels. Two vocabularies are understood:
+
+      WxH values      normalised to "WxH"
+      bundle labels   the builder's own size bundles ("Standard bundle", plus
+                      any admin-created ones) expand to their sizes — so the
+                      Monday dropdown can carry the label the team already uses
+
+    Order-preserving (explicit sizes first, then bundle expansions),
+    de-duplicated."""
     out: List[str] = []
     seen = set()
     for w, h in _SIZE_RE.findall(text or ""):
@@ -32,6 +40,16 @@ def parse_sizes(text: str) -> List[str]:
         if s not in seen:
             seen.add(s)
             out.append(s)
+    low = (text or "").lower()
+    if low:
+        from . import sizes_config
+        for b in sizes_config.public_config().get("bundles") or []:
+            label = str(b.get("label") or "").strip().lower()
+            if label and label in low:
+                for s in b.get("sizes") or []:
+                    if s not in seen:
+                        seen.add(s)
+                        out.append(s)
     return out
 
 
