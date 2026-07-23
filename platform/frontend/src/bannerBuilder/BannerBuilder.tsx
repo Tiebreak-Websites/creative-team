@@ -182,26 +182,31 @@ function writeSnapshot(runs: RunData[]) {
 }
 
 /**
- * Reconcile the local gallery against the shared server list. The server is
- * AUTHORITATIVE for which runs exist, so a run an admin deleted (gone from the
- * list) is dropped for every user instead of lingering — this is the merge that
- * used to only ever add/replace, never remove. A locally-settled terminal status
- * is preserved over a server status that's briefly still mid-flight (avoids a
+ * Refresh the canvas's WORKING SET against the server list. The canvas shows
+ * only the runs already on it (started here, restored from this browser's
+ * ids, or opened from the Library) — never the whole shared feed; browsing
+ * everything is the Library's job. Within that set the server stays
+ * AUTHORITATIVE: statuses refresh, and a run deleted elsewhere (gone from the
+ * list) is dropped instead of lingering. A locally-settled terminal status is
+ * preserved over a server status that's briefly still mid-flight (avoids a
  * flicker right after a local stop), and a just-started local run the server
  * doesn't know about yet is kept until it appears.
  */
 function reconcileRuns(prev: RunData[], server: RunData[]): RunData[] {
-  const serverIds = new Set(server.map((r) => r.run_id))
-  const out: RunData[] = server.map((s) => {
-    const local = prev.find((r) => r.run_id === s.run_id)
-    return local && TERMINAL_STATUSES.includes(local.status) && !TERMINAL_STATUSES.includes(s.status)
-      ? local
-      : s
-  })
+  const byId = new Map(server.map((r) => [r.run_id, r]))
+  const out: RunData[] = []
   for (const local of prev) {
-    if (!serverIds.has(local.run_id) && !TERMINAL_STATUSES.includes(local.status)) {
+    const s = byId.get(local.run_id)
+    if (s) {
+      out.push(
+        TERMINAL_STATUSES.includes(local.status) && !TERMINAL_STATUSES.includes(s.status)
+          ? local
+          : s,
+      )
+    } else if (!TERMINAL_STATUSES.includes(local.status)) {
       out.push(local) // still generating; not in the shared list yet
     }
+    // terminal AND gone from the server = deleted elsewhere → dropped
   }
   return out.sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
 }
@@ -477,34 +482,15 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     })
     clearSelection()
   }
-  // "My banners" filter — default ON, persisted. Shows only the current user's
-  // own generations so people work on their own output and don't touch others'.
   const { user } = useAuth()
   const myEmail = (user?.email || '').toLowerCase()
-  const [myBannersOnly, setMyBannersOnly] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('bb:my-banners-only') !== 'false' // default ON
-    } catch {
-      return true
-    }
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem('bb:my-banners-only', String(myBannersOnly))
-    } catch {
-      /* best-effort */
-    }
-  }, [myBannersOnly])
 
   const visibleRuns = useMemo(() => {
-    // Keep an active run visible even with no banners yet (so progress shows);
-    // hide finished, fully-emptied runs.
-    const live = runs.filter((r) => r.banners.length > 0 || !TERMINAL_STATUSES.includes(r.status))
-    // Then scope to the current user's own runs when "My banners" is on. A run the
-    // user just started carries their created_by, so it's never hidden.
-    if (!myBannersOnly || !myEmail) return live
-    return live.filter((r) => (r.created_by || '').toLowerCase() === myEmail)
-  }, [runs, myBannersOnly, myEmail])
+    // The working set as-is — keep an active run visible even with no banners
+    // yet (so progress shows); hide finished, fully-emptied runs. No user
+    // filter: the canvas only ever contains runs from this browser anyway.
+    return runs.filter((r) => r.banners.length > 0 || !TERMINAL_STATUSES.includes(r.status))
+  }, [runs])
 
   // Poll every non-terminal run until all reach a terminal status.
   useEffect(() => {
@@ -557,47 +543,39 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     }
   }, [polling])
 
-  // ONE deterministic mount load (these used to be two racing effects). Restore
-  // the user's prior batches (ids from ?runs= + localStorage) AND the shared
-  // gallery (listRuns → every persisted run, so all users see all output), then
-  // merge once and sort. The snapshot already painted instantly; precedence on
-  // merge is: local just-started < restored-by-id < shared server list (freshest).
+  // ONE deterministic mount load: restore THIS BROWSER's working set (ids from
+  // ?runs= + localStorage — runs the user started here or opened from the
+  // Library), refreshed by id. Deliberately NOT the shared listRuns() feed:
+  // the canvas is a workspace, and everyone's history lives in the Library.
   useEffect(() => {
     const ids = Array.from(new Set([...readRunIdsFromUrl(), ...readRunIdsFromStore()]))
     let alive = true
     ;(async () => {
-      const [serverRuns, settled] = await Promise.all([
-        listRuns(),
-        Promise.all(
-          ids.map((id) =>
-            getRun(id)
-              .then((data) => ({ id, data: data as RunData | null, gone: false }))
-              .catch((e) => ({ id, data: null, gone: e instanceof ApiError && e.status === 404 })),
-          ),
+      const settled = await Promise.all(
+        ids.map((id) =>
+          getRun(id)
+            .then((data) => ({ id, data: data as RunData | null, gone: false }))
+            .catch((e) => ({ id, data: null, gone: e instanceof ApiError && e.status === 404 })),
         ),
-      ])
+      )
       if (!alive) return
       const restored = settled.filter((s) => s.data).map((s) => s.data as RunData)
       setRuns((prev) => {
-        // Seed with restored-by-id so a user's own runs paint even if the shared
-        // list lags; then make the server list authoritative (when it succeeded)
-        // so anything deleted elsewhere is dropped, not resurrected from the snapshot.
-        const seeded = [...prev]
-        const seen = new Set(seeded.map((r) => r.run_id))
+        // Restored-by-id wins over the instant snapshot paint (freshest data);
+        // a run that 404'd (deleted / server restarted) is simply not re-added.
+        const byId = new Map(restored.map((r) => [r.run_id, r]))
+        const merged = prev.map((r) => byId.get(r.run_id) ?? r)
+        const seen = new Set(merged.map((r) => r.run_id))
         restored.forEach((r) => {
-          if (!seen.has(r.run_id)) {
-            seeded.push(r)
-            seen.add(r.run_id)
-          }
+          if (!seen.has(r.run_id)) merged.push(r)
         })
-        return serverRuns === null ? seeded : reconcileRuns(seeded, serverRuns)
+        const goneIds = new Set(settled.filter((s) => s.gone).map((s) => s.id))
+        return merged
+          .filter((r) => !goneIds.has(r.run_id))
+          .sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
       })
-      const anyActive =
-        (serverRuns ?? []).some((r) => !TERMINAL_STATUSES.includes(r.status)) ||
-        restored.some((r) => !TERMINAL_STATUSES.includes(r.status))
-      if (anyActive) setPolling(true)
-      // Persist only the user's own ids (drop any that 404'd). The shared gallery
-      // is re-fetched every mount, so it doesn't need to live in the URL.
+      if (restored.some((r) => !TERMINAL_STATUSES.includes(r.status))) setPolling(true)
+      // Persist the surviving working-set ids (drop any that 404'd).
       const goneIds = new Set(settled.filter((s) => s.gone).map((s) => s.id))
       const keepIds = ids.filter((id) => !goneIds.has(id))
       persistRunIds(Array.from(new Set([...keepIds, ...runsRef.current.map((r) => r.run_id)])))
@@ -654,19 +632,20 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
     }
   }
 
-  // LIVE: keep the shared gallery fresh so every user sees others' new and
-  // in-progress runs without refreshing the page. Polls the server list on an
-  // interval + on window focus, merging by run_id (server is the shared truth) —
-  // but never flips a locally-settled run (e.g. just-stopped) back to running.
+  // LIVE: keep the WORKING SET fresh — statuses of the runs on this canvas
+  // (incl. the approve→recompose transition) and deletes made elsewhere (e.g.
+  // the Disk Manager). reconcileRuns never ADDS server runs, so other users'
+  // output stays out of the canvas — it belongs to the Library.
   useEffect(() => {
     let alive = true
     const refresh = async () => {
       const serverRuns = await listRuns()
       if (!alive || serverRuns === null) return // transient error — keep the current view
-      // Server is authoritative: this drops runs deleted elsewhere (e.g. by an
-      // admin in the Disk Manager) so they disappear for every user.
       setRuns((prev) => reconcileRuns(prev, serverRuns))
-      if (serverRuns.some((r) => !TERMINAL_STATUSES.includes(r.status))) setPolling(true)
+      const mine = new Set(runsRef.current.map((r) => r.run_id))
+      if (serverRuns.some((r) => mine.has(r.run_id) && !TERMINAL_STATUSES.includes(r.status))) {
+        setPolling(true)
+      }
     }
     const iv = window.setInterval(refresh, 5000)
     window.addEventListener('focus', refresh)
@@ -1703,8 +1682,6 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
             onDeleteBanner={deleteBanner}
             onCancel={cancelRuns}
             onCancelRun={cancelOneRun}
-            myBannersOnly={myBannersOnly}
-            onMyBannersToggle={() => setMyBannersOnly((v) => !v)}
             currentUserEmail={myEmail}
             isAdmin={user?.role === 'admin'}
             onApprove={approveVersion}

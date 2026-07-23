@@ -4,17 +4,11 @@ import {
   Check,
   ChevronRight,
   Download,
-  Grid2x2,
-  Grid3x3,
   ImageIcon,
   Layers,
-  LayoutGrid,
-  List as ListIcon,
   Loader2,
   Maximize2,
   Trash2,
-  User,
-  Users,
   X,
 } from 'lucide-react'
 import type { Banner, RunData } from '../types'
@@ -164,8 +158,6 @@ export function OutputPane({
   onDeleteBanner,
   onCancel,
   onCancelRun,
-  myBannersOnly,
-  onMyBannersToggle,
   currentUserEmail,
   isAdmin,
   onApprove,
@@ -186,8 +178,6 @@ export function OutputPane({
   onDeleteBanner?: (runId: string, label: string) => void
   onCancel?: () => void
   onCancelRun?: (runId: string) => void
-  myBannersOnly?: boolean
-  onMyBannersToggle?: () => void
   currentUserEmail?: string
   isAdmin?: boolean
   onApprove?: (runId: string, concept: string) => void
@@ -219,22 +209,8 @@ export function OutputPane({
   const [libAddSizes, setLibAddSizes] = useState<((sizes: string[]) => void) | null>(null)
   const [libExistingSizes, setLibExistingSizes] = useState<string[]>([])
   const [libCanDelete, setLibCanDelete] = useState(true)
-  // View prefs (persisted): batches (grouped) | all (flat grid) | list; tile size; collapse.
-  const [viewMode, setViewMode] = useState<'grouped' | 'flat' | 'list'>(() => {
-    try {
-      const v = localStorage.getItem('bb:view-mode')
-      return v === 'flat' || v === 'list' ? v : 'grouped'
-    } catch {
-      return 'grouped'
-    }
-  })
-  const [tileSize, setTileSize] = useState<'small' | 'large'>(() => {
-    try {
-      return localStorage.getItem('bb:tile-size') === 'large' ? 'large' : 'small'
-    } catch {
-      return 'small'
-    }
-  })
+  // One fixed view now — batches of small tiles. The old view/tile switchers
+  // left with the canvas-as-feed era; the Library owns browsing.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
     try {
       return new Set(JSON.parse(localStorage.getItem('bb:collapsed-gens') || '[]'))
@@ -242,20 +218,6 @@ export function OutputPane({
       return new Set()
     }
   })
-  useEffect(() => {
-    try {
-      localStorage.setItem('bb:view-mode', viewMode)
-    } catch {
-      /* best-effort */
-    }
-  }, [viewMode])
-  useEffect(() => {
-    try {
-      localStorage.setItem('bb:tile-size', tileSize)
-    } catch {
-      /* best-effort */
-    }
-  }, [tileSize])
   useEffect(() => {
     try {
       localStorage.setItem('bb:collapsed-gens', JSON.stringify([...collapsed]))
@@ -281,13 +243,9 @@ export function OutputPane({
     createdBy
       ? createdBy.toLowerCase() === (currentUserEmail || '').toLowerCase()
       : !!isAdmin
-  const gridClass =
-    tileSize === 'large'
-      ? 'grid-cols-[repeat(auto-fill,minmax(220px,1fr))]'
-      : 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))]'
+  const gridClass = 'grid-cols-[repeat(auto-fill,minmax(150px,1fr))]'
   if (!runs.length)
-    return <EmptyOutput plannedSizes={plannedSizes} masterSize={masterSize}
-                        myBannersOnly={myBannersOnly} onShowAll={onMyBannersToggle} />
+    return <EmptyOutput plannedSizes={plannedSizes} masterSize={masterSize} />
   const groups = buildGroups(runs)
   const generations = groupByGeneration(groups)
   // Surface EVERY distinct run error, not just the first — otherwise a second
@@ -397,14 +355,8 @@ export function OutputPane({
         <OverviewBar
           runs={runs}
           onCancel={onCancel}
-          myBannersOnly={myBannersOnly}
-          onMyBannersToggle={onMyBannersToggle}
           currentUserEmail={currentUserEmail}
           isAdmin={isAdmin}
-          viewMode={viewMode}
-          onViewMode={setViewMode}
-          tileSize={tileSize}
-          onTileSize={setTileSize}
         />
       </div>
       <div className="space-y-7 p-5">
@@ -432,8 +384,7 @@ export function OutputPane({
             </details>
           </div>
         )}
-        {viewMode === 'grouped' &&
-          generations.map((gen) => (
+        {generations.map((gen) => (
             <GenerationSection
               key={gen.runId}
               gen={gen}
@@ -451,41 +402,7 @@ export function OutputPane({
               onApprove={onApprove}
               onReject={onReject}
             />
-          ))}
-        {viewMode === 'flat' && (
-          <div className={cn('grid gap-3', gridClass)}>
-            {groups.flatMap((g) =>
-              g.banners.map((b) => (
-                <AssetCard
-                  key={`${g.runId}|${b.label}`}
-                  b={b}
-                  version={g.number}
-                  onView={(label) => openLibrary(g.runId, label)}
-                  onDelete={onDeleteBanner && canModify(g.createdBy) ? (label) => onDeleteBanner(g.runId, label) : undefined}
-                  selected={selected.has(`${g.runId}|${b.label}`)}
-                  onToggleSelect={() => onToggleSelect(g.runId, b.label)}
-                />
-              )),
-            )}
-          </div>
-        )}
-        {viewMode === 'list' && (
-          <div className="overflow-hidden rounded-xl border border-border">
-            {groups.flatMap((g) =>
-              g.banners.map((b) => (
-                <AssetListRow
-                  key={`${g.runId}|${b.label}`}
-                  b={b}
-                  version={g.number}
-                  onView={() => openLibrary(g.runId, b.label)}
-                  onDelete={onDeleteBanner && canModify(g.createdBy) ? () => onDeleteBanner(g.runId, b.label) : undefined}
-                  selected={selected.has(`${g.runId}|${b.label}`)}
-                  onToggleSelect={() => onToggleSelect(g.runId, b.label)}
-                />
-              )),
-            )}
-          </div>
-        )}
+        ))}
       </div>
       <BannerLibrary
         open={libOpen}
@@ -511,43 +428,14 @@ export function OutputPane({
 function OverviewBar({
   runs,
   onCancel,
-  myBannersOnly,
-  onMyBannersToggle,
   currentUserEmail,
   isAdmin,
-  viewMode,
-  onViewMode,
-  tileSize,
-  onTileSize,
 }: {
   runs: RunData[]
   onCancel?: () => void
-  myBannersOnly?: boolean
-  onMyBannersToggle?: () => void
   currentUserEmail?: string
   isAdmin?: boolean
-  viewMode: 'grouped' | 'flat' | 'list'
-  onViewMode: (v: 'grouped' | 'flat' | 'list') => void
-  tileSize: 'small' | 'large'
-  onTileSize: (s: 'small' | 'large') => void
 }) {
-  const viewModes = [
-    { v: 'grouped' as const, label: 'Batches', icon: <Layers className="h-4 w-4" /> },
-    { v: 'flat' as const, label: 'All', icon: <LayoutGrid className="h-4 w-4" /> },
-    { v: 'list' as const, label: 'List', icon: <ListIcon className="h-4 w-4" /> },
-  ]
-  const tileSizes = [
-    { v: 'small' as const, label: 'Small', icon: <Grid3x3 className="h-4 w-4" /> },
-    { v: 'large' as const, label: 'Large', icon: <Grid2x2 className="h-4 w-4" /> },
-  ]
-  const seg = 'inline-flex shrink-0 items-center rounded-lg border border-border bg-secondary p-0.5'
-  // The active option in each group lights up in the primary (blue) colour.
-  const segBtn = (on: boolean) =>
-    cn(
-      'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors',
-      on ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-    )
-  const Divider = () => <span aria-hidden className="h-5 w-px shrink-0 bg-border" />
   // Progress reflects ONLY the currently-generating runs (the current task) —
   // not the historical total of every run in the gallery.
   const activeRuns = runs.filter((r) => RUNNING.includes(r.status))
@@ -574,6 +462,11 @@ function OverviewBar({
       ? `Generating ${activeCount} batches…`
       : statusLabel(activeRuns[0].status)
     : ''
+
+  // The bar exists for the CURRENT work only (progress + Stop all). The old
+  // view/tile/scope switchers are gone — the canvas is a working set now, and
+  // browsing everything is the Library's job.
+  if (!running) return null
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-card px-5 py-3">
@@ -608,82 +501,16 @@ function OverviewBar({
 
       <div className="ml-auto" />
 
-      {/* Organizing tools — view | tile size | sort. Active option lit blue, groups
-          separated by dividers. */}
-      <div className={seg}>
-        {viewModes.map((m) => (
-          <button
-            key={m.v}
-            type="button"
-            onClick={() => onViewMode(m.v)}
-            title={`${m.label} view`}
-            className={segBtn(viewMode === m.v)}
-          >
-            {m.icon}
-            <span className="hidden sm:inline">{m.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {viewMode !== 'list' && (
-        <>
-          <Divider />
-          <div className={seg}>
-            {tileSizes.map((s) => (
-              <button
-                key={s.v}
-                type="button"
-                onClick={() => onTileSize(s.v)}
-                title={`${s.label} tiles`}
-                className={segBtn(tileSize === s.v)}
-              >
-                {s.icon}
-                <span className="hidden sm:inline">{s.label}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {onMyBannersToggle && (
-        <>
-          <Divider />
-          <div className={seg}>
-            <button
-              type="button"
-              onClick={() => myBannersOnly && onMyBannersToggle()}
-              title="Show everyone’s banners"
-              className={segBtn(!myBannersOnly)}
-            >
-              <Users className="h-4 w-4" />
-              <span className="hidden sm:inline">Everyone</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => !myBannersOnly && onMyBannersToggle()}
-              title="Show only your banners"
-              className={segBtn(!!myBannersOnly)}
-            >
-              <User className="h-4 w-4" />
-              <span className="hidden sm:inline">Mine</span>
-            </button>
-          </div>
-        </>
-      )}
-
       {myActiveCount > 1 && onCancel && (
-        <>
-          <Divider />
-          <Button
-            size="sm"
-            variant="outline"
-            className="shrink-0 gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
-            onClick={onCancel}
-            title="Stop all of your running generations"
-          >
-            <X className="h-4 w-4" /> Stop all
-          </Button>
-        </>
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0 gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
+          onClick={onCancel}
+          title="Stop all of your running generations"
+        >
+          <X className="h-4 w-4" /> Stop all
+        </Button>
       )}
     </div>
   )
@@ -779,67 +606,6 @@ function GenerationSection({
         </div>
       )}
     </section>
-  )
-}
-
-function AssetListRow({
-  b,
-  version,
-  onView,
-  onDelete,
-  selected,
-  onToggleSelect,
-}: {
-  b: Banner
-  version: number
-  onView: () => void
-  onDelete?: () => void
-  selected?: boolean
-  onToggleSelect?: () => void
-}) {
-  const ok = b.status === 'ok' && b.url
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-3 border-b border-border px-3 py-2 last:border-b-0',
-        selected && 'bg-primary/5',
-      )}
-    >
-      {onToggleSelect && (
-        <button
-          type="button"
-          onClick={onToggleSelect}
-          aria-pressed={selected}
-          title={selected ? 'Deselect' : 'Select'}
-          className={cn(
-            'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors',
-            selected
-              ? 'border-primary bg-primary text-primary-foreground'
-              : 'border-border bg-background text-transparent hover:border-foreground/40',
-          )}
-        >
-          <Check className="h-3.5 w-3.5" />
-        </button>
-      )}
-      <span className="h-10 w-10 shrink-0 overflow-hidden rounded border border-border" style={CHECKER}>
-        {ok ? (
-          <img src={assetUrl(b.url as string)} alt="" loading="lazy" className="h-full w-full object-contain" />
-        ) : null}
-      </span>
-      <span className="font-display text-sm font-semibold">{b.size}</span>
-      <span className="rounded border border-primary/30 px-1 text-[10px] text-primary">v{version}</span>
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{b.title}</span>
-      {ok && (
-        <button type="button" onClick={onView} title="Open" aria-label="Open banner" className="text-muted-foreground hover:text-foreground">
-          <Maximize2 className="h-4 w-4" />
-        </button>
-      )}
-      {onDelete && (
-        <button type="button" onClick={onDelete} title="Delete" aria-label="Delete banner" className="text-muted-foreground hover:text-destructive">
-          <Trash2 className="h-4 w-4" />
-        </button>
-      )}
-    </div>
   )
 }
 
@@ -1199,15 +965,11 @@ function statusLabel(s: string): string {
 function EmptyOutput({
   plannedSizes = [],
   masterSize,
-  myBannersOnly,
-  onShowAll,
 }: {
   /** The sizes currently ticked in the rail (master first) — the empty state
    *  previews them as ghost frames and redraws live as sizes are toggled. */
   plannedSizes?: string[]
   masterSize?: string
-  myBannersOnly?: boolean
-  onShowAll?: () => void
 }) {
   // True-ratio thumbnails: fit each WxH inside a 220x150 box, floors keeping
   // even a 728x90 leaderboard or 160x600 skyscraper legible.
@@ -1253,13 +1015,6 @@ function EmptyOutput({
         <p className="mt-5 text-xs text-muted-foreground">
           {frames.length} size{frames.length === 1 ? '' : 's'} selected
         </p>
-        {myBannersOnly && onShowAll && (
-          <div>
-            <Button variant="ghost" size="sm" className="mt-2 gap-1.5 text-muted-foreground" onClick={onShowAll}>
-              <Users className="h-4 w-4" /> Showing only yours — show everyone’s
-            </Button>
-          </div>
-        )}
       </div>
     </div>
   )
