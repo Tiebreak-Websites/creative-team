@@ -5,9 +5,49 @@
 // copies of a strip drift apart. Data comes from the shared backend builder
 // (creative_queue.build_queue); this renders whatever slice a builder fetched.
 
-import { type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import type { QueueTask } from '@/bannerBuilder/campaignApi'
+import type { QueueResult, QueueTask } from '@/bannerBuilder/campaignApi'
+
+/**
+ * Fetch + keep fresh one builder's Ready-for-Design queue.
+ *
+ * The strip must track the BOARD, not the page load: a designer edits the
+ * Banner Sizes column on Monday and clicks the chip seconds later, so a
+ * mount-only fetch serves stale sizes. Refetches on scope change, on window
+ * focus (the "came back from Monday" moment) and on a slow interval.
+ * `deps` forces extra refetches (e.g. the LP builder passes its project count
+ * — a created project removes its task from the queue server-side).
+ */
+export function useReadyQueue(
+  fetcher: (scope: 'mine' | 'all') => Promise<QueueResult>,
+  deps: unknown[] = [],
+) {
+  const [tasks, setTasks] = useState<QueueTask[]>([])
+  const [scope, setScope] = useState<'mine' | 'all'>('mine')
+  const [meta, setMeta] = useState<{ linked: boolean; mineCount: number; allCount: number }>(
+    { linked: false, mineCount: 0, allCount: 0 })
+  useEffect(() => {
+    let alive = true
+    const load = () => fetcher(scope).then((d) => {
+      if (!alive) return
+      setTasks(d.tasks)
+      setMeta({ linked: d.linked, mineCount: d.mineCount, allCount: d.allCount })
+      // The server downgrades "mine" to "all" for an unlinked user — mirror it.
+      if (d.scope !== scope) setScope(d.scope)
+    })
+    load()
+    const iv = window.setInterval(load, 60_000)
+    window.addEventListener('focus', load)
+    return () => {
+      alive = false
+      window.clearInterval(iv)
+      window.removeEventListener('focus', load)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetcher is a stable module fn; deps is the caller's refresh key
+  }, [scope, ...deps])
+  return { tasks, scope, setScope, meta }
+}
 
 export function ReadyQueueStrip({
   tasks,

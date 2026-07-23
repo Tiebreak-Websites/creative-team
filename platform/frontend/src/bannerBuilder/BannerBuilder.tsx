@@ -23,7 +23,7 @@ import { addSizes, ApiError, approveConcepts, cancelRun, deleteBanner as deleteB
 import { bannerQueue, createRun, listRuns } from './campaignApi'
 import type { CampaignRunRequest, QueueTask } from './campaignApi'
 import { OutputPane } from './Results'
-import { ReadyQueueStrip } from '@/components/ReadyQueue'
+import { ReadyQueueStrip, useReadyQueue } from '@/components/ReadyQueue'
 import { BannerGallery } from './Gallery'
 import { CopyDetectModal } from './CopyDetectModal'
 import {
@@ -391,14 +391,12 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   // Brands (palette + optional corner logo). Loaded from the brands API.
   const [brands, setBrands] = useState<Brand[]>([])
   const [brandId, setBrandId] = useState<string>('')
-  // Monday "Ready for Design" queue, and the creative a run is being built for
-  // (set when you start from a task → the run files itself in the Library).
-  const [queue, setQueue] = useState<QueueTask[]>([])
-  // 'mine' (default) shows only tasks the signed-in user owns on Monday; 'all'
-  // shows everyone's. queueMeta.linked says whether "mine" is even possible.
-  const [queueScope, setQueueScope] = useState<'mine' | 'all'>('mine')
-  const [queueMeta, setQueueMeta] = useState<{ linked: boolean; mineCount: number; allCount: number }>(
-    { linked: false, mineCount: 0, allCount: 0 })
+  // Monday "Ready for Design" queue (kept fresh by the shared hook — focus +
+  // interval refetch, so a Banner-Sizes edit on the board reaches the chip),
+  // and the creative a run is being built for (set when you start from a task
+  // → the run files itself in the Library).
+  const { tasks: queue, scope: queueScope, setScope: setQueueScope, meta: queueMeta } =
+    useReadyQueue(bannerQueue)
   const [pendingCreative, setPendingCreative] = useState<{ id: string; name: string } | null>(null)
   // null = let the AI Builder decide placement automatically.
   const [logoCorner, setLogoCorner] = useState<'tl' | 'tr' | 'bl' | 'br' | null>(null)
@@ -627,19 +625,6 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
       .then((all) => setBrands(brandOptions(all)))
       .catch(() => {})
   }, [])
-
-  // The Monday "Ready for Design" queue — best-effort; no strip without a token.
-  // Re-fetches when the Mine/All scope changes. The server downgrades a "mine"
-  // request to "all" for an unlinked user, so mirror whatever scope it returns.
-  useEffect(() => {
-    bannerQueue(queueScope)
-      .then((d) => {
-        setQueue(d.tasks)
-        setQueueMeta({ linked: d.linked, mineCount: d.mineCount, allCount: d.allCount })
-        if (d.scope !== queueScope) setQueueScope(d.scope)
-      })
-      .catch(() => { /* dormant */ })
-  }, [queueScope])
 
   // Start building from a queued task: select its brand, sizes and language,
   // seed the first concept from its name, and remember the creative so the run

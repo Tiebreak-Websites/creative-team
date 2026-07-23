@@ -33,8 +33,8 @@ import {
   type Brand,
   type EntityKind,
 } from '../bannerBuilder/brandsApi'
-import { searchCreatives, type QueueTask } from '../bannerBuilder/campaignApi'
-import { ReadyQueueStrip } from '@/components/ReadyQueue'
+import { searchCreatives } from '../bannerBuilder/campaignApi'
+import { ReadyQueueStrip, useReadyQueue } from '@/components/ReadyQueue'
 import { AdminTemplates } from './AdminTemplates'
 import { Builder } from './Builder'
 import {
@@ -329,13 +329,12 @@ function Dashboard({
   /** null = folders home; brand id = inside that brand's folder; '' = "Other". */
   const [folder, setFolder] = useState<string | null>(null)
   // Monday "Ready for Design" queue (Landing Page / Prelander tasks) — the
-  // same strip the Banner Builder shows. Clicking a task opens the create
-  // dialog pre-filled; a task already turned into a project leaves the queue
-  // server-side, so the list shrinks as work starts.
-  const [queue, setQueue] = useState<QueueTask[]>([])
-  const [queueScope, setQueueScope] = useState<'mine' | 'all'>('mine')
-  const [queueMeta, setQueueMeta] = useState<{ linked: boolean; mineCount: number; allCount: number }>(
-    { linked: false, mineCount: 0, allCount: 0 })
+  // same strip the Banner Builder shows, kept fresh by the shared hook (focus
+  // + interval refetch, plus the project count: a created project removes its
+  // task from the queue server-side). Clicking a task opens the create dialog
+  // pre-filled.
+  const { tasks: queue, scope: queueScope, setScope: setQueueScope, meta: queueMeta } =
+    useReadyQueue(lpQueue, [projects?.length])
   /** Task the create dialog was opened from — seeds name/brand/language/Monday. */
   const [taskPreset, setTaskPreset] = useState<LpTaskPreset | null>(null)
   const dark = useIsDark()
@@ -343,17 +342,6 @@ function Dashboard({
   useEffect(() => {
     listBrands().then(setBrands).catch(() => {})
   }, [])
-
-  // Refetches on scope change and when the project list changes (a created
-  // project removes its task from the queue). The server downgrades "mine"
-  // to "all" for an unlinked user — mirror whatever scope it returns.
-  useEffect(() => {
-    lpQueue(queueScope).then((d) => {
-      setQueue(d.tasks)
-      setQueueMeta({ linked: d.linked, mineCount: d.mineCount, allCount: d.allCount })
-      if (d.scope !== queueScope) setQueueScope(d.scope)
-    })
-  }, [queueScope, projects?.length])
 
   /** Card cover: the page's own hero image (first placed image). */
   const coverFor = (p: ProjectSummary): string | null => p.cover_url || null
