@@ -452,6 +452,10 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   // Build (generate + results) vs Library (the kind → creative folder shelf).
   const [mode, setMode] = useState<'build' | 'library'>('build')
   const [polling, setPolling] = useState(false)
+  // Runs I explicitly opened from the Library this session — the ONLY reason a
+  // finished run by someone else may sit on the canvas. Everything else on the
+  // canvas is active work or mine; see visibleRuns.
+  const [openedIds, setOpenedIds] = useState<Set<string>>(() => new Set())
   // Guards Generate from a double-click (or a click during the in-flight POST)
   // starting two runs — i.e. double image spend.
   const [submitting, setSubmitting] = useState(false)
@@ -553,11 +557,21 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   const myEmail = (user?.email || '').toLowerCase()
 
   const visibleRuns = useMemo(() => {
-    // The working set as-is — keep an active run visible even with no banners
-    // yet (so progress shows); hide finished, fully-emptied runs. No user
-    // filter: the canvas only ever contains runs from this browser anyway.
-    return runs.filter((r) => r.banners.length > 0 || !TERMINAL_STATUSES.includes(r.status))
-  }, [runs])
+    // The render-layer guarantee. Whatever ends up in `runs` (a stale snapshot,
+    // a fetch quirk, a cached bundle — anything), the canvas only ever SHOWS:
+    //   • active runs (in-flight work, incl. the just-started with no banners),
+    //   • my own runs,
+    //   • runs I explicitly opened from the Library this session.
+    // A FINISHED run by someone else — the leak people keep seeing — is filtered
+    // out here no matter how it slipped into state. This can't be defeated: it's
+    // the last gate before render and keys off each run's own data.
+    return runs.filter((r) => {
+      if (r.banners.length === 0 && TERMINAL_STATUSES.includes(r.status)) return false
+      if (!TERMINAL_STATUSES.includes(r.status)) return true // active work
+      if ((r.created_by || '').toLowerCase() === myEmail) return true // mine
+      return openedIds.has(r.run_id) // opened from the Library on purpose
+    })
+  }, [runs, myEmail, openedIds])
 
   // Poll every non-terminal run until all reach a terminal status.
   useEffect(() => {
@@ -1018,6 +1032,9 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   // merge into the session runs (dedup, newest first), switch to Build.
   const openRunInBuild = (runId: string) => {
     setMode('build')
+    // Mark it as deliberately opened so the display gate lets it through even if
+    // it's a finished run by someone else (bring-back-and-edit).
+    setOpenedIds((prev) => new Set(prev).add(runId))
     getRun(runId)
       .then((r) => setRuns((prev) => [r, ...prev.filter((p) => p.run_id !== runId)]))
       .catch(() => { /* the poll will pick it up on next tick */ })
