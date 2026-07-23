@@ -337,7 +337,6 @@ export function Dashboard({
   }
 
   // --------------------------------------------------------------- folder shelf
-  const total = campaigns.filter((c) => !c.parent_id).length
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
       <div className="mb-6 flex items-start gap-3 animate-fade-up">
@@ -350,12 +349,6 @@ export function Dashboard({
         <Button className="ml-auto shrink-0" onClick={() => onCreate('')}>
           <FilePlus2 className="h-4 w-4" /> New campaign
         </Button>
-      </div>
-
-      <div className="mb-5 grid grid-cols-3 gap-3 animate-fade-up">
-        <Stat value={total} label={total === 1 ? 'Campaign' : 'Campaigns'} />
-        <Stat value={buckets.reduce((n, g) => n + g.items.length, 0)} label="Folders" />
-        <Stat value={new Set(campaigns.map((c) => c.language)).size} label="Languages in use" />
       </div>
 
       {/* Monday's work queue, before any folder is opened —
@@ -443,15 +436,6 @@ export function Dashboard({
           </section>
         )}
       </div>
-    </div>
-  )
-}
-
-function Stat({ value, label }: { value: number; label: string }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-4">
-      <p className="font-display text-2xl font-bold tabular-nums">{value}</p>
-      <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
     </div>
   )
 }

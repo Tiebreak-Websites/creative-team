@@ -221,8 +221,6 @@ export function BannerGallery({
   }
 
   // --------------------------------------------------------------- folder shelf
-  const total = bannerCount(filled)
-  const unfiled = filled.filter((r) => !r.monday_id).length
   return (
     <Shell>
       <div className="mb-6 flex items-start gap-3 animate-fade-up">
@@ -232,12 +230,6 @@ export function BannerGallery({
             One folder per brand — inside, banners grouped by their Monday creative.
           </p>
         </div>
-      </div>
-
-      <div className="mb-5 grid grid-cols-3 gap-3 animate-fade-up">
-        <Stat value={total} label={total === 1 ? 'Banner' : 'Banners'} />
-        <Stat value={buckets.reduce((n, g) => n + g.items.length, 0)} label="Folders" />
-        <Stat value={unfiled} label="Runs to file" />
       </div>
 
       {/* Banners are transient here — the catalogue lives in CreativeOPS. */}
@@ -318,15 +310,6 @@ export function BannerGallery({
 
 function Shell({ children }: { children: ReactNode }) {
   return <div className="mx-auto max-w-6xl px-6 py-8">{children}</div>
-}
-
-function Stat({ value, label }: { value: number; label: string }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-4">
-      <p className="font-display text-2xl font-bold tabular-nums">{value}</p>
-      <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
-    </div>
-  )
 }
 
 function Empty({ children }: { children: ReactNode }) {
