@@ -9,12 +9,13 @@ import {
   Layers,
   Loader2,
   Maximize2,
+  Plus,
   Trash2,
   X,
 } from 'lucide-react'
 import type { Banner, RunData } from '../types'
 import { assetUrl, versionZipUrl, zipAllUrl } from '../api'
-import { BannerLibrary, type LibraryItem } from './BannerLibrary'
+import { AddSizesModal, BannerLibrary, type LibraryItem } from './BannerLibrary'
 import type { SizeGroup } from './sizesApi'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -224,6 +225,10 @@ export function OutputPane({
   const [libAddSizes, setLibAddSizes] = useState<((sizes: string[]) => void) | null>(null)
   const [libExistingSizes, setLibExistingSizes] = useState<string[]>([])
   const [libCanDelete, setLibCanDelete] = useState(true)
+  // "Add sizes" opened straight from a version card (no lightbox): the target
+  // run+concept and the sizes it already has, so the picker can hide them.
+  const [addSizesTarget, setAddSizesTarget] =
+    useState<{ runId: string; concept: string; existing: string[] } | null>(null)
   // One fixed view now — batches of small tiles. The old view/tile switchers
   // left with the canvas-as-feed era; the Library owns browsing.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
@@ -411,6 +416,11 @@ export function OutputPane({
               onDelete={canModify(gen.createdBy) ? onDeleteBanner : undefined}
               onCancelRun={onCancelRun}
               onSendToLibrary={canModify(gen.createdBy) ? onSendToLibrary : undefined}
+              onOpenAddSizes={
+                onAddSizes
+                  ? (runId, concept, existing) => setAddSizesTarget({ runId, concept, existing })
+                  : undefined
+              }
               selected={selected}
               onToggleSelect={onToggleSelect}
               onToggleVersion={onToggleVersion}
@@ -439,6 +449,21 @@ export function OutputPane({
         onAddCustomSize={onAddCustomSize}
         existingSizes={libExistingSizes}
       />
+      {/* "Add sizes" opened straight from a version card — recomposes the picked
+          sizes off that version's master into the SAME run (no new generation). */}
+      {addSizesTarget && onAddSizes && (
+        <AddSizesModal
+          groups={sizeGroups ?? []}
+          availableSizes={availableSizes ?? []}
+          existingSizes={addSizesTarget.existing}
+          onAddCustomSize={onAddCustomSize}
+          onCancel={() => setAddSizesTarget(null)}
+          onGenerate={(picked) => {
+            onAddSizes(addSizesTarget.runId, addSizesTarget.concept, picked)
+            setAddSizesTarget(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -543,6 +568,7 @@ function GenerationSection({
   onDelete,
   onCancelRun,
   onSendToLibrary,
+  onOpenAddSizes,
   selected,
   onToggleSelect,
   onToggleVersion,
@@ -559,6 +585,7 @@ function GenerationSection({
   onDelete?: (runId: string, label: string) => void
   onCancelRun?: (runId: string) => void
   onSendToLibrary?: (runId: string) => void
+  onOpenAddSizes?: (runId: string, concept: string, existing: string[]) => void
   selected: Set<string>
   onToggleSelect: (runId: string, label: string) => void
   onToggleVersion?: (runId: string, labels: string[]) => void
@@ -634,6 +661,7 @@ function GenerationSection({
               onView={onView}
               onDelete={onDelete}
               onCancelRun={onCancelRun}
+              onOpenAddSizes={onOpenAddSizes}
               selected={selected}
               onToggleSelect={onToggleSelect}
               onToggleVersion={onToggleVersion}
@@ -654,6 +682,7 @@ function ConceptGroupBlock({
   onView,
   onDelete,
   onCancelRun,
+  onOpenAddSizes,
   selected,
   onToggleSelect,
   onToggleVersion,
@@ -667,6 +696,7 @@ function ConceptGroupBlock({
   onView: (runId: string, label: string) => void
   onDelete?: (runId: string, label: string) => void
   onCancelRun?: (runId: string) => void
+  onOpenAddSizes?: (runId: string, concept: string, existing: string[]) => void
   selected: Set<string>
   onToggleSelect: (runId: string, label: string) => void
   onToggleVersion?: (runId: string, labels: string[]) => void
@@ -720,6 +750,20 @@ function ConceptGroupBlock({
           </span>
           {g.genMs > 0 && (
             <span title="Total image render time across this version's sizes">· {fmtTime(g.genMs)}</span>
+          )}
+          {onOpenAddSizes && g.ok > 0 && !g.running
+            && g.approvalStatus !== 'awaiting' && g.approvalStatus !== 'rejected' && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                onOpenAddSizes(g.runId, g.concept, Array.from(new Set(g.banners.map((b) => b.size))))
+              }
+              title="Add more sizes to this banner — recomposed off its master, added right here"
+              className="h-7 gap-1 px-2.5 text-primary hover:text-primary"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add sizes
+            </Button>
           )}
           {g.approvalStatus === 'awaiting' && owner && onApprove && (
             <>
