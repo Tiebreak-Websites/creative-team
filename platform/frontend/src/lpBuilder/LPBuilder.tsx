@@ -33,7 +33,8 @@ import {
   type Brand,
   type EntityKind,
 } from '../bannerBuilder/brandsApi'
-import { searchCreatives } from '../bannerBuilder/campaignApi'
+import { searchCreatives, type QueueTask } from '../bannerBuilder/campaignApi'
+import { ReadyQueueStrip } from '@/components/ReadyQueue'
 import { AdminTemplates } from './AdminTemplates'
 import { Builder } from './Builder'
 import {
@@ -46,12 +47,21 @@ import {
   getWriters,
   listProjects,
   listSections,
+  lpQueue,
   saveProject,
   type Language,
   type ProjectSummary,
   type SectionDef,
   type Writer,
 } from './api'
+
+/** What a Ready-for-Design task pre-fills in the create dialog. */
+interface LpTaskPreset {
+  name: string
+  mondayId: string
+  brandId: string
+  language: string
+}
 
 type View =
   | { kind: 'home' }
@@ -318,11 +328,32 @@ function Dashboard({
   const [brands, setBrands] = useState<Brand[]>([])
   /** null = folders home; brand id = inside that brand's folder; '' = "Other". */
   const [folder, setFolder] = useState<string | null>(null)
+  // Monday "Ready for Design" queue (Landing Page / Prelander tasks) — the
+  // same strip the Banner Builder shows. Clicking a task opens the create
+  // dialog pre-filled; a task already turned into a project leaves the queue
+  // server-side, so the list shrinks as work starts.
+  const [queue, setQueue] = useState<QueueTask[]>([])
+  const [queueScope, setQueueScope] = useState<'mine' | 'all'>('mine')
+  const [queueMeta, setQueueMeta] = useState<{ linked: boolean; mineCount: number; allCount: number }>(
+    { linked: false, mineCount: 0, allCount: 0 })
+  /** Task the create dialog was opened from — seeds name/brand/language/Monday. */
+  const [taskPreset, setTaskPreset] = useState<LpTaskPreset | null>(null)
   const dark = useIsDark()
 
   useEffect(() => {
     listBrands().then(setBrands).catch(() => {})
   }, [])
+
+  // Refetches on scope change and when the project list changes (a created
+  // project removes its task from the queue). The server downgrades "mine"
+  // to "all" for an unlinked user — mirror whatever scope it returns.
+  useEffect(() => {
+    lpQueue(queueScope).then((d) => {
+      setQueue(d.tasks)
+      setQueueMeta({ linked: d.linked, mineCount: d.mineCount, allCount: d.allCount })
+      if (d.scope !== queueScope) setQueueScope(d.scope)
+    })
+  }, [queueScope, projects?.length])
 
   /** Card cover: the page's own hero image (first placed image). */
   const coverFor = (p: ProjectSummary): string | null => p.cover_url || null
@@ -428,6 +459,29 @@ function Dashboard({
           </Button>
         </div>
       </div>
+
+      {/* Monday "Ready for Design" queue — the shared strip; click a task to
+          open the create dialog pre-filled with its details. */}
+      {folder === null && queueMeta.allCount > 0 && (
+        <ReadyQueueStrip
+          className="mb-5 rounded-2xl border border-primary/30 py-2.5 animate-fade-up"
+          tasks={queue}
+          scope={queueScope}
+          linked={queueMeta.linked}
+          mineCount={queueMeta.mineCount}
+          allCount={queueMeta.allCount}
+          onScopeChange={setQueueScope}
+          onOpen={(t) => {
+            setTaskPreset({
+              name: t.item.name,
+              mondayId: t.item.id,
+              brandId: t.match.brand_id,
+              language: t.match.language,
+            })
+            setCreating(true)
+          }}
+        />
+      )}
 
       {folder === null ? (
         /* ------------------------- brand FOLDERS home ------------------------- */
@@ -583,9 +637,11 @@ function Dashboard({
         <NewLpModal
           languages={languages}
           presetBrandId={folder || undefined}
-          onClose={() => setCreating(false)}
+          preset={taskPreset ?? undefined}
+          onClose={() => { setCreating(false); setTaskPreset(null) }}
           onCreated={(id) => {
             setCreating(false)
+            setTaskPreset(null)
             onOpen(id)
           }}
           onError={onError}
@@ -685,6 +741,7 @@ function ModalShell({ label, children, onClose, maxWidth = 'max-w-xl' }: { label
 function NewLpModal({
   languages,
   presetBrandId,
+  preset,
   onClose,
   onCreated,
   onError,
@@ -692,17 +749,20 @@ function NewLpModal({
   languages: Language[]
   /** Pre-selected brand when creating from inside a brand folder. */
   presetBrandId?: string
+  /** Seed from a Ready-for-Design task — name, Monday id, brand, language. */
+  preset?: LpTaskPreset
   onClose: () => void
   onCreated: (id: string) => void
   onError: (m: string) => void
 }) {
-  const [name, setName] = useState('')
-  const [mondayId, setMondayId] = useState('')
+  const [name, setName] = useState(preset?.name ?? '')
+  const [mondayId, setMondayId] = useState(preset?.mondayId ?? '')
   /** The Monday item's name (creative name), resolved from the id — attached
-   *  to the project so every asset carries the id + name pair. */
-  const [mondayName, setMondayName] = useState('')
-  const [brandId, setBrandId] = useState(presetBrandId ?? '')
-  const [language, setLanguage] = useState('en')
+   *  to the project so every asset carries the id + name pair. The task's own
+   *  name seeds it; the board lookup below confirms/overrides. */
+  const [mondayName, setMondayName] = useState(preset?.name ?? '')
+  const [brandId, setBrandId] = useState(preset?.brandId || presetBrandId || '')
+  const [language, setLanguage] = useState(preset?.language || 'en')
   const [brands, setBrands] = useState<Brand[]>([])
   const [writers, setWriters] = useState<Writer[]>([])
   const [assignTo, setAssignTo] = useState('')
@@ -721,10 +781,10 @@ function NewLpModal({
   const canCreate = name.trim() && mondayValid && !saving
 
   // Resolve the creative name from the Monday board as soon as the id is
-  // complete — best-effort (a failed lookup never blocks creation).
+  // complete — best-effort (a failed lookup never blocks creation, and a
+  // task-preset name survives a dormant Monday: only success overwrites).
   useEffect(() => {
-    setMondayName('')
-    if (!mondayValid) return
+    if (!mondayValid) { setMondayName(''); return }
     let alive = true
     searchCreatives(mondayId)
       .then((items) => {

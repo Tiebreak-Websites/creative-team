@@ -70,24 +70,34 @@ export interface QueueResult {
 }
 
 /**
- * The banner/LP work queue: Creative Board items at "Ready for Design".
- * scope="mine" (default) returns only the tasks the signed-in user owns on
- * Monday; "all" returns everyone's. An unlinked user always gets "all" back
- * (linked=false) — there's no Monday id to filter on.
+ * Fetch one builder's Ready-for-Design queue (shared shape — the LP builder's
+ * lpQueue reuses this against its own endpoint). scope="mine" (default)
+ * returns only the tasks the signed-in user owns on Monday; "all" returns
+ * everyone's. An unlinked user always gets "all" back (linked=false) — there's
+ * no Monday id to filter on. Any failure (dormant Monday, 403) → empty.
  */
-export async function bannerQueue(scope: 'mine' | 'all' = 'mine'): Promise<QueueResult> {
+export async function fetchReadyQueue(url: string, scope: 'mine' | 'all'): Promise<QueueResult> {
   const empty: QueueResult = { tasks: [], status: 'Ready for Design', scope: 'all', linked: false, mineCount: 0, allCount: 0 }
-  const r = await fetch(`${BASE}/tools/banner-builder/queue?scope=${scope}`, { credentials: 'include' })
-  if (!r.ok) return empty
-  const d = await r.json()
-  return {
-    tasks: d.tasks ?? [],
-    status: d.status ?? 'Ready for Design',
-    scope: d.scope === 'mine' ? 'mine' : 'all',
-    linked: !!d.linked,
-    mineCount: d.mine_count ?? 0,
-    allCount: d.all_count ?? 0,
+  try {
+    const r = await fetch(`${url}?scope=${scope}`, { credentials: 'include' })
+    if (!r.ok) return empty
+    const d = await r.json()
+    return {
+      tasks: d.tasks ?? [],
+      status: d.status ?? 'Ready for Design',
+      scope: d.scope === 'mine' ? 'mine' : 'all',
+      linked: !!d.linked,
+      mineCount: d.mine_count ?? 0,
+      allCount: d.all_count ?? 0,
+    }
+  } catch {
+    return empty
   }
+}
+
+/** The banner work queue: Ready-for-Design tasks whose Banner Sizes are set. */
+export function bannerQueue(scope: 'mine' | 'all' = 'mine'): Promise<QueueResult> {
+  return fetchReadyQueue(`${BASE}/tools/banner-builder/queue`, scope)
 }
 
 /**

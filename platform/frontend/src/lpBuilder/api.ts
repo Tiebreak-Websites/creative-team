@@ -1,8 +1,15 @@
 // API client for the LP Builder (sections library, projects, compose, export).
 
 import { API_BASE as BASE, asJson } from '../http'
+import { fetchReadyQueue, type QueueResult } from '../bannerBuilder/campaignApi'
 
 const LPB = `${BASE}/tools/lp-builder`
+
+/** The LP work queue: Ready-for-Design tasks (Landing Page / Prelander) not
+ *  yet turned into a project — same shape/scoping as the banner queue. */
+export function lpQueue(scope: 'mine' | 'all' = 'mine'): Promise<QueueResult> {
+  return fetchReadyQueue(`${LPB}/queue`, scope)
+}
 
 export type Breakpoint = 'base' | 'tablet' | 'mobile'
 export type Device = 'desktop' | 'tablet' | 'mobile'

@@ -369,6 +369,21 @@ def build_lp_builder_router() -> APIRouter:
         v = pick("images_mobile") or pick("images")
         return export.serve_url_for(str(v)) if v else None
 
+    @router.get("/queue")
+    def ready_queue(scope: str = "mine", user: dict = Depends(require_user)):
+        """The LP work queue: Creative Board items at "Ready for Design" whose
+        Asset Type is Landing Page or Prelander. Same assembly, owner scoping
+        (mine/all) and priority tint as the banner queue — one shared builder
+        (creative_queue.build_queue) so the two strips can't drift. Writers
+        don't create pages, so they don't get a queue."""
+        _forbid_writer(user)
+        from ..creative_queue import build_queue
+        with core.lock():
+            taken = {str(p.get("monday_id") or "") for p in core.projects().values()}
+        taken.discard("")
+        return build_queue(user, scope, wanted={"landing page", "prelander"},
+                           exclude_ids=taken)
+
     @router.get("/projects")
     def list_projects(user: dict = Depends(require_user)):
         with core.lock():
