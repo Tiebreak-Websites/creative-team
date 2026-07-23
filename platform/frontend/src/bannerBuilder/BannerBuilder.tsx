@@ -145,6 +145,31 @@ function writeRunIdsToUrl(ids: string[]) {
 // instantly and then refresh. (A backend restart can still drop the runs.)
 const RUNS_LS_KEY = 'bb:runs'
 const SNAP_LS_KEY = 'bb:runs:snapshot'
+const WORKINGSET_SCHEMA_KEY = 'bb:ws-schema'
+const WORKINGSET_SCHEMA = 'ws-2' // bump to force a one-time purge of the stores below
+
+// One-time reset of the persisted working set. Before v1.87.1 the canvas
+// mirrored the whole shared feed, so every browser's `bb:runs` (ids) and
+// `bb:runs:snapshot` (data) accumulated EVERY user's runs — and the URL's
+// ?runs= with them. The new working-set canvas would otherwise restore all of
+// that on load (which is why an existing user still saw other people's
+// generations after the fix). Purge those stores once per browser; going
+// forward only runs the user actually starts or opens are persisted.
+function purgeLegacyWorkingSet(): void {
+  try {
+    if (localStorage.getItem(WORKINGSET_SCHEMA_KEY) === WORKINGSET_SCHEMA) return
+    localStorage.removeItem(RUNS_LS_KEY)
+    localStorage.removeItem(SNAP_LS_KEY)
+    try {
+      const u = new URL(window.location.href)
+      if (u.searchParams.has('runs')) {
+        u.searchParams.delete('runs')
+        window.history.replaceState(null, '', u.pathname + u.search + u.hash)
+      }
+    } catch { /* ignore */ }
+    localStorage.setItem(WORKINGSET_SCHEMA_KEY, WORKINGSET_SCHEMA)
+  } catch { /* best-effort */ }
+}
 
 function readRunIdsFromStore(): string[] {
   try {
@@ -414,7 +439,12 @@ export function BannerBuilder({ meta }: { meta: Meta }) {
   const [formErrors, setFormErrors] = useState<string[]>([])
   const [missing, setMissing] = useState<{ env: string; label: string; docs_url: string }[] | null>(null)
 
-  const [runs, setRuns] = useState<RunData[]>(() => readSnapshot())
+  const [runs, setRuns] = useState<RunData[]>(() => {
+    // Runs BEFORE the snapshot is read, so a legacy (pre-working-set) browser
+    // starts clean instead of restoring the whole old shared feed.
+    purgeLegacyWorkingSet()
+    return readSnapshot()
+  })
   // Build (generate + results) vs Library (the kind → creative folder shelf).
   const [mode, setMode] = useState<'build' | 'library'>('build')
   const [polling, setPolling] = useState(false)
