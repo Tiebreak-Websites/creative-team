@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowLeft, Check, ChevronDown, ChevronRight, Copy, FilePlus2,
-  Languages, Loader2, Mail, Search, Trash2,
+  Languages, Loader2, Mail, RefreshCw, Search, Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,7 +22,7 @@ import {
   KIND_HINT, KIND_LABEL, kindOf, type Brand, type EntityKind,
 } from '@/bannerBuilder/brandsApi'
 import {
-  campaignThumb, createVariants, deleteCampaign, getCampaign, setCampaignActive,
+  campaignThumb, createVariants, deleteCampaign, mondayItem, setCampaignActive,
   type CampaignSummary,
 } from './api'
 
@@ -588,27 +588,34 @@ function AddLanguagesModal({
 }) {
   const [picked, setPicked] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
+  // Languages the linked Monday task asks for (builder codes) — the source of
+  // truth for what to localize into. Pulled LIVE, so adding one on the task in
+  // Monday and hitting Sync brings it straight in.
+  const [taskLangs, setTaskLangs] = useState<string[]>([])
+  const [syncing, setSyncing] = useState(false)
 
-  // "Localize to the SELECTED languages" — pre-tick the languages the Monday
-  // task actually asked for, read from the master's stored task snapshot, minus
-  // English (the master itself) and anything a variant already covers. The
-  // picker stays fully editable; this is a head start, not a lock.
-  useEffect(() => {
-    let alive = true
-    getCampaign(parent.id).then((full) => {
-      if (!alive) return
-      const codeFor = (tok: string) => {
-        const t = tok.trim().toLowerCase()
-        return languages.find((l) => l.code.toLowerCase() === t || l.label.toLowerCase() === t)?.code
-      }
-      const seed = (full.monday?.languages || '')
-        .split(/[,;/]+/).map(codeFor)
-        .filter((c): c is string => !!c && c !== 'en' && c !== parent.language && !covered.has(c))
-      if (seed.length) setPicked(Array.from(new Set(seed)))
-    }).catch(() => { /* no task snapshot — leave the picker empty */ })
-    return () => { alive = false }
+  const labelFor = (code: string) =>
+    languages.find((l) => l.code === code)?.label ?? code.toUpperCase()
+
+  // Pull the task's Language column from Monday and pre-tick it — minus English
+  // (the master), and anything a variant already covers. The backend already
+  // resolves the column to builder codes on match.languages, so this is just a
+  // filter. The picker stays editable; Monday is where you change the SET.
+  const pullFromMonday = () => {
+    if (!parent.monday_id) return
+    setSyncing(true)
+    mondayItem(parent.monday_id).then((res) => {
+      const fresh = (res.match?.languages ?? []).filter(
+        (c) => c && c !== 'en' && c !== parent.language && !covered.has(c))
+      setTaskLangs(Array.from(new Set(fresh)))
+      setPicked((p) => Array.from(new Set([...p, ...fresh])))
+    }).catch(() => { /* Monday offline — pick manually below */ })
+      .finally(() => setSyncing(false))
+  }
+
+  useEffect(() => { pullFromMonday()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parent.id])
+  }, [])
 
   // The brand's declared languages first — those are the markets it actually
   // sells in. The rest stay reachable but out of the way.
@@ -634,6 +641,38 @@ function AddLanguagesModal({
           Each language is regenerated natively from the approved English master’s
           brief — not a translated copy — and lands as a Draft to proof before it ships.
         </p>
+
+        {parent.monday_id ? (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2">
+            <Languages className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <p className="min-w-0 text-[11px] leading-relaxed text-muted-foreground">
+              {taskLangs.length > 0 ? (
+                <>
+                  <span className="font-medium text-foreground">{taskLangs.map(labelFor).join(', ')}</span>
+                  {' '}pulled from the Monday task and pre-selected. Need another? Add it to the
+                  task’s Language column in Monday, then Sync.
+                </>
+              ) : (
+                <>No extra languages on the Monday task yet. Add them to the task’s Language
+                  column in Monday, then Sync.</>
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={pullFromMonday}
+              disabled={syncing}
+              title="Re-pull the task's languages from Monday"
+              className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+            >
+              {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Sync
+            </button>
+          </div>
+        ) : (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Not linked to a Monday task — pick languages manually below.
+          </p>
+        )}
 
         <div className="mt-4 space-y-4">
           {groups.map((g) => (
