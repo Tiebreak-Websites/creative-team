@@ -63,6 +63,8 @@ export function Dashboard({
   campaigns,
   brands,
   languages,
+  initialFolder = null,
+  initialParentId = null,
   onOpen,
   onCreate,
   onChanged,
@@ -71,6 +73,10 @@ export function Dashboard({
   campaigns: CampaignSummary[] | null
   brands: Brand[]
   languages: Language[]
+  /** Where to open the shelf — remembered across an editor round trip so "back"
+   *  from a campaign returns to its folder / language-variant list, not the root. */
+  initialFolder?: string | null
+  initialParentId?: string | null
   onOpen: (id: string) => void
   onCreate: (brandId: string) => void
   onChanged: () => void
@@ -78,9 +84,9 @@ export function Dashboard({
 }) {
   const dark = useIsDark()
   /** null = the folder shelf; a brand id = inside that folder; '' = "Other". */
-  const [folder, setFolder] = useState<string | null>(null)
+  const [folder, setFolder] = useState<string | null>(initialFolder)
   /** A parent id when looking at its language variants. */
-  const [parentId, setParentId] = useState<string | null>(null)
+  const [parentId, setParentId] = useState<string | null>(initialParentId)
   const [query, setQuery] = useState('')
   const [addingTo, setAddingTo] = useState<CampaignSummary | null>(null)
   /** Which kind sections the user has expanded past their default state.

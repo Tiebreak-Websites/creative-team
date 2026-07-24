@@ -1,7 +1,7 @@
 {
   "name": "internovus-creative-builder-frontend",
   "private": true,
-  "version": "1.94.6",
+  "version": "1.94.7",
   "type": "module",
   "scripts": {
     "dev": "vite",

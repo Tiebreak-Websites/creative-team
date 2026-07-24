@@ -26,6 +26,11 @@ type View = { kind: 'home' } | { kind: 'editor'; campaign: Campaign }
 
 export function EmailBuilder() {
   const [view, setView] = useState<View>({ kind: 'home' })
+  // Where the home shelf should reopen after an editor round trip, so "back"
+  // returns to the folder / language-variant list you left — not the CRM root.
+  // Derived from the campaign on the way out (see the editor's onBack).
+  const [homeNav, setHomeNav] = useState<{ folder: string | null; parentId: string | null }>(
+    { folder: null, parentId: null })
   const [campaigns, setCampaigns] = useState<CampaignSummary[] | null>(null)
   const [blocks, setBlocks] = useState<BlockDef[]>([])
   const [layouts, setLayouts] = useState<Layout[]>([])
@@ -86,7 +91,14 @@ export function EmailBuilder() {
             blocks={blocks}
             brands={brands}
             languages={languages}
-            onBack={() => { setView({ kind: 'home' }); refresh() }}
+            onBack={() => {
+              // A variant returns to its master's language list; a master or
+              // standalone returns to its brand folder. Derived from the
+              // campaign so the shelf reopens exactly where you left it.
+              const c = view.campaign
+              setHomeNav({ folder: c.brand_id || '', parentId: c.parent_id || null })
+              setView({ kind: 'home' }); refresh()
+            }}
             onError={setError}
           />
         </div>
@@ -114,6 +126,8 @@ export function EmailBuilder() {
           campaigns={campaigns}
           brands={brands}
           languages={languages}
+          initialFolder={homeNav.folder}
+          initialParentId={homeNav.parentId}
           onOpen={open}
           onCreate={(brandId) => setCreating(brandId)}
           onChanged={refresh}
