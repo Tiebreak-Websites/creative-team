@@ -22,7 +22,7 @@ import {
   KIND_HINT, KIND_LABEL, kindOf, type Brand, type EntityKind,
 } from '@/bannerBuilder/brandsApi'
 import {
-  campaignThumb, createVariants, deleteCampaign, setCampaignActive,
+  campaignThumb, createVariants, deleteCampaign, getCampaign, setCampaignActive,
   type CampaignSummary,
 } from './api'
 
@@ -156,8 +156,12 @@ export function Dashboard({
                 : `${children.length} language variant${children.length === 1 ? '' : 's'}.`}
             </p>
           </div>
-          <Button className="ml-auto shrink-0" onClick={() => setAddingTo(parent)}>
-            <Languages className="h-4 w-4" /> Add languages
+          <Button className="ml-auto shrink-0" onClick={() => setAddingTo(parent)}
+                  disabled={!parent.active}
+                  title={parent.active
+                    ? 'Localize the approved English master into more languages'
+                    : 'Approve the English master first — localization regenerates from the signed-off copy'}>
+            <Languages className="h-4 w-4" /> Localize
           </Button>
         </div>
 
@@ -178,9 +182,9 @@ export function Dashboard({
 
         {children.length === 0 && (
           <p className="mt-4 max-w-md text-xs leading-relaxed text-muted-foreground">
-            Finish the source email first, then fan it out. Each variant is a full copy
-            you translate and edit on its own — later edits to the source do not
-            overwrite copy that has already been signed off.
+            {parent.active
+              ? 'Localize the approved English master to fan it out. Each language is regenerated natively from the master’s brief and lands as a Draft to proof — later edits to the master never overwrite copy already signed off.'
+              : 'This is the English master. Approve it first, then localize — each language is regenerated natively from the master’s brief and lands as a Draft to proof.'}
           </p>
         )}
 
@@ -566,6 +570,27 @@ function AddLanguagesModal({
   const [picked, setPicked] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
 
+  // "Localize to the SELECTED languages" — pre-tick the languages the Monday
+  // task actually asked for, read from the master's stored task snapshot, minus
+  // English (the master itself) and anything a variant already covers. The
+  // picker stays fully editable; this is a head start, not a lock.
+  useEffect(() => {
+    let alive = true
+    getCampaign(parent.id).then((full) => {
+      if (!alive) return
+      const codeFor = (tok: string) => {
+        const t = tok.trim().toLowerCase()
+        return languages.find((l) => l.code.toLowerCase() === t || l.label.toLowerCase() === t)?.code
+      }
+      const seed = (full.monday?.languages || '')
+        .split(/[,;/]+/).map(codeFor)
+        .filter((c): c is string => !!c && c !== 'en' && c !== parent.language && !covered.has(c))
+      if (seed.length) setPicked(Array.from(new Set(seed)))
+    }).catch(() => { /* no task snapshot — leave the picker empty */ })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parent.id])
+
   // The brand's declared languages first — those are the markets it actually
   // sells in. The rest stay reachable but out of the way.
   const declared = brand?.languages ?? []
@@ -585,9 +610,10 @@ function AddLanguagesModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-lg"
            onClick={(e) => e.stopPropagation()}>
-        <h2 className="font-display text-lg font-bold">Add languages</h2>
+        <h2 className="font-display text-lg font-bold">Localize “{parent.name}”</h2>
         <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-          Each one becomes its own editable copy of “{parent.name}”, ready to translate.
+          Each language is regenerated natively from the approved English master’s
+          brief — not a translated copy — and lands as a Draft to proof before it ships.
         </p>
 
         <div className="mt-4 space-y-4">
@@ -646,7 +672,7 @@ function AddLanguagesModal({
             }}
           >
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            Create {picked.length || ''} variant{picked.length === 1 ? '' : 's'}
+            Localize to {picked.length || ''} language{picked.length === 1 ? '' : 's'}
           </Button>
         </div>
       </div>

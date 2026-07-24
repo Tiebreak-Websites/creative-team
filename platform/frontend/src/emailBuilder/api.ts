@@ -110,6 +110,11 @@ export interface Campaign {
   /** Hero-image brief derived from the approved copy — seeds the hero
    *  generator so the image starts from what the email says. */
   image_brief?: string
+  /** Generation inputs remembered from the master's copy pass — a localize
+   *  regenerates every language from these exact values. */
+  brief?: string
+  segment?: string
+  tier?: string
   /** Draft until someone approves it. The UI calls this Approved/Draft; the
    *  field keeps its original name so stored campaigns need no migration.
    *  Campaigns are never deleted, only un-approved — a sent campaign is a
@@ -282,12 +287,18 @@ export async function composeEmail(campaign: Campaign): Promise<Composed> {
   return r.json()
 }
 
-/** Fan a parent out into one campaign per language. Each variant is a full
- *  copy — translation edits the copy, so a later parent tweak cannot silently
- *  rewrite copy already signed off in nine languages. */
+/** Localize an APPROVED English master into one Draft campaign per language.
+ *  Each variant is REGENERATED natively in its language from the master's brief
+ *  (not a translated copy) and a native copy job starts per variant — `jobs`
+ *  lists them. Rejected (409) unless the master is approved English. A later
+ *  master tweak never rewrites copy already signed off in another language. */
 export async function createVariants(
   id: string, languages: string[],
-): Promise<{ created: Campaign[]; skipped: string[] }> {
+): Promise<{
+  created: Campaign[]
+  skipped: string[]
+  jobs?: { campaign_id: string; language: string; job_id: string }[]
+}> {
   const r = await fetch(`${EB}/campaigns/${id}/variants`, {
     method: 'POST', headers: j, credentials: 'include',
     body: JSON.stringify({ languages }),

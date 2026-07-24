@@ -71,6 +71,12 @@ def _public_campaign(c: dict) -> dict:
         # one that is not live. Field name kept as `active` so existing stored
         # campaigns need no migration.
         "active": bool(c.get("active", False)),
+        # Generation inputs remembered from the master's copy pass. A localise
+        # regenerates every language from the SAME brief/segment/tier, so they
+        # ride along on the campaign rather than living only in the request.
+        "brief": c.get("brief") or "",
+        "segment": c.get("segment") or "",
+        "tier": c.get("tier") or "Retail",
     }
 
 
@@ -83,6 +89,83 @@ def _entity_for(project: dict) -> Optional[dict]:
     except Exception:
         log.exception("email-builder: could not read brand %s", bid)
         return None
+
+
+def _resolve_lang_name(code: str) -> str:
+    """A builder language code -> its English name, for the copywriter prompt.
+    'Polish' reads far more reliably in the prompt than the bare code 'pl'.
+    Falls back to the code itself for anything not in the taxonomy."""
+    code = (code or "").strip().lower()
+    if not code or code == "en":
+        return "English"
+    for l in (lp_core.languages() or lp_core.DEFAULT_LANGS):
+        if str(l.get("code") or "").lower() == code:
+            return l.get("label") or code
+    return code
+
+
+def _enqueue_copy_job(cid: str) -> Optional[dict]:
+    """Register (or adopt) the whole-email copy job for one campaign.
+
+    Writes in the campaign's OWN language, seeded from the brief / segment /
+    tier stored on it when the English master's copy was generated. Both the
+    per-campaign "generate copy" button and the localise fan-out go through
+    here — so a language variant is regenerated NATIVELY from the same brief,
+    never shipped as a verbatim English copy. Returns the job (or the running
+    one it adopted), or None when the campaign is gone / has no copy blocks.
+    """
+    from . import copy_ai, jobs
+    with core.lock():
+        c = core.campaigns().get(cid)
+        if not c:
+            return None
+        sections = [dict(s) for s in (c.get("sections") or [])]
+        brief = (c.get("brief") or "").strip()[:1200]
+        segment_raw = c.get("segment") or ""
+        tier = c.get("tier") if c.get("tier") in copy_ai.TIERS else "Retail"
+        code = c.get("language") or "en"
+    entity = _entity_for(c)
+    spec = copy_ai.build_spec(sections)
+    if not spec:
+        return None
+    # One copy generation per campaign at a time (iid="" — the whole email);
+    # a second request adopts the running job rather than double-writing.
+    running = jobs.active_for(cid, "", "copy")
+    if running:
+        return running
+    segment = copy_ai.segment_for(entity, segment_raw)
+    language = _resolve_lang_name(code)
+    kwargs = dict(entity=entity, brief=brief, segment=segment, tier=tier,
+                  language=language, spec=spec)
+
+    def work() -> dict:
+        return copy_ai.generate_copy(**kwargs)
+
+    def apply(result: dict) -> None:
+        # Server-side write-back: subject + pre-header on the campaign, and each
+        # generated value onto its block instance by iid+key.
+        by_iid_key = {(it["iid"], it["key"]): it["value"] for it in result.get("items", [])}
+        with core.lock():
+            camp = core.campaigns().get(cid)
+            if not camp:
+                return
+            subs = result.get("subjects") or []
+            if subs:
+                camp["subject"] = subs[0]
+            if result.get("preheader"):
+                camp["preheader"] = result["preheader"]
+            if result.get("image_brief"):
+                camp["image_brief"] = result["image_brief"]
+            for sct in camp.get("sections") or []:
+                iid = sct.get("iid")
+                texts = sct.setdefault("texts", {})
+                for (k_iid, k_key), val in by_iid_key.items():
+                    if k_iid == iid:
+                        texts[k_key] = val
+            camp["updated_at"] = core._now()
+            core.persist_campaign(camp)
+
+    return jobs.start("copy", cid, "", work, apply)
 
 
 def _ensure_placeholder(name: str) -> str:
@@ -538,13 +621,18 @@ def build_email_builder_router() -> APIRouter:
 
     @router.post("/campaigns/{cid}/variants")
     def create_variants(cid: str, payload: dict, user: dict = Depends(require_user)):
-        """Fan a finished parent out into one campaign per language.
+        """Localise an APPROVED English master into one Draft campaign per language.
 
-        A variant is a full copy, not a reference: translation edits the copy,
-        and a later parent tweak must NOT silently rewrite copy someone has
-        already reviewed and signed off in nine languages. The cost is that
-        parent changes do not propagate — which is the correct trade for
-        regulated marketing mail.
+        Each variant is regenerated NATIVELY in its language — a fresh copy pass
+        from the master's own brief / segment / tier — not a verbatim English
+        copy. A later master tweak does NOT propagate: regulated marketing mail
+        is signed off per language, so once localised, a variant is its own copy.
+
+        Two gates enforce the flow the CRM wants:
+          • the master must be ENGLISH (localisation runs outward from English), and
+          • the master must be APPROVED (you cannot fan out copy nobody signed off).
+        Variants land as drafts — a machine-written localisation is proofed by a
+        native speaker before it can ship.
         """
         wanted = [str(x).strip()[:8] for x in (payload.get("languages") or []) if str(x).strip()]
         if not wanted:
@@ -557,6 +645,13 @@ def build_email_builder_router() -> APIRouter:
             if parent.get("parent_id"):
                 raise HTTPException(
                     409, "This is already a language variant. Create variants from the parent.")
+            if (parent.get("language") or "en").strip().lower() != "en":
+                raise HTTPException(
+                    409, "The master must be English before it can be localised.")
+            if not parent.get("active"):
+                raise HTTPException(
+                    409, "Approve the English master first — localisation regenerates "
+                         "each language from the signed-off English copy.")
 
             existing = {c.get("language") for c in core.campaigns().values()
                         if c.get("parent_id") == cid}
@@ -576,8 +671,8 @@ def build_email_builder_router() -> APIRouter:
             now = core._now()
             made = []
             for lang in wanted:
-                if lang in existing:
-                    continue  # already covered; asking twice is not an error
+                if lang == "en" or lang in existing:
+                    continue  # English is the master; a covered language is not an error
                 child = {
                     "id": core.new_campaign_id(),
                     "name": parent.get("name") or "",
@@ -585,14 +680,22 @@ def build_email_builder_router() -> APIRouter:
                     "preheader": parent.get("preheader") or "",
                     "brand_id": parent.get("brand_id") or "",
                     "language": lang,
-                    # Deep-copied so editing a variant cannot reach back into
-                    # the parent's slots through a shared dict.
+                    # Deep-copied so editing a variant cannot reach back into the
+                    # parent's slots through a shared dict. Seeds with the English
+                    # copy — a readable fallback the native copy job overwrites
+                    # (and a safety net if that job cannot run).
                     "sections": json.loads(json.dumps(parent.get("sections") or [])),
                     "tokens": dict(parent.get("tokens") or {}),
                     "parent_id": cid,
                     "monday_id": subs_by_code.get(lang, ""),
-                    # Never live on arrival: an untranslated copy of the source
-                    # is exactly what must not go out.
+                    # Inherit the master's generation inputs so _enqueue_copy_job
+                    # rewrites this language from the SAME brief / segment / tier.
+                    "brief": parent.get("brief") or "",
+                    "segment": parent.get("segment") or "",
+                    "tier": parent.get("tier") or "Retail",
+                    "image_brief": parent.get("image_brief") or "",
+                    # Draft on arrival: a machine localisation of regulated mail
+                    # is proofed by a native speaker before it can ship.
                     "active": False,
                     "created_by": user.get("email", ""),
                     "created_at": now, "updated_at": now,
@@ -602,6 +705,22 @@ def build_email_builder_router() -> APIRouter:
                 made.append(child)
                 existing.add(lang)
 
+        # Regenerate each new variant natively, OUTSIDE the lock (the job threads
+        # take their own). Best effort: the variant already exists as an English
+        # draft even if its copy job cannot start (e.g. no OpenAI key) — the copy
+        # simply stays English until regenerated, honest rather than lost.
+        started = []
+        for child in made:
+            try:
+                j = _enqueue_copy_job(child["id"])
+                if j:
+                    started.append({"campaign_id": child["id"],
+                                    "language": child["language"],
+                                    "job_id": j.get("id")})
+            except Exception:
+                log.exception("email-builder: copy job failed to start for variant %s",
+                              child["id"])
+
         if made:
             from .. import events
             events.emit("email.variants.created", {
@@ -610,7 +729,8 @@ def build_email_builder_router() -> APIRouter:
                 "ids": [c["id"] for c in made],
             })
         return {"created": [_public_campaign(c) for c in made],
-                "skipped": [l for l in wanted if l not in {c["language"] for c in made}]}
+                "skipped": [l for l in wanted if l not in {c["language"] for c in made}],
+                "jobs": started}
 
     @router.get("/campaigns/{cid}/thumb")
     def campaign_thumb(cid: str, _user: dict = Depends(require_user)):
@@ -717,6 +837,9 @@ def build_email_builder_router() -> APIRouter:
         callout, support and sign-off — plus subject A/B variants and the
         pre-header. Like the hero job it runs on a worker thread and writes the
         result server-side, so a refresh or a closed page never loses it.
+
+        The brief / segment / tier are remembered ON the campaign, so a later
+        localise can regenerate each language natively from the same inputs.
         """
         from . import copy_ai, jobs
         from ..secrets import get_secret
@@ -728,51 +851,23 @@ def build_email_builder_router() -> APIRouter:
             c = core.campaigns().get(cid)
             if not c:
                 raise HTTPException(404, "Campaign not found.")
-            sections = [dict(s) for s in (c.get("sections") or [])]
-        entity = _entity_for(c)
-        spec = copy_ai.build_spec(sections)
-        if not spec:
+            # Remember the generation inputs on the campaign — the localise fan
+            # out regenerates every language from these exact values.
+            c["brief"] = (payload.brief or "").strip()[:1200]
+            c["segment"] = (payload.segment or "").strip()
+            c["tier"] = payload.tier if payload.tier in copy_ai.TIERS else "Retail"
+            c["updated_at"] = core._now()
+            core.persist_campaign(c)
+            has_blocks = bool(copy_ai.build_spec([dict(s) for s in (c.get("sections") or [])]))
+        if not has_blocks:
             raise HTTPException(422, "This layout has no copy blocks to write.")
 
-        # One copy generation per campaign at a time (iid="" — it is the whole
-        # email, not a single block); a second click adopts the running job.
-        running = jobs.active_for(cid, "", "copy")
-        if running:
-            return jobs.public(running)
-
-        segment = copy_ai.segment_for(entity, payload.segment)
-        kwargs = dict(entity=entity, brief=(payload.brief or "").strip()[:1200],
-                      segment=segment, tier=payload.tier, language=c.get("language") or "en",
-                      spec=spec)
-
-        def work() -> dict:
-            return copy_ai.generate_copy(**kwargs)
-
-        def apply(result: dict) -> None:
-            # Server-side write-back: subject + pre-header on the campaign, and
-            # each generated value onto its block instance by iid+key.
-            by_iid_key = {(it["iid"], it["key"]): it["value"] for it in result.get("items", [])}
-            with core.lock():
-                camp = core.campaigns().get(cid)
-                if not camp:
-                    return
-                subs = result.get("subjects") or []
-                if subs:
-                    camp["subject"] = subs[0]
-                if result.get("preheader"):
-                    camp["preheader"] = result["preheader"]
-                if result.get("image_brief"):
-                    camp["image_brief"] = result["image_brief"]
-                for sct in camp.get("sections") or []:
-                    iid = sct.get("iid")
-                    texts = sct.setdefault("texts", {})
-                    for (k_iid, k_key), val in by_iid_key.items():
-                        if k_iid == iid:
-                            texts[k_key] = val
-                camp["updated_at"] = core._now()
-                core.persist_campaign(camp)
-
-        return jobs.public(jobs.start("copy", cid, "", work, apply))
+        # Shared with the localise fan-out: writes in the campaign's own
+        # language, seeded from the inputs just stored above.
+        job = _enqueue_copy_job(cid)
+        if not job:
+            raise HTTPException(422, "This layout has no copy blocks to write.")
+        return jobs.public(job)
 
     @router.get("/copy/jobs/{job_id}")
     def copy_job(job_id: str, _user: dict = Depends(require_user)):
