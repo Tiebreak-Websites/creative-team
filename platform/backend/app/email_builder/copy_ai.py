@@ -257,7 +257,7 @@ _SEGMENT_RULE = {
 
 
 def _build_user_text(*, brand_name: str, segment: str, tier: str, language: str,
-                     brief: str, spec: List[dict]) -> str:
+                     brief: str, spec: List[dict], greeting: bool = True) -> str:
     lines = [
         "TASK: write the copy for ONE marketing email, filling the exact blocks "
         "below. Apply everything in the system guidelines — house voice, "
@@ -286,13 +286,25 @@ def _build_user_text(*, brand_name: str, segment: str, tier: str, language: str,
         for f in blk["fields"]:
             n += 1
             cur = f["current"].replace("\n", " ")[:80]
+            guide = f["guide"]
+            if not greeting:
+                # Neutralise the body block's built-in greeting instruction so it
+                # does not fight the "no greeting" rule appended below.
+                guide = guide.replace(
+                    "opens with the greeting 'Hi {{firstName}},' then the hook",
+                    "opens directly with the hook (NO greeting line)")
             lines.append(
                 f'{n}. iid="{blk["iid"]}" key="{f["key"]}" ({blk["block_key"]})'
-                f' — {f["guide"]}'
+                f' — {guide}'
                 + (f'  [replacing placeholder: "{cur}"]' if cur else ""))
     lines.append("")
     lines.append("Write real copy for every field. No lorem ipsum, no editorial "
                  "notes in parentheses, no invented legal text.")
+    if not greeting:
+        lines.append(
+            "GREETING: do NOT include one. The first body block starts DIRECTLY "
+            "with the hook — no 'Hi {{firstName}},', no 'Dear …', no salutation "
+            "of any kind. (This overrides the per-field greeting note above.)")
     return "\n".join(lines)
 
 
@@ -347,7 +359,8 @@ def _clean_subjects(raw) -> List[str]:
 
 
 def generate_copy(*, entity: Optional[dict], brief: str, segment: str,
-                  tier: str, language: str, spec: List[dict]) -> dict:
+                  tier: str, language: str, spec: List[dict],
+                  greeting: bool = True) -> dict:
     """Fill the email's blocks with house copy.
 
     Raises LookupError when no API key is configured, ValueError when there is
@@ -367,7 +380,8 @@ def generate_copy(*, entity: Optional[dict], brief: str, segment: str,
 
     from .. import lp_materials
     user = _build_user_text(brand_name=brand_name, segment=seg, tier=tr,
-                            language=language or "EN", brief=brief, spec=spec)
+                            language=language or "EN", brief=brief, spec=spec,
+                            greeting=greeting)
     out = lp_materials._llm_json(
         api_key, system=_system_prompt(), user_text=user,
         schema_name="email_copy", schema=_copy_schema(spec),

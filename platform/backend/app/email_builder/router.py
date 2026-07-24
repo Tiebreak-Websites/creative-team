@@ -77,6 +77,7 @@ def _public_campaign(c: dict) -> dict:
         "brief": c.get("brief") or "",
         "segment": c.get("segment") or "",
         "tier": c.get("tier") or "Retail",
+        "greeting": bool(c.get("greeting", True)),
     }
 
 
@@ -123,6 +124,7 @@ def _enqueue_copy_job(cid: str) -> Optional[dict]:
         brief = (c.get("brief") or "").strip()[:1200]
         segment_raw = c.get("segment") or ""
         tier = c.get("tier") if c.get("tier") in copy_ai.TIERS else "Retail"
+        greeting = bool(c.get("greeting", True))
         code = c.get("language") or "en"
     entity = _entity_for(c)
     spec = copy_ai.build_spec(sections)
@@ -136,7 +138,7 @@ def _enqueue_copy_job(cid: str) -> Optional[dict]:
     segment = copy_ai.segment_for(entity, segment_raw)
     language = _resolve_lang_name(code)
     kwargs = dict(entity=entity, brief=brief, segment=segment, tier=tier,
-                  language=language, spec=spec)
+                  language=language, spec=spec, greeting=greeting)
 
     def work() -> dict:
         return copy_ai.generate_copy(**kwargs)
@@ -339,6 +341,9 @@ class CopyGen(BaseModel):
     # up front, so a % bonus can never reach a REG/EU audience.
     segment: str = ""
     tier: str = "Retail"
+    # Open the email with "Hi {{firstName}}," or start straight on the hook.
+    # Default on = the house style; the author can switch it off per campaign.
+    greeting: bool = True
 
 
 class CampaignPatch(BaseModel):
@@ -686,6 +691,7 @@ def build_email_builder_router() -> APIRouter:
                     "brief": parent.get("brief") or "",
                     "segment": parent.get("segment") or "",
                     "tier": parent.get("tier") or "Retail",
+                    "greeting": parent.get("greeting", True),
                     "image_brief": parent.get("image_brief") or "",
                     # Draft on arrival: a machine localisation of regulated mail
                     # is proofed by a native speaker before it can ship.
@@ -849,6 +855,7 @@ def build_email_builder_router() -> APIRouter:
             c["brief"] = (payload.brief or "").strip()[:1200]
             c["segment"] = (payload.segment or "").strip()
             c["tier"] = payload.tier if payload.tier in copy_ai.TIERS else "Retail"
+            c["greeting"] = bool(payload.greeting)
             c["updated_at"] = core._now()
             core.persist_campaign(c)
             has_blocks = bool(copy_ai.build_spec([dict(s) for s in (c.get("sections") or [])]))

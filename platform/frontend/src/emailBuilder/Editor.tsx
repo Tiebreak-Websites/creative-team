@@ -431,6 +431,7 @@ export function Editor({
             campaignId={campaign.id}
             brand={brands.find((b) => b.id === campaign.brand_id)}
             brief={copyBrief}
+            initialGreeting={campaign.greeting ?? true}
             onBrief={setCopyBrief}
             onDone={applyCopy}
             onError={onError}
@@ -872,17 +873,19 @@ function defaultSegment(brand?: Brand): Segment {
 }
 
 function CopyGenerator({
-  campaignId, brand, brief, onBrief, onDone, onError,
+  campaignId, brand, brief, initialGreeting = true, onBrief, onDone, onError,
 }: {
   campaignId: string
   brand?: Brand
   brief: string
+  initialGreeting?: boolean
   onBrief: (v: string) => void
   onDone: (r: CopyResult) => void
   onError: (m: string) => void
 }) {
   const [segment, setSegment] = useState<Segment>(() => defaultSegment(brand))
   const [tier, setTier] = useState<'Retail' | 'Pro'>('Retail')
+  const [greeting, setGreeting] = useState(initialGreeting)
   const [open, setOpen] = useState(false)
   const [jobId, setJobId] = useState<string | null>(null)
   const busy = jobId !== null
@@ -925,7 +928,7 @@ function CopyGenerator({
   }, [jobId])
 
   const run = () => {
-    generateCopy({ campaign_id: campaignId, brief: brief.trim(), segment, tier })
+    generateCopy({ campaign_id: campaignId, brief: brief.trim(), segment, tier, greeting })
       .then((jb) => setJobId(jb.id))
       .catch((e) => onError(e.message))
   }
@@ -997,6 +1000,32 @@ function CopyGenerator({
                   {t}
                 </button>
               ))}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+              Greeting
+            </span>
+            <span className="flex items-center rounded-md border border-border bg-card p-0.5">
+              {([['Include', true], ['Skip', false]] as const).map(([lbl, on]) => (
+                <button
+                  key={lbl}
+                  type="button"
+                  onClick={() => setGreeting(on)}
+                  aria-pressed={greeting === on}
+                  className={cn('rounded px-2 py-0.5 text-[10px] transition-colors',
+                    greeting === on ? 'bg-secondary font-medium text-foreground'
+                                    : 'text-muted-foreground hover:text-foreground')}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              {greeting
+                ? <>opens with <span className="font-mono">{'Hi {{firstName}},'}</span></>
+                : 'starts straight on the hook'}
             </span>
           </div>
 

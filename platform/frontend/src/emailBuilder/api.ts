@@ -115,6 +115,8 @@ export interface Campaign {
   brief?: string
   segment?: string
   tier?: string
+  /** Whether AI copy opens with "Hi {{firstName}}," — default true. */
+  greeting?: boolean
   /** Draft until someone approves it. The UI calls this Approved/Draft; the
    *  field keeps its original name so stored campaigns need no migration.
    *  Campaigns are never deleted, only un-approved — a sent campaign is a
@@ -402,6 +404,8 @@ export async function generateCopy(payload: {
   /** '' lets the brand's regulation decide; explicit REG/NONREG/NONE overrides. */
   segment?: 'REG' | 'NONREG' | 'NONE' | ''
   tier?: 'Retail' | 'Pro'
+  /** Open with "Hi {{firstName}}," (default) or start straight on the hook. */
+  greeting?: boolean
 }): Promise<CopyJob> {
   const r = await fetch(`${EB}/copy/generate`, {
     method: 'POST', headers: j, credentials: 'include', body: JSON.stringify(payload),
