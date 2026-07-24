@@ -469,10 +469,16 @@ function CampaignCard({
       </button>
 
       <div className="px-3 pb-2">
-        {/* Monday's id is the one people quote to each other; ours is only a
-            fallback until someone pastes it in. */}
-        <CopyId value={c.monday_id || c.id.replace(/^em_/, '')}
-                label={c.monday_id ? 'Monday ID' : 'Campaign ID'} />
+        {/* Only ever the REAL Monday task id — never a fabricated one. A campaign
+            with no linked task says so rather than borrowing its own internal id
+            and passing it off as a Monday ID. */}
+        {c.monday_id ? (
+          <CopyId value={c.monday_id} label="Monday ID" />
+        ) : (
+          <span className="inline-flex items-center rounded-md bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            No Monday task
+          </span>
+        )}
       </div>
 
       {/* Approved/Draft instead of delete. A campaign that has been sent is a
