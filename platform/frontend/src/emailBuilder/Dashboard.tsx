@@ -265,6 +265,7 @@ export function Dashboard({
               <CampaignCard
                 key={c.id} c={c} languages={languages} index={i}
                 onOpen={() => (c.variants > 0 ? setParentId(c.id) : onOpen(c.id))}
+                onLocalize={() => { setParentId(c.id); setAddingTo(c) }}
                 onChanged={onChanged} onError={onError}
               />
             ))}
@@ -421,7 +422,7 @@ function EmailThumb({ c }: { c: CampaignSummary }) {
 }
 
 function CampaignCard({
-  c, languages, index, badge, onOpen, onChanged, onError,
+  c, languages, index, badge, onOpen, onLocalize, onChanged, onError,
 }: {
   c: CampaignSummary
   languages: Language[]
@@ -429,6 +430,9 @@ function CampaignCard({
   /** Marks the parent inside the variants view. */
   badge?: string
   onOpen: () => void
+  /** Top-level master cards only — opens the localize picker for an approved
+   *  English master. Absent on variants and inside the variants view. */
+  onLocalize?: () => void
   onChanged: () => void
   onError: (m: string) => void
 }) {
@@ -513,6 +517,19 @@ function CampaignCard({
             }}
           >
             <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        ) : onLocalize ? (
+          /* Approved master — the next thing you do is localize it. The button
+             lives here so a master with no variants yet still has a path to the
+             language picker (the card body opens the editor). */
+          <button
+            type="button"
+            title="Localize this approved master into more languages"
+            aria-label={`Localize ${c.name}`}
+            className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+            onClick={onLocalize}
+          >
+            <Languages className="h-3.5 w-3.5" /> Localize
           </button>
         ) : null}
       </div>
