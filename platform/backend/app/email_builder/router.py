@@ -657,17 +657,6 @@ def build_email_builder_router() -> APIRouter:
                         if c.get("parent_id") == cid}
             existing.add(parent.get("language"))
 
-            # Monday tracks each language as its own subitem with its own id.
-            # If the parent was pulled from Monday, hand every variant the
-            # subitem whose language matches — nobody should re-type ids that
-            # were already fetched.
-            langs = lp_core.languages() or lp_core.DEFAULT_LANGS
-            subs_by_code: dict = {}
-            for s in (parent.get("monday") or {}).get("subitems") or []:
-                code = monday.match_language(s.get("language") or "", langs)
-                if code and code not in subs_by_code:
-                    subs_by_code[code] = str(s.get("id") or "")
-
             now = core._now()
             made = []
             for lang in wanted:
@@ -687,7 +676,11 @@ def build_email_builder_router() -> APIRouter:
                     "sections": json.loads(json.dumps(parent.get("sections") or [])),
                     "tokens": dict(parent.get("tokens") or {}),
                     "parent_id": cid,
-                    "monday_id": subs_by_code.get(lang, ""),
+                    # Same Monday task for every language. The Marketing calendar
+                    # tracks a campaign as ONE item whose Language column lists all
+                    # its languages (no per-language subitems), so each variant
+                    # reports to the master's task id, not one of its own.
+                    "monday_id": parent.get("monday_id") or "",
                     # Inherit the master's generation inputs so _enqueue_copy_job
                     # rewrites this language from the SAME brief / segment / tier.
                     "brief": parent.get("brief") or "",
