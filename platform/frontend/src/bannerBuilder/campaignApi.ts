@@ -25,6 +25,8 @@ export interface CampaignRunRequest {
   locale: string
   sizes: string[]
   style?: string
+  /** Image-only run: every size is a pure visual with no text, driven by `style`. */
+  image_only?: boolean
   concepts: ConceptCardPayload[]
   references?: string[] // style-reference image ids from uploadReferences()
   brand_id?: string // selected brand (folds colors into art direction)

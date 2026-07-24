@@ -563,6 +563,62 @@ PLATE_PROMPT = (
 )
 
 
+def build_image_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
+    """TEXT-FREE generation prompt for an image-only banner (no headline,
+    subheadline or CTA — a pure visual at the format's aspect). Driven by the
+    concept's creative_brief (the run's Art Direction). Renders ZERO typography."""
+    brief = (concept.get("creative_brief") or "").strip()
+    subject = (concept.get("title") or "").strip()  # optional subject hint, NOT rendered
+    try:
+        w, h = (int(x) for x in size.lower().split("x"))
+        aspect = f"{w}:{h}"
+    except Exception:  # noqa: BLE001
+        aspect = size
+    sections = [
+        "Create ONE premium advertising banner VISUAL — a finished, scroll-stopping "
+        f"image at aspect {aspect} ({size}). This is an IMAGE-ONLY creative: a pure "
+        "picture with NO text of any kind.",
+        hard_negatives_for(intent),
+        "Composition: one integrated, full-bleed scene — a real subject and its "
+        "background sharing a single lighting, palette and depth (not pasted blocks). "
+        "Cinematic, high production value, edge-to-edge. Do NOT leave an empty 'copy "
+        "area' or blank band for text — the image itself fills the frame.",
+    ]
+    if subject:
+        sections.append(f"Subject / what to depict: {subject}.")
+    if brief:
+        sections.append("Creative direction: " + brief)
+    sections.append(
+        "ABSOLUTELY NO TEXT: render ZERO headlines, words, letters, numbers, "
+        "captions, labels, price tags, badges, CTA buttons, logos-as-text, "
+        "watermarks, or UI chrome. The result must contain zero typography of any "
+        "kind — wherever text might normally sit, continue the scene instead."
+    )
+    return "\n\n".join(sections)
+
+
+def build_image_recomp_prompt(concept: dict, master_size: str, target_size: str,
+                              intent: str = "general_ad") -> str:
+    """Recompose a TEXT-FREE image into a new aspect — same scene/subject/palette,
+    restaged for the new format, still ZERO text. (concept/intent kept for a
+    signature parallel to build_recomp_prompt; the scene rides in on the image.)"""
+    try:
+        w, h = (int(x) for x in target_size.lower().split("x"))
+        aspect = f"{w}:{h}"
+    except Exception:  # noqa: BLE001
+        aspect = target_size
+    return (
+        "The attached image is a finished, TEXT-FREE advertising visual. Recreate the "
+        f"SAME scene as a faithful reproduction restaged for aspect {aspect} "
+        f"({target_size}): the same subject (same look, palette, lighting and mood), "
+        "recomposed edge-to-edge to fill this new shape — extend or re-frame the "
+        "background naturally so nothing important is cropped and no empty copy band "
+        "appears. Keep it a single integrated scene. Render ZERO text, letters, "
+        "numbers, logos-as-text, badges, buttons or watermarks — the result must "
+        "contain no typography of any kind."
+    )
+
+
 def build_prompt(concept: dict, size: str, intent: str = "general_ad") -> str:
     """Compose the OpenAI generation prompt for one (concept, size).
 
@@ -827,6 +883,8 @@ def validate_manifest(manifest: dict, urls: list, *, require_submit_url: bool = 
         if not isinstance(c, dict):
             errors.append(f"concept '{key}' is not an object")
             continue
+        if c.get("image_only"):
+            continue  # a pure-visual concept renders no text — no title/hook/CTA to validate
         for f in ("title", "hook_phrase", "creative_brief"):
             if not c.get(f):
                 errors.append(f"concept '{key}' missing required field '{f}'")

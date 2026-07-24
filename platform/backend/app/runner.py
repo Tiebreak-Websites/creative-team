@@ -392,8 +392,12 @@ def _pick_button_combo(style: str):
     return [bg, text]
 
 
-def card_to_concept(c, locale: str, style: str) -> dict:
-    """Map one concept card (+ campaign locale/style) to an engine concept dict."""
+def card_to_concept(c, locale: str, style: str, image_only: bool = False) -> dict:
+    """Map one concept card (+ campaign locale/style) to an engine concept dict.
+
+    image_only: the whole run is a pure visual — mark the concept so the worker
+    builds a TEXT-FREE prompt (no headline/subheadline/CTA); the title, if any,
+    is kept only as an optional subject hint (never rendered)."""
     title = (c.title or "").strip()
     d = {
         "title": title,
@@ -402,6 +406,9 @@ def card_to_concept(c, locale: str, style: str) -> dict:
         "hook_phrase": _derive_hook(title),
         "creative_brief": _synthesize_brief(c.subtitle or "", style or ""),
     }
+    if image_only:
+        d["image_only"] = True
+        return d  # no CTA on an image-only creative
     button = (c.button or "").strip()
     if button:
         d["cta"] = button
@@ -457,11 +464,15 @@ def validate_request(req: RunRequest):
     # auto-injected master) so one run can't fan out into an unbounded image bill.
     if len(req.sizes) > 12:
         return ["cap is 12 sizes per run; please split into multiple runs"], {}, []
-    for c in req.concepts:
-        if not (c.title or "").strip():
-            return ["every concept card needs a title"], {}, []
+    # An image-only run renders no text, so a headline isn't required. A text run
+    # still needs a title on every card.
+    if not req.image_only:
+        for c in req.concepts:
+            if not (c.title or "").strip():
+                return ["every concept card needs a title"], {}, []
 
-    concepts = {c.key: card_to_concept(c, req.locale, req.style or "") for c in req.concepts}
+    concepts = {c.key: card_to_concept(c, req.locale, req.style or "", image_only=req.image_only)
+                for c in req.concepts}
     sizes = normalize_sizes(req.sizes)
     # Custom sizes: any sane WxH is generatable — register unknown ones with the
     # engine (nearest aspect + layout family) or reject with a readable reason.
@@ -829,11 +840,16 @@ def _gen_one_frame(run: Run, frame: dict, shared: Optional[dict] = None,
             fr.status, fr.error = "gen_failed", f"{type(e).__name__}: {e}"
             run.touch()
             return
-        plate = _ensure_plate(run, frame["concept"])
-        if plate:
-            master_png, style_ref = plate, master_path
-        else:
+        if concept.get("image_only"):
+            # An image-only master is already text-free — recompose straight off it,
+            # no plate to derive (there is no type layer to ghost away).
             master_png = master_path
+        else:
+            plate = _ensure_plate(run, frame["concept"])
+            if plate:
+                master_png, style_ref = plate, master_path
+            else:
+                master_png = master_path
 
     # A user-edited prompt (from "Save & Regenerate") is used VERBATIM — it fully
     # replaces the composed prompt, so the editor has complete control (and can
@@ -844,7 +860,14 @@ def _gen_one_frame(run: Run, frame: dict, shared: Optional[dict] = None,
         prompt = override
     else:
         try:
-            if mode == "edit":
+            if concept.get("image_only"):
+                # A pure visual — no headline/CTA anywhere; text-free master + recompose.
+                prompt = (
+                    bprompts.build_image_recomp_prompt(
+                        concept, _master_size(run), frame["size"], intent=run.intent)
+                    if mode == "edit"
+                    else bprompts.build_image_prompt(concept, frame["size"], intent=run.intent))
+            elif mode == "edit":
                 prompt = engine.build_recomp_prompt(
                     concept, _master_size(run), frame["size"], art_direction=brief,
                     intent=run.intent, from_plate=bool(style_ref))

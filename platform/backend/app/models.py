@@ -39,6 +39,9 @@ class RunRequest(BaseModel):
     locale: str = Field(default="en", max_length=16)
     sizes: List[str] = Field(default_factory=lambda: ["1200x1200"])
     style: Optional[str] = Field(default=None, max_length=4000)  # optional look / brand vibe
+    # Image-only run: every size is a pure visual with ZERO text (no headline,
+    # subheadline or CTA). The whole run is driven by `style` (the Art Direction).
+    image_only: bool = False
     # Style-only reference images (ids from POST /references). The creative
     # director uses them for palette/composition/mood/lighting ONLY — never copy.
     references: List[str] = Field(default_factory=list)

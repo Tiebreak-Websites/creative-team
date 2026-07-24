@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
+  Image as ImageIcon,
   ImagePlus,
   Layers,
   Link2,
@@ -294,6 +295,9 @@ export function BannerBuilder({ meta, view, onViewChange }: {
   // user makes an explicit choice (then we stop overriding).
   const [localeAuto, setLocaleAuto] = useState(true)
   const [style, setStyle] = useState('')
+  // Image-only run: every size is a pure visual with NO text. Headlines don't
+  // apply, so the Versions list is hidden and the Art Direction drives the image.
+  const [imageOnly, setImageOnly] = useState(false)
   const [art, setArt] = useState<ArtDirection>({
     ...DEFAULT_ART,
     scene: brand.scene,
@@ -905,7 +909,14 @@ export function BannerBuilder({ meta, view, onViewChange }: {
     setDragIndex(null)
   }
 
-  const canRun = sizes.size > 0 && cards.length > 0 && cards.every((c) => c.title.trim().length > 0)
+  // Some creative direction to work from — a typed brief, a brand, or Art-Director tags.
+  const hasDirection =
+    style.trim().length > 0 || !!brandId || artDirectionTags(art).length > 0
+  const canRun =
+    sizes.size > 0 &&
+    (imageOnly
+      ? hasDirection // no headline needed — the image comes from the direction
+      : cards.length > 0 && cards.every((c) => c.title.trim().length > 0))
   const selectedBrand = brands.find((b) => b.id === brandId)
 
   // Stop every still-running batch. We ask the backend to cancel AND optimistically
@@ -1040,12 +1051,16 @@ export function BannerBuilder({ meta, view, onViewChange }: {
       locale: locale.trim() || 'en',
       sizes: Array.from(sizes),
       style: finalStyle || undefined,
-      concepts: cards.map((c, i) => {
-        const p: CampaignRunRequest['concepts'][number] = { key: `c${i + 1}`, title: c.title.trim() }
-        if (c.subtitle.trim()) p.subtitle = c.subtitle.trim()
-        if (c.button.trim()) p.button = c.button.trim()
-        return p
-      }),
+      image_only: imageOnly || undefined,
+      // Image-only: no headlines — one placeholder concept the server drives off `style`.
+      concepts: imageOnly
+        ? [{ key: 'c1', title: '' }]
+        : cards.map((c, i) => {
+            const p: CampaignRunRequest['concepts'][number] = { key: `c${i + 1}`, title: c.title.trim() }
+            if (c.subtitle.trim()) p.subtitle = c.subtitle.trim()
+            if (c.button.trim()) p.button = c.button.trim()
+            return p
+          }),
       references: refs.length ? refs.map((r) => r.id) : undefined,
       brand_id: brandId || undefined,
       logo_corner: brandId && selectedBrand?.logo_svg && logoCorner ? logoCorner : undefined,
@@ -1415,19 +1430,50 @@ export function BannerBuilder({ meta, view, onViewChange }: {
               catalogue names banner versions. */}
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="font-display text-sm font-bold tracking-tight text-foreground">Versions</h2>
-              <button
-                type="button"
-                onClick={() => setCopyDetectOpen(true)}
-                title="Paste a block of text and split it into versions"
-                aria-label="Paste copy and split it into versions"
-                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
-              >
-                <ScanText className="h-3.5 w-3.5" /> Paste copy
-              </button>
+              <h2 className="font-display text-sm font-bold tracking-tight text-foreground">
+                {imageOnly ? 'Image' : 'Versions'}
+              </h2>
+              <div className="flex items-center gap-1.5">
+                {!imageOnly && (
+                  <button
+                    type="button"
+                    onClick={() => setCopyDetectOpen(true)}
+                    title="Paste a block of text and split it into versions"
+                    aria-label="Paste copy and split it into versions"
+                    className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-primary/40 bg-primary/5 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
+                  >
+                    <ScanText className="h-3.5 w-3.5" /> Paste copy
+                  </button>
+                )}
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={imageOnly}
+                  onClick={() => setImageOnly((v) => !v)}
+                  title="Generate a pure image with no text at all — headline, subtitle and button are skipped"
+                  className={cn(
+                    'inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 text-[11px] font-semibold transition-colors',
+                    imageOnly
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <ImageIcon className="h-3.5 w-3.5" /> Image only
+                </button>
+              </div>
             </div>
 
-            {cards.map((c, i) => (
+            {imageOnly && (
+              <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3.5 text-xs leading-relaxed">
+                <p className="font-semibold text-foreground">No text will be rendered.</p>
+                <p className="mt-1 text-muted-foreground">
+                  Every selected size comes out as a pure image. Describe the picture you want in{' '}
+                  <span className="font-medium text-foreground">Art direction</span> below (and pick a
+                  brand for palette) — headline, subtitle and button are skipped.
+                </p>
+              </div>
+            )}
+            {!imageOnly && cards.map((c, i) => (
               <div
                 key={c.key}
                 draggable
@@ -1490,7 +1536,7 @@ export function BannerBuilder({ meta, view, onViewChange }: {
               </div>
             ))}
 
-            {cards.length < 5 && (
+            {!imageOnly && cards.length < 5 && (
               <Button variant="outline" className="w-full border-dashed" onClick={addCard}>
                 <Plus className="h-4 w-4" />
                 Add version
@@ -1849,8 +1895,18 @@ export function BannerBuilder({ meta, view, onViewChange }: {
             )}
           </Button>
           <p className="text-center text-[11px] tabular-nums text-muted-foreground">
-            {sizes.size} size{sizes.size === 1 ? '' : 's'} · {cards.length} version{cards.length === 1 ? '' : 's'}
-            {!canRun && ' — every version needs a title'}
+            {imageOnly ? (
+              <>
+                {sizes.size} size{sizes.size === 1 ? '' : 's'} · image only
+                {!canRun && (sizes.size === 0 ? ' — pick a size' : ' — describe it in Art direction')}
+              </>
+            ) : (
+              <>
+                {sizes.size} size{sizes.size === 1 ? '' : 's'} · {cards.length} version
+                {cards.length === 1 ? '' : 's'}
+                {!canRun && ' — every version needs a title'}
+              </>
+            )}
           </p>
         </div>
       </aside>
