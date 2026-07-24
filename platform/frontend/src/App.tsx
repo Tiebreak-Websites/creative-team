@@ -1,7 +1,6 @@
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react'
 import {
   HardDrive,
-  HelpCircle,
   Image as ImageIcon,
   Images,
   LayoutTemplate,
@@ -22,7 +21,6 @@ import { fetchMeta, fetchTools } from './api'
 import type { Meta, Tool } from './types'
 import { BannerBuilder } from './bannerBuilder/BannerBuilder'
 import { BannerEdit } from './bannerBuilder/BannerEdit'
-import { HelpModal, type HelpTool } from './bannerBuilder/HelpModal'
 import { LPBuilder } from './lpBuilder/LPBuilder'
 import { LPMaterials } from './lpMaterials/LPMaterials'
 import { EmailBuilder } from './emailBuilder/EmailBuilder'
@@ -318,7 +316,6 @@ function Workspace() {
     useState<'brands' | 'users' | 'languages' | 'markets' | 'domains' | 'sizes'>('brands')
   const [tool, setTool] = useState<Tool | null>(null)
   const [meta, setMeta] = useState<Meta | null>(null)
-  const [helpOpen, setHelpOpen] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   // The banner "Generate" tool's view (Build canvas vs Library shelf) — lifted
   // here so its switch can sit in the top category bar next to Generate/Edit.
@@ -430,17 +427,6 @@ function Workspace() {
           <span className="hidden sm:inline-flex">
             <InstallButton />
           </span>
-          {inTool && !product.soon && (
-            <Button
-              variant="ghost"
-              size="icon"
-              title="How it works"
-              aria-label="How it works"
-              onClick={() => setHelpOpen(true)}
-            >
-              <HelpCircle className="h-4 w-4" />
-            </Button>
-          )}
           <ThemeToggle />
           <UserMenu />
         </div>
@@ -620,23 +606,6 @@ function Workspace() {
         )}
       </main>
       <FeedbackWidget />
-      {/* Products with no tools yet have no HelpModal entry — keep it unmounted
-          so switching to one while help is open can't index TITLES by their id. */}
-      {!product.soon && (
-      <HelpModal
-        open={helpOpen}
-        onClose={() => setHelpOpen(false)}
-        tool={
-          (ws.app === 'banner'
-            ? ws.tool === 'edit'
-              ? 'edit'
-              : 'generate'
-            : ws.tool === 'materials'
-              ? 'materials'
-              : 'lp-builder') as HelpTool
-        }
-      />
-      )}
     </div>
   )
 }
