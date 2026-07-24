@@ -180,11 +180,10 @@ export function Dashboard({
           ))}
         </div>
 
-        {children.length === 0 && (
+        {children.length === 0 && !parent.active && (
           <p className="mt-4 max-w-md text-xs leading-relaxed text-muted-foreground">
-            {parent.active
-              ? 'Localize the approved English master to fan it out. Each language is regenerated natively from the master’s brief and lands as a Draft to proof — later edits to the master never overwrite copy already signed off.'
-              : 'This is the English master. Approve it first, then localize — each language is regenerated natively from the master’s brief and lands as a Draft to proof.'}
+            This is the English master. Approve it first, then localize — each language is
+            regenerated natively from the master’s brief and lands as a Draft to proof.
           </p>
         )}
 
