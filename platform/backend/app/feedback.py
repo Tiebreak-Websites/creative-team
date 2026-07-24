@@ -68,6 +68,8 @@ def build_feedback_router() -> APIRouter:
         if not is_admin:
             email = ((user or {}).get("email") or "").lower()
             msgs = [m for m in msgs if m.get("email") == email]
+        # Normalize old records that predate replies so the UI can rely on the shape.
+        msgs = [{**m, "replies": m.get("replies") or []} for m in msgs]
         return {"messages": msgs, "admin": is_admin}
 
     @router.post("", status_code=201)
@@ -82,6 +84,7 @@ def build_feedback_router() -> APIRouter:
             "created_at": _now(),
             "status": "open",
             "done_at": None,
+            "replies": [],
         }
         with _LOCK:
             msgs = _load()
@@ -103,6 +106,28 @@ def build_feedback_router() -> APIRouter:
                 raise HTTPException(status_code=404, detail="message not found")
             m["status"] = status
             m["done_at"] = _now() if status == "done" else None
+            _persist()
+        return m
+
+    @router.post("/{mid}/reply", status_code=201)
+    def reply(mid: str, payload: dict = Body(default={}), user: dict = Depends(require_user)):
+        """Answer a suggestion. Admins can answer any thread; the original author
+        can reply within their own — so it reads as a two-way chat. The author
+        always sees admin answers in their thread."""
+        is_admin = (user or {}).get("role") == "admin"
+        email = ((user or {}).get("email") or "").lower()
+        text = str(payload.get("text") or "").strip()[:_MAX_TEXT]
+        if not text:
+            raise HTTPException(status_code=422, detail="write a reply first")
+        with _LOCK:
+            msgs = _load()
+            m = next((x for x in msgs if x.get("id") == mid), None)
+            if m is None:
+                raise HTTPException(status_code=404, detail="message not found")
+            if not is_admin and m.get("email") != email:
+                raise HTTPException(status_code=403, detail="you can only reply in your own thread")
+            m.setdefault("replies", []).append(
+                {"by": email, "text": text, "at": _now(), "admin": is_admin})
             _persist()
         return m
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, Loader2, MessageSquarePlus, Send, X } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Check, CornerDownRight, Loader2, MessageSquarePlus, Send, X } from 'lucide-react'
+import { cn, formatUserName } from '@/lib/utils'
 
 /**
  * Floating suggestions / bug-report widget, available on every tool.
@@ -9,6 +9,12 @@ import { cn } from '@/lib/utils'
  * on a message once it ships. Admins see everyone's threads grouped by author
  * and flip the checkmark that produces that tick.
  */
+interface FeedbackReply {
+  by: string
+  text: string
+  at: string
+  admin: boolean
+}
 interface FeedbackMsg {
   id: string
   email: string
@@ -16,6 +22,7 @@ interface FeedbackMsg {
   created_at: string
   status: 'open' | 'done'
   done_at: string | null
+  replies?: FeedbackReply[]
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -47,6 +54,9 @@ export function FeedbackWidget() {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  // Which message an answer is being typed under, and its draft text.
+  const [replyTo, setReplyTo] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => {
@@ -101,6 +111,22 @@ export function FeedbackWidget() {
     }
   }
 
+  async function sendReply(m: FeedbackMsg) {
+    const t = replyText.trim()
+    if (!t) return
+    try {
+      const upd = await api<FeedbackMsg>(`/api/feedback/${m.id}/reply`, {
+        method: 'POST',
+        body: JSON.stringify({ text: t }),
+      })
+      setMessages((ms) => ms.map((x) => (x.id === upd.id ? upd : x)))
+      setReplyTo(null)
+      setReplyText('')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   // Admin: group by author so each user's thread reads together.
   const groups = admin
     ? [...new Set(messages.map((m) => m.email))].map((email) => ({
@@ -109,35 +135,91 @@ export function FeedbackWidget() {
       }))
     : null
 
-  const bubble = (m: FeedbackMsg) => (
-    <div key={m.id} className="rounded-xl border border-border bg-secondary/40 px-2.5 py-2">
-      <p className="whitespace-pre-wrap break-words text-xs leading-snug">{m.text}</p>
-      <div className="mt-1 flex items-center gap-1.5">
-        <span className="text-[10px] text-muted-foreground">{when(m.created_at)}</span>
-        {m.status === 'done' && (
-          <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-            <Check className="h-3 w-3" /> Implemented
-          </span>
+  const bubble = (m: FeedbackMsg) => {
+    const replies = m.replies ?? []
+    return (
+      <div key={m.id} className="rounded-xl border border-border bg-secondary/40 px-2.5 py-2">
+        <p className="whitespace-pre-wrap break-words text-xs leading-snug">{m.text}</p>
+        <div className="mt-1 flex items-center gap-1.5">
+          <span className="text-[10px] text-muted-foreground">{when(m.created_at)}</span>
+          {m.status === 'done' && (
+            <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+              <Check className="h-3 w-3" /> Implemented
+            </span>
+          )}
+          {admin && (
+            <button
+              type="button"
+              onClick={() => void toggleDone(m)}
+              aria-pressed={m.status === 'done'}
+              title={m.status === 'done' ? 'Mark as not implemented' : 'Mark as implemented — the author sees the tick'}
+              className={cn(
+                'ml-auto grid h-5 w-5 place-items-center rounded-md border transition-colors',
+                m.status === 'done'
+                  ? 'border-emerald-500 bg-emerald-500 text-white'
+                  : 'border-border text-muted-foreground hover:border-emerald-500 hover:text-emerald-500',
+              )}
+            >
+              <Check className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+
+        {/* Answers — admin (or the author) replies, shown to the author too. */}
+        {replies.length > 0 && (
+          <div className="mt-2 space-y-1.5 border-l-2 border-primary/30 pl-2">
+            {replies.map((rp, i) => (
+              <div key={i}>
+                <p className="whitespace-pre-wrap break-words text-xs leading-snug">{rp.text}</p>
+                <span className="text-[10px] font-medium text-muted-foreground">
+                  {rp.admin ? 'Team' : formatUserName(rp.by)} · {when(rp.at)}
+                </span>
+              </div>
+            ))}
+          </div>
         )}
-        {admin && (
+
+        {/* Reply box — admins answer any thread; the author can reply in their own. */}
+        {replyTo === m.id ? (
+          <div className="mt-2 flex items-end gap-1.5">
+            <textarea
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void sendReply(m)
+                }
+              }}
+              rows={1}
+              autoFocus
+              placeholder={admin ? 'Answer this…' : 'Reply…'}
+              aria-label="Reply"
+              className="min-h-0 w-full resize-none rounded-lg border border-input bg-background px-2 py-1 text-xs focus-visible:border-primary focus-visible:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => void sendReply(m)}
+              disabled={!replyText.trim()}
+              title="Send reply"
+              aria-label="Send reply"
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground shadow-sm transition-opacity disabled:opacity-50"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
           <button
             type="button"
-            onClick={() => void toggleDone(m)}
-            aria-pressed={m.status === 'done'}
-            title={m.status === 'done' ? 'Mark as not implemented' : 'Mark as implemented — the author sees the tick'}
-            className={cn(
-              'ml-auto grid h-5 w-5 place-items-center rounded-md border transition-colors',
-              m.status === 'done'
-                ? 'border-emerald-500 bg-emerald-500 text-white'
-                : 'border-border text-muted-foreground hover:border-emerald-500 hover:text-emerald-500',
-            )}
+            onClick={() => { setReplyTo(m.id); setReplyText('') }}
+            className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-primary hover:underline"
           >
-            <Check className="h-3 w-3" />
+            <CornerDownRight className="h-3 w-3" /> {admin ? 'Answer' : 'Reply'}
           </button>
         )}
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <>
@@ -169,8 +251,11 @@ export function FeedbackWidget() {
             {groups
               ? groups.map((g) => (
                   <div key={g.email} className="space-y-1.5">
-                    <p className="px-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {g.email}
+                    <p className="flex items-baseline gap-1.5 px-1 pt-1">
+                      <span className="text-[11px] font-semibold text-foreground">
+                        {formatUserName(g.email)}
+                      </span>
+                      <span className="truncate text-[10px] text-muted-foreground">{g.email}</span>
                     </p>
                     {g.msgs.map(bubble)}
                   </div>
