@@ -518,21 +518,23 @@ function CampaignCard({
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
-        ) : onLocalize ? (
-          /* Approved master — the next thing you do is localize it. The button
-             lives here so a master with no variants yet still has a path to the
-             language picker (the card body opens the editor). */
-          <button
-            type="button"
-            title="Localize this approved master into more languages"
-            aria-label={`Localize ${c.name}`}
-            className="ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-            onClick={onLocalize}
-          >
-            <Languages className="h-3.5 w-3.5" /> Localize
-          </button>
         ) : null}
       </div>
+
+      {/* Localize on its OWN full-width row — an approved master's next action.
+          A dedicated row (not squeezed beside the Approved toggle) so the label
+          never clips on a narrow card. The card body still opens the editor. */}
+      {onLocalize && c.active && (
+        <button
+          type="button"
+          title="Localize this approved master into more languages"
+          aria-label={`Localize ${c.name}`}
+          className="flex w-full items-center justify-center gap-1.5 border-t border-border px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+          onClick={onLocalize}
+        >
+          <Languages className="h-3.5 w-3.5" /> Localize
+        </button>
+      )}
     </div>
   )
 }
