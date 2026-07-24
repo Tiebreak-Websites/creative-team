@@ -118,6 +118,9 @@ export function ReadyQueueStrip({
             // Tint the chip by the task's Monday Priority colour (dot +
             // matching border, with a faint fill); plain border when unset.
             const pc = t.item.priority_color
+            // The CRM queue carries no sizes/asset_type — guard so the strip
+            // renders those badges only when a queue actually provides them.
+            const sizeCount = t.match.sizes?.length ?? 0
             return (
               <button
                 key={t.item.id}
@@ -134,12 +137,14 @@ export function ReadyQueueStrip({
                     <span className="max-w-[180px] truncate text-[9px] text-muted-foreground">{t.item.owner}</span>
                   )}
                 </span>
-                <span className="shrink-0 rounded-full border border-border bg-secondary px-1.5 py-px text-[9px] uppercase text-muted-foreground">
-                  {t.match.asset_type}
-                </span>
-                {t.match.sizes.length > 0 && (
+                {t.match.asset_type && (
+                  <span className="shrink-0 rounded-full border border-border bg-secondary px-1.5 py-px text-[9px] uppercase text-muted-foreground">
+                    {t.match.asset_type}
+                  </span>
+                )}
+                {sizeCount > 0 && (
                   <span className="shrink-0 text-[10px] text-muted-foreground">
-                    {t.match.sizes.length} size{t.match.sizes.length === 1 ? '' : 's'}
+                    {sizeCount} size{sizeCount === 1 ? '' : 's'}
                   </span>
                 )}
               </button>
