@@ -7,8 +7,8 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  ArrowLeft, CalendarClock, Check, ChevronDown, ChevronRight, Copy, FilePlus2,
-  Languages, Link2, Loader2, Mail, Search, Trash2,
+  ArrowLeft, Check, ChevronDown, ChevronRight, Copy, FilePlus2,
+  Languages, Loader2, Mail, Search, Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,7 +23,7 @@ import {
 } from '@/bannerBuilder/brandsApi'
 import {
   campaignThumb, createVariants, deleteCampaign, setCampaignActive,
-  type CampaignSummary, type MondayPull,
+  type CampaignSummary,
 } from './api'
 
 /** CRM shelf order — deliberately different from the global ENTITY_KINDS.
@@ -63,9 +63,6 @@ export function Dashboard({
   campaigns,
   brands,
   languages,
-  ready,
-  queueLabel,
-  onStartTask,
   onOpen,
   onCreate,
   onChanged,
@@ -74,11 +71,6 @@ export function Dashboard({
   campaigns: CampaignSummary[] | null
   brands: Brand[]
   languages: Language[]
-  /** Monday's work queue, matched to builder vocabulary. */
-  ready: MondayPull[]
-  /** The Status label the queue is filtered by — names the strips. */
-  queueLabel: string
-  onStartTask: (t: MondayPull) => Promise<unknown>
   onOpen: (id: string) => void
   onCreate: (brandId: string) => void
   onChanged: () => void
@@ -91,8 +83,6 @@ export function Dashboard({
   const [parentId, setParentId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [addingTo, setAddingTo] = useState<CampaignSummary | null>(null)
-  /** Task id mid-creation, so its Start button shows a spinner. */
-  const [starting, setStarting] = useState<string | null>(null)
   /** Which kind sections the user has expanded past their default state.
    *  White label starts collapsed (parked); a click toggles it. */
   const [openKinds, setOpenKinds] = useState<Set<EntityKind>>(new Set())
@@ -101,18 +91,6 @@ export function Dashboard({
     () => Object.fromEntries(brands.map((b) => [b.id, b])) as Record<string, Brand>,
     [brands],
   )
-
-  // A task already turned into a campaign leaves the queue — the campaign
-  // carries its Monday id, and offering to start it twice invites duplicates.
-  const queue = useMemo(() => {
-    const linked = new Set((campaigns ?? []).map((c) => c.monday_id).filter(Boolean))
-    return ready.filter((t) => !linked.has(t.item.id))
-  }, [ready, campaigns])
-
-  const startTask = (t: MondayPull) => {
-    setStarting(t.item.id)
-    onStartTask(t).finally(() => setStarting(null))
-  }
 
   // Every kind gets folders, white labels included — a white label sends its
   // own mail, so it owns its own shelf space.
@@ -256,50 +234,6 @@ export function Dashboard({
           </Button>
         </div>
 
-        {/* Monday's work queue for this brand: a task at the queue status
-            lands here, and one click turns it into the campaign — name,
-            layout and the task snapshot carried over, English source first. */}
-        {queue.some((t) => t.match.brand_id === folder) && (
-          <section className="mb-5 rounded-2xl border border-primary/30 bg-primary/[0.04] p-4 animate-fade-up">
-            <div className="flex flex-wrap items-baseline gap-x-2">
-              <h2 className="font-display text-sm font-bold">{queueLabel}</h2>
-              <span className="text-[11px] text-muted-foreground">
-                From Monday — starting a task creates the campaign with its details; the
-                source email is always English.
-              </span>
-            </div>
-            <div className="mt-2.5 space-y-2">
-              {queue.filter((t) => t.match.brand_id === folder).map((t) => (
-                <div key={t.item.id}
-                     className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2">
-                  <span className="min-w-0 flex-1">
-                    <a href={t.item.url} target="_blank" rel="noreferrer" title="Open in Monday"
-                       className="flex items-center gap-1.5 text-sm font-medium underline-offset-2 hover:underline">
-                      <Link2 className="h-3.5 w-3.5 shrink-0 text-primary" />
-                      <span className="truncate">{t.item.name}</span>
-                    </a>
-                    <span className="mt-1 flex flex-wrap items-center gap-1">
-                      <Chip>#{t.item.id}</Chip>
-                      {t.item.layout_label && <Chip>{t.item.layout_label}</Chip>}
-                      {t.item.languages && <Chip>{t.item.languages}</Chip>}
-                      {t.item.deadline && (
-                        <Chip><CalendarClock className="h-2.5 w-2.5" /> {t.item.deadline}</Chip>
-                      )}
-                      {t.item.priority && <Chip>{t.item.priority}</Chip>}
-                    </span>
-                  </span>
-                  <Button size="sm" disabled={starting !== null} onClick={() => startTask(t)}>
-                    {starting === t.item.id
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <FilePlus2 className="h-3.5 w-3.5" />}
-                    Start campaign
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
         {inFolder.length > 3 && (
           <div className="relative mb-4">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -350,30 +284,6 @@ export function Dashboard({
           <FilePlus2 className="h-4 w-4" /> New campaign
         </Button>
       </div>
-
-      {/* Monday's work queue, before any folder is opened —
-          each pill jumps into the task's brand folder where Start lives. */}
-      {queue.length > 0 && (
-        <section className="mb-5 rounded-2xl border border-primary/30 bg-primary/[0.04] px-4 py-3 animate-fade-up">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-display text-xs font-bold">{queueLabel}</span>
-            <span className="mr-1 text-[11px] tabular-nums text-muted-foreground">
-              {queue.length} on Monday
-            </span>
-            {queue.map((t) => (
-              <button
-                key={t.item.id} type="button"
-                title={`Open the ${brandById[t.match.brand_id]?.name ?? 'Other'} folder`}
-                onClick={() => setFolder(t.match.brand_id)}
-                className="max-w-full truncate rounded-full border border-border bg-card px-2.5 py-1 text-[11px] transition-colors hover:border-primary/50"
-              >
-                <span className="font-medium">{brandById[t.match.brand_id]?.name ?? '?'}</span>
-                <span className="text-muted-foreground"> · {t.item.name}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
 
       <div className="space-y-6">
         {buckets.map(({ kind, items }) => {

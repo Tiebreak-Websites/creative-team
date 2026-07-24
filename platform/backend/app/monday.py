@@ -276,9 +276,9 @@ def search(term: str, limit: int = 8, board: str = "") -> List[dict]:
 def ready_status() -> str:
     """The Status label that means "start building this in the builder" —
     board-specific, so it is configuration, not code. The Marketing calendar
-    uses lifecycle statuses; Planned is where upcoming campaigns wait for
-    their creatives."""
-    return (get_secret("MONDAY_READY_STATUS") or "Planned").strip()
+    has a dedicated "Ready for Builder" status for campaigns cleared to be
+    created in the CRM email builder. Overridable via MONDAY_READY_STATUS."""
+    return (get_secret("MONDAY_READY_STATUS") or "Ready for Builder").strip()
 
 
 def creative_ready_status() -> str:

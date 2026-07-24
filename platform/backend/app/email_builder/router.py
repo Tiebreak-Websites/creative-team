@@ -463,6 +463,50 @@ def build_email_builder_router() -> APIRouter:
         return {"tasks": [{"item": i, "match": _monday_match(i)} for i in items],
                 "status": monday.ready_status()}
 
+    @router.get("/monday/queue")
+    def monday_queue(scope: str = "mine", user: dict = Depends(require_user)):
+        """The CRM work queue in the shared Ready-queue shape (Mine/All + priority
+        tints), so the email builder shows the SAME strip as the Banner/LP builders.
+        Items at the "Ready for Builder" status on the Marketing calendar, minus any
+        already turned into a campaign. Mine = tasks the signed-in user owns on
+        Monday (via the Admin › Users link); All = everyone's."""
+        if not monday.configured():
+            raise _monday_dormant()
+        try:
+            items = monday.ready_for_design()
+        except RuntimeError as e:
+            raise HTTPException(502, str(e))
+        taken = {str(c.get("monday_id") or "") for c in core.campaigns().values()}
+        taken.discard("")
+        mine_id = str(user.get("monday_user_id") or "").strip()
+        linked = bool(mine_id)
+        all_tasks, mine_tasks = [], []
+        for it in items:
+            if str(it.get("id") or "") in taken:
+                continue
+            task = {
+                "item": {
+                    "id": it.get("id"), "name": it.get("name"), "url": it.get("url"),
+                    "brand": it.get("brand") or "",
+                    "language": it.get("languages") or it.get("language") or "",
+                    "market": it.get("market") or "", "brief": it.get("brief") or "",
+                    "deadline": it.get("deadline") or "", "owner": it.get("owner") or "",
+                    "priority": it.get("priority") or "",
+                    "priority_color": it.get("priority_color") or "",
+                    "asset_type": "email",
+                },
+                "match": _monday_match(it),
+            }
+            all_tasks.append(task)
+            if mine_id and mine_id in (it.get("owner_ids") or []):
+                mine_tasks.append(task)
+        show_mine = scope != "all" and linked
+        return {"tasks": mine_tasks if show_mine else all_tasks,
+                "status": monday.ready_status(),
+                "scope": "mine" if show_mine else "all", "linked": linked,
+                "mine_count": len(mine_tasks) if linked else 0,
+                "all_count": len(all_tasks)}
+
     @router.get("/monday/search")
     def monday_search(q: str = "", _user: dict = Depends(require_user)):
         if not monday.configured():

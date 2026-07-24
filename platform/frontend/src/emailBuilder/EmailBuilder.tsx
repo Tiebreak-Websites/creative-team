@@ -13,9 +13,11 @@ import { listSections, type Language } from '@/lpBuilder/api'
 import { ENTITY_KINDS, KIND_LABEL, kindOf, listBrands, type Brand } from '@/bannerBuilder/brandsApi'
 import { Chip, Dashboard } from './Dashboard'
 import { Editor } from './Editor'
+import { ReadyQueueStrip, useReadyQueue } from '@/components/ReadyQueue'
+import type { QueueTask } from '@/bannerBuilder/campaignApi'
 import {
-  createCampaign, deleteCampaign, getCampaign, listBlocks, listCampaigns,
-  mondayItem, mondayReady, mondaySearch,
+  createCampaign, crmQueue, deleteCampaign, getCampaign, listBlocks, listCampaigns,
+  mondayItem, mondaySearch,
   type BlockDef, type Campaign, type CampaignSummary, type Layout,
   type MondayItem, type MondayPull,
 } from './api'
@@ -33,10 +35,10 @@ export function EmailBuilder() {
   // null = closed; otherwise the brand id the folder was opened from, so a
   // campaign created inside a folder lands in that folder.
   const [creating, setCreating] = useState<string | null>(null)
-  // The Monday work queue — items at the configured start status. Loaded
-  // best-effort: with no token configured the strip simply doesn't exist.
-  const [ready, setReady] = useState<MondayPull[]>([])
-  const [queueLabel, setQueueLabel] = useState('Ready for design')
+  // The Monday work queue — the SAME shared strip as Banner/LP (Mine/All +
+  // priority tints), fed by the CRM board's "Ready for Builder" status.
+  const { tasks: queueTasks, scope: queueScope, setScope: setQueueScope, meta: queueMeta } =
+    useReadyQueue(crmQueue)
 
   const refresh = () => listCampaigns().then(setCampaigns).catch((e) => setError(e.message))
 
@@ -47,9 +49,6 @@ export function EmailBuilder() {
       .catch((e) => setError(e.message))
     listBrands().then(setBrands).catch(() => { /* the picker just stays empty */ })
     listSections().then((d) => setLanguages(d.languages)).catch(() => { /* ditto */ })
-    mondayReady()
-      .then((d) => { setReady(d.tasks); setQueueLabel(d.status) })
-      .catch(() => { /* dormant or down — no strip */ })
   }, [])
 
   const open = (id: string) =>
@@ -60,15 +59,20 @@ export function EmailBuilder() {
   /** One click from a Monday task to a working campaign: the task's name,
    *  brand and layout, the snapshot attached — and always the English source
    *  first; the task's language list drives the variant fan-out later. */
-  const startFromTask = (t: MondayPull) =>
-    createCampaign({
-      name: t.item.name,
-      brand_id: t.match.brand_id,
-      language: 'en',
-      layout: t.match.layout || undefined,
-      monday_id: t.item.id,
-      monday: t.item,
-    })
+  const startFromTask = (t: QueueTask) =>
+    // The strip carries a light task row; pull the full Monday snapshot on click
+    // so the new campaign prefills exactly as the old queue did.
+    mondayItem(t.item.id)
+      .then((full) =>
+        createCampaign({
+          name: full.item.name,
+          brand_id: full.match.brand_id,
+          language: 'en',
+          layout: full.match.layout || undefined,
+          monday_id: full.item.id,
+          monday: full.item,
+        }),
+      )
       .then((c) => { setView({ kind: 'editor', campaign: c }); refresh() })
       .catch((e) => setError(e.message))
 
@@ -91,20 +95,31 @@ export function EmailBuilder() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="flex h-full flex-col">
       <ErrorBar message={error} onClose={() => setError(null)} />
-      <Dashboard
-        campaigns={campaigns}
-        brands={brands}
-        languages={languages}
-        ready={ready}
-        queueLabel={queueLabel}
-        onStartTask={startFromTask}
-        onOpen={open}
-        onCreate={(brandId) => setCreating(brandId)}
-        onChanged={refresh}
-        onError={setError}
-      />
+      {queueMeta.allCount > 0 && (
+        <ReadyQueueStrip
+          label="Ready for Builder"
+          tasks={queueTasks}
+          scope={queueScope}
+          linked={queueMeta.linked}
+          mineCount={queueMeta.mineCount}
+          allCount={queueMeta.allCount}
+          onScopeChange={setQueueScope}
+          onOpen={(t) => void startFromTask(t)}
+        />
+      )}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <Dashboard
+          campaigns={campaigns}
+          brands={brands}
+          languages={languages}
+          onOpen={open}
+          onCreate={(brandId) => setCreating(brandId)}
+          onChanged={refresh}
+          onError={setError}
+        />
+      </div>
 
       {creating !== null && (
         <CreateModal

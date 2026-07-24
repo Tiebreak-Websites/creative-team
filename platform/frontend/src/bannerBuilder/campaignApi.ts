@@ -58,6 +58,10 @@ export interface QueueTask {
     language: string
     sizes: string[]
     asset_type: string
+    // Email/CRM queue only: the layout key + the task's language list, used to
+    // prefill a new campaign (banner/LP leave these undefined).
+    layout?: string
+    languages?: string[]
   }
 }
 

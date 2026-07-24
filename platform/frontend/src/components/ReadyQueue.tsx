@@ -59,6 +59,7 @@ export function ReadyQueueStrip({
   onOpen,
   leading,
   className,
+  label = 'Ready for design',
 }: {
   tasks: QueueTask[]
   scope: 'mine' | 'all'
@@ -73,12 +74,15 @@ export function ReadyQueueStrip({
   /** Container chrome — defaults to the full-bleed bar (border-b). The LP
    *  shelf passes rounded-card classes instead. */
   className?: string
+  /** Strip title — defaults to "Ready for design"; the CRM builder passes
+   *  "Ready for Builder". */
+  label?: string
 }) {
   return (
     <div className={cn('shrink-0 bg-primary/[0.03] px-4 py-2', className ?? 'border-b border-border')}>
       <div className="flex items-center gap-2">
         <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-          Ready for design
+          {label}
         </span>
         {/* Mine / All scope — a toggle only when this account is linked to a
             Monday person; otherwise a nudge to set the link in Admin. */}

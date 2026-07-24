@@ -6,6 +6,7 @@
 // so unlike the LP builder, the frontend never computes a token set.
 
 import { API_BASE as BASE, asJson } from '../http'
+import { fetchReadyQueue, type QueueResult } from '../bannerBuilder/campaignApi'
 
 const EB = `${BASE}/tools/email-builder`
 
@@ -228,6 +229,13 @@ export async function mondayReady(): Promise<{ tasks: MondayPull[]; status: stri
   if (!r.ok) return fail(r, 'Could not load the Monday queue')
   const d = await r.json()
   return { tasks: d.tasks ?? [], status: d.status ?? 'Ready for design' }
+}
+
+/** The CRM work queue in the shared Ready-queue shape (Mine/All + priority tints),
+ *  so the email builder shows the SAME strip as Banner/LP. Tasks at "Ready for
+ *  Builder" on the Marketing calendar, minus any already turned into a campaign. */
+export function crmQueue(scope: 'mine' | 'all' = 'mine'): Promise<QueueResult> {
+  return fetchReadyQueue(`${EB}/monday/queue`, scope)
 }
 
 export async function mondaySearch(q: string): Promise<MondayItem[]> {
