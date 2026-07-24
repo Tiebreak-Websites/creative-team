@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, CornerDownRight, Loader2, MessageSquarePlus, Send, X } from 'lucide-react'
 import { cn, formatUserName } from '@/lib/utils'
+import { useAuth } from '../auth/AuthContext'
 
 /**
  * Floating suggestions / bug-report widget, available on every tool.
@@ -59,6 +60,15 @@ export function FeedbackWidget() {
   const [replyText, setReplyText] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
 
+  const { user } = useAuth()
+  const myEmail = (user?.email || '').toLowerCase()
+  const seenKey = `feedback:seen:${myEmail || 'anon'}`
+  // Newest thing SOMEONE ELSE wrote that concerns me — an admin's answer in my
+  // thread, or (for admins) a new question/answer from a user. My own posts don't
+  // count. Compared against the last time I opened the chat to raise the dot.
+  const [lastSeen, setLastSeen] = useState('')
+  useEffect(() => setLastSeen(localStorage.getItem(seenKey) || ''), [seenKey])
+
   const refresh = useCallback(async () => {
     try {
       const d = await api<{ messages: FeedbackMsg[]; admin: boolean }>('/api/feedback')
@@ -70,13 +80,32 @@ export function FeedbackWidget() {
     }
   }, [])
 
-  // Load on open + keep fresh while open (status ticks appear live).
+  const latestOther = useMemo(() => {
+    let latest = ''
+    for (const m of messages) {
+      if (m.email !== myEmail && m.created_at > latest) latest = m.created_at
+      for (const rp of m.replies ?? []) {
+        if (rp.by !== myEmail && rp.at > latest) latest = rp.at
+      }
+    }
+    return latest
+  }, [messages, myEmail])
+  const hasUnseen = !open && latestOther !== '' && latestOther > lastSeen
+
+  // Poll ALWAYS (so the dot can appear while closed), faster while open.
   useEffect(() => {
-    if (!open) return
     void refresh()
-    const iv = window.setInterval(() => void refresh(), 30_000)
+    const iv = window.setInterval(() => void refresh(), open ? 30_000 : 60_000)
     return () => window.clearInterval(iv)
   }, [open, refresh])
+
+  // Opening the chat = I've seen everything currently there.
+  useEffect(() => {
+    if (open && latestOther && latestOther > lastSeen) {
+      localStorage.setItem(seenKey, latestOther)
+      setLastSeen(latestOther)
+    }
+  }, [open, latestOther, lastSeen, seenKey])
   useEffect(() => {
     // new content → keep the newest message in view
     const el = listRef.current
@@ -309,6 +338,15 @@ export function FeedbackWidget() {
         )}
       >
         {open ? <X className="h-5 w-5" /> : <MessageSquarePlus className="h-5 w-5" />}
+        {hasUnseen && (
+          <span
+            aria-label="New activity"
+            className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5"
+          >
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-60" />
+            <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-red-500 ring-2 ring-background" />
+          </span>
+        )}
       </button>
     </>
   )
