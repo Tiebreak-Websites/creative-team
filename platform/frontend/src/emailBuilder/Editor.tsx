@@ -28,7 +28,7 @@ import type { Language } from '@/lpBuilder/api'
 import type { Brand } from '@/bannerBuilder/brandsApi'
 import {
   SIZE_LIMIT, SIZE_WARN, composeEmail, generateCopy, generateHeroImage, getCopyJob,
-  getHeroJob, imageBriefFromContent, listCopyJobs, listHeroJobs, saveCampaign,
+  getHeroJob, imageBriefFromContent, listCopyJobs, listHeroJobs, mondayItem, saveCampaign,
   uploadEmailAsset,
   type BlockDef, type BlockInstance, type Campaign, type CopyResult,
 } from './api'
@@ -101,9 +101,22 @@ export function Editor({
   // AI copy: the brief is lifted here so the hero generator can inherit it
   // (the "approved content -> image" chain), and the subject A/B variants the
   // last generation produced, offered as one-click swaps under the subject.
-  const [copyBrief, setCopyBrief] = useState('')
+  const [copyBrief, setCopyBrief] = useState(campaign.monday?.brief ?? '')
   const [subjectVariants, setSubjectVariants] = useState<string[]>([])
   const frameRef = useRef<HTMLIFrameElement>(null)
+  // Pre-fill the AI brief from the Monday task's Brief column. The stored
+  // snapshot may predate the brief (or have been empty at creation), so pull the
+  // task live once and fill in — never clobbering anything already typed.
+  useEffect(() => {
+    if ((campaign.monday?.brief ?? '').trim() || !campaign.monday_id) return
+    let gone = false
+    mondayItem(campaign.monday_id).then((res) => {
+      const b = (res.item?.brief ?? '').trim()
+      if (!gone && b) setCopyBrief((cur) => (cur.trim() ? cur : b))
+    }).catch(() => { /* offline — the field just stays empty */ })
+    return () => { gone = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaign.id])
 
   const blockMap = useMemo(
     () => Object.fromEntries(blocks.map((b) => [b.key, b])) as Record<string, BlockDef>,

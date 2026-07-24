@@ -69,6 +69,7 @@ _TITLE_MAP = {
     "deadline": "deadline",
     "due date": "deadline",
     "project start date": "start_date",
+    "brief": "brief",                   # Marketing calendar's plain "Brief" column
     "brief details": "brief",
     "description": "brief",
     "topic": "topic",
